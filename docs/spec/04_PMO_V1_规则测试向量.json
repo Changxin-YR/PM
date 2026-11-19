@@ -1,0 +1,1054 @@
+{
+  "$schema_note": "本文件仅是参考输入/预期向量；第三轮脚本对每条向量执行独立 oracle，且使用错误预期变异检查防止伪 PASS；真实实现仍须独立回归。",
+  "scoring": [
+    {
+      "case": "charter_exact_4_2",
+      "scores": {
+        "strategic_alignment": 5,
+        "customer_attractiveness": 4,
+        "financial_resource_return": 4,
+        "risk_controllability": 4
+      },
+      "expectedTotal": "4.20",
+      "expectedRecommendation": "fast_track"
+    },
+    {
+      "case": "charter_exact_3_2",
+      "scores": {
+        "strategic_alignment": 4,
+        "customer_attractiveness": 3,
+        "financial_resource_return": 3,
+        "risk_controllability": 3
+      },
+      "expectedTotal": "3.20",
+      "expectedRecommendation": "pass_with_remediation"
+    },
+    {
+      "case": "charter_score1_veto",
+      "scores": {
+        "strategic_alignment": 5,
+        "customer_attractiveness": 5,
+        "financial_resource_return": 5,
+        "risk_controllability": 1
+      },
+      "expectedTotal": "4.00",
+      "expectedRecommendation": "veto"
+    },
+    {
+      "case": "feasibility_min2_veto",
+      "scores": [
+        5,
+        4,
+        2,
+        4,
+        4
+      ],
+      "expected": "reject"
+    },
+    {
+      "case": "feasibility_all3",
+      "scores": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "expected": "pass_eligible"
+    },
+    {
+      "case": "charter_below_3_2",
+      "scores": {
+        "strategic_alignment": 3,
+        "customer_attractiveness": 3,
+        "financial_resource_return": 3,
+        "risk_controllability": 3
+      },
+      "expectedTotal": "3.00",
+      "expectedRecommendation": "reject_or_redesign"
+    },
+    {
+      "case": "charter_multi_reviewer_aggregate",
+      "reviewers": [
+        {
+          "strategic_alignment": 4,
+          "customer_attractiveness": 4,
+          "financial_resource_return": 4,
+          "risk_controllability": 4
+        },
+        {
+          "strategic_alignment": 5,
+          "customer_attractiveness": 3,
+          "financial_resource_return": 4,
+          "risk_controllability": 4
+        }
+      ],
+      "expectedTotal": "3.95",
+      "expectedRecommendation": "pass_with_remediation"
+    },
+    {
+      "case": "charter_effective_reviewer_one_veto",
+      "reviewers": [
+        {
+          "strategic_alignment": 5,
+          "customer_attractiveness": 5,
+          "financial_resource_return": 5,
+          "risk_controllability": 5
+        },
+        {
+          "strategic_alignment": 5,
+          "customer_attractiveness": 5,
+          "financial_resource_return": 5,
+          "risk_controllability": 1
+        }
+      ],
+      "expectedTotal": "4.50",
+      "expectedRecommendation": "veto"
+    }
+  ],
+  "cost": [
+    {
+      "case": "exact_15_percent",
+      "budget": "100",
+      "actual": "70",
+      "forecastRemaining": "45",
+      "expectedVariance": "0.15",
+      "expectedColor": "yellow",
+      "lr04": false
+    },
+    {
+      "case": "above_15_percent",
+      "budget": "100",
+      "actual": "70",
+      "forecastRemaining": "46",
+      "expectedVariance": "0.16",
+      "expectedColor": "red",
+      "lr04": true
+    },
+    {
+      "case": "exact_20_percent",
+      "budget": "100",
+      "actual": "70",
+      "forecastRemaining": "50",
+      "expectedVariance": "0.20",
+      "lr04": true,
+      "requireReestimate": false
+    },
+    {
+      "case": "above_20_percent",
+      "budget": "100",
+      "actual": "70",
+      "forecastRemaining": "51",
+      "expectedVariance": "0.21",
+      "requireReestimate": true
+    },
+    {
+      "case": "zero_budget_no_spending",
+      "budget": "0",
+      "actual": "0",
+      "forecastRemaining": "0",
+      "expectedColor": "green",
+      "declaredZeroBudgetReason": "书面确认预算为零"
+    },
+    {
+      "case": "zero_budget_nonzero_spending",
+      "budget": "0",
+      "actual": "1",
+      "forecastRemaining": "0",
+      "expectedColor": "red"
+    },
+    {
+      "case": "exact_5_percent",
+      "budget": "100",
+      "actual": "60",
+      "forecastRemaining": "45",
+      "expectedVariance": "0.05",
+      "expectedColor": "green"
+    },
+    {
+      "case": "above_5_percent",
+      "budget": "100",
+      "actual": "60",
+      "forecastRemaining": "45.01",
+      "expectedVariance": "0.0501",
+      "expectedColor": "yellow"
+    },
+    {
+      "case": "zero_budget_undeclared",
+      "budget": "0",
+      "actual": "0",
+      "forecastRemaining": "0",
+      "expectedColor": "untrusted"
+    },
+    {
+      "case": "missing_budget_untrusted",
+      "budget": null,
+      "actual": "1",
+      "forecastRemaining": "0",
+      "expectedColor": "untrusted"
+    },
+    {
+      "case": "pending_posting_excluded_from_actual",
+      "postings": [
+        {
+          "amount": "100.00",
+          "status": "pending"
+        },
+        {
+          "amount": "25.00",
+          "status": "verified"
+        }
+      ],
+      "expectedActual": "25.00"
+    },
+    {
+      "case": "verified_reversal_nets_to_zero",
+      "postings": [
+        {
+          "id": "a",
+          "amount": "25.00",
+          "status": "verified"
+        },
+        {
+          "amount": "-25.00",
+          "status": "verified",
+          "postingOf": "a"
+        }
+      ],
+      "expectedActual": "0.00"
+    },
+    {
+      "case": "reversal_partial_correction_net_once",
+      "postings": [
+        {
+          "id": "orig",
+          "status": "verified",
+          "amount": "100.00"
+        },
+        {
+          "id": "reverse",
+          "postingOf": "orig",
+          "status": "verified",
+          "amount": "-100.00"
+        },
+        {
+          "id": "corrected",
+          "status": "verified",
+          "amount": "70.00"
+        }
+      ],
+      "expectedActual": "70.00"
+    },
+    {
+      "case": "unverified_reversal_not_counted",
+      "postings": [
+        {
+          "id": "orig",
+          "status": "verified",
+          "amount": "100.00"
+        },
+        {
+          "id": "reverse",
+          "postingOf": "orig",
+          "status": "pending",
+          "amount": "-100.00"
+        }
+      ],
+      "expectedActual": "100.00"
+    },
+    {
+      "case": "verified_partial_reversal_forbidden",
+      "postings": [
+        {
+          "id": "orig",
+          "status": "verified",
+          "amount": "100.00"
+        },
+        {
+          "id": "reverse",
+          "postingOf": "orig",
+          "status": "verified",
+          "amount": "-20.00"
+        }
+      ],
+      "expectedValidation": "REJECT_PARTIAL_REVERSAL"
+    },
+    {
+      "case": "verified_double_full_reversal_forbidden",
+      "postings": [
+        {
+          "id": "orig",
+          "status": "verified",
+          "amount": "100.00"
+        },
+        {
+          "id": "reverse1",
+          "postingOf": "orig",
+          "status": "verified",
+          "amount": "-100.00"
+        },
+        {
+          "id": "reverse2",
+          "postingOf": "orig",
+          "status": "verified",
+          "amount": "-100.00"
+        }
+      ],
+      "expectedValidation": "REJECT_DUPLICATE_REVERSAL"
+    }
+  ],
+  "requirements": [
+    {
+      "case": "p0_and_p2_confirmed_p1_unconfirmed",
+      "items": [
+        {
+          "priority": "P0",
+          "confirmed": true
+        },
+        {
+          "priority": "P1",
+          "confirmed": false
+        },
+        {
+          "priority": "P2",
+          "confirmed": true
+        }
+      ],
+      "expectedFraction": "4/6",
+      "expectedRequirementGateEligible": false
+    },
+    {
+      "case": "unapproved_cancel_does_not_improve_score",
+      "items": [
+        {
+          "priority": "P0",
+          "confirmed": true
+        },
+        {
+          "priority": "P1",
+          "confirmed": false,
+          "attemptedCancelled": true
+        }
+      ],
+      "expectedFraction": "3/5",
+      "expectedFrozen": true
+    },
+    {
+      "case": "approved_cancel_removes_from_active_denominator",
+      "items": [
+        {
+          "priority": "P0",
+          "confirmed": true
+        },
+        {
+          "priority": "P1",
+          "confirmed": false,
+          "approvedCancelled": true
+        }
+      ],
+      "expectedFraction": "3/3",
+      "expectedRequirementGateEligible": true
+    },
+    {
+      "case": "zero_baseline_no_denominator",
+      "items": [],
+      "expected": "UNAVAILABLE"
+    },
+    {
+      "case": "zero_initial_baseline_change_rate",
+      "initialBaselineCount": 0,
+      "approvedChangedBaselineCount": 0,
+      "expectedChangeRate": "UNAVAILABLE"
+    },
+    {
+      "case": "p0_all_confirmed_but_remaining_p1_below_90",
+      "items": [
+        {
+          "priority": "P0",
+          "confirmed": true
+        },
+        {
+          "priority": "P1",
+          "confirmed": false
+        },
+        {
+          "priority": "P2",
+          "confirmed": false
+        }
+      ],
+      "expectedFraction": "3/6",
+      "expectedRequirementGateEligible": false
+    },
+    {
+      "case": "only_approved_cancel_exits_denominator",
+      "items": [
+        {
+          "priority": "P0",
+          "confirmed": true
+        },
+        {
+          "priority": "P1",
+          "confirmed": false,
+          "approvedCancelled": true
+        },
+        {
+          "priority": "P2",
+          "confirmed": false,
+          "attemptedCancelled": true
+        }
+      ],
+      "expectedFraction": "3/4",
+      "expectedRequirementGateEligible": false
+    }
+  ],
+  "health": [
+    {
+      "case": "one_yellow_no_red",
+      "lines": [
+        "yellow",
+        "green",
+        "green"
+      ],
+      "expected": "green"
+    },
+    {
+      "case": "two_yellow_no_red",
+      "lines": [
+        "yellow",
+        "yellow",
+        "green"
+      ],
+      "expected": "yellow"
+    },
+    {
+      "case": "any_red",
+      "lines": [
+        "green",
+        "red",
+        "yellow"
+      ],
+      "expected": "red"
+    },
+    {
+      "case": "untrusted_overrides_red",
+      "lines": [
+        "red",
+        "green",
+        "green"
+      ],
+      "dataTrust": "untrusted",
+      "expected": "untrusted"
+    },
+    {
+      "case": "p0_unconfirmed_strict_source",
+      "p0UnconfirmedCount": 1,
+      "expectedQuality": "red"
+    },
+    {
+      "case": "unfinished_key_milestone_past_plan",
+      "stage": "executing",
+      "isKey": true,
+      "actualDate": null,
+      "plannedDate": "2026-11-10",
+      "today": "2026-11-11",
+      "forecastDate": "2026-11-10",
+      "expectedTime": "red"
+    },
+    {
+      "case": "unconfirmed_p0_drafting_not_current_health",
+      "stage": "drafting",
+      "p0UnconfirmedCount": 1,
+      "expectedCurrentHealth": "not_applicable"
+    },
+    {
+      "case": "key_milestone_reported_progress_without_evidence",
+      "stage": "executing",
+      "isKey": true,
+      "progressClaimed": true,
+      "evidenceRefs": [],
+      "expectedDataTrust": "untrusted"
+    }
+  ],
+  "state": [
+    {
+      "case": "skip_drafting_to_executing",
+      "fromState": "drafting",
+      "toState": "executing",
+      "expected": "LR-01_REJECT"
+    },
+    {
+      "case": "valid_charter_pass",
+      "fromState": "charter_review",
+      "toState": "designing",
+      "decision": "pass",
+      "expected": "ALLOW_IF_REVIEW_COMPLETE"
+    },
+    {
+      "case": "archive_without_lesson",
+      "fromState": "retrospective",
+      "toState": "archived",
+      "confirmedLessons": 0,
+      "expected": "REJECT"
+    },
+    {
+      "case": "resume_hold",
+      "fromState": "on_hold",
+      "toState": "executing",
+      "sponsorDecision": true,
+      "expected": "ALLOW"
+    },
+    {
+      "case": "draft_without_sponsor_pm_can_save",
+      "fromState": "drafting",
+      "sponsorId": null,
+      "pmId": null,
+      "operation": "save_draft",
+      "expected": "ALLOW"
+    },
+    {
+      "case": "draft_without_sponsor_pm_cannot_submit",
+      "fromState": "drafting",
+      "toState": "charter_review",
+      "sponsorId": null,
+      "pmId": null,
+      "expected": "REJECT_MISSING_SPONSOR_PM"
+    },
+    {
+      "case": "review_decision_stale_hash",
+      "fromState": "charter_review",
+      "toState": "designing",
+      "approvalHashMatches": false,
+      "expected": "APPROVAL_STALE"
+    },
+    {
+      "case": "rejected_second_resubmit_forbidden",
+      "fromState": "rejected",
+      "toState": "drafting",
+      "resubmitsAlreadyUsed": 1,
+      "expected": "REJECT"
+    }
+  ],
+  "lrRules": [
+    {
+      "case": "lr01_skip",
+      "rule": "LR-01",
+      "fromState": "drafting",
+      "toState": "executing",
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_transition"
+    },
+    {
+      "case": "lr01_legal_with_decision",
+      "rule": "LR-01",
+      "fromState": "charter_review",
+      "toState": "designing",
+      "gateDecision": "pass",
+      "evidenceValid": true,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr02_score2",
+      "rule": "LR-02",
+      "feasibilityScores": [
+        3,
+        3,
+        2,
+        3,
+        3
+      ],
+      "requestedVerdict": "pass",
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_pass_and_create_task"
+    },
+    {
+      "case": "lr02_all3",
+      "rule": "LR-02",
+      "feasibilityScores": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "requestedVerdict": "pass",
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr03_late_no_change",
+      "rule": "LR-03",
+      "plannedDate": "2026-12-10",
+      "forecastDate": "2026-12-15",
+      "hasApprovedPlanChange": false,
+      "expectedTriggered": true,
+      "expectedEffect": "yellow_warning"
+    },
+    {
+      "case": "lr03_no_late",
+      "rule": "LR-03",
+      "plannedDate": "2026-12-10",
+      "forecastDate": "2026-12-10",
+      "hasApprovedPlanChange": false,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr04_money_above_15",
+      "rule": "LR-04",
+      "moneyVariance": "0.16",
+      "effortVariance": "0.02",
+      "expectedTriggered": true,
+      "expectedEffect": "red_warning"
+    },
+    {
+      "case": "lr04_exact_15",
+      "rule": "LR-04",
+      "moneyVariance": "0.15",
+      "effortVariance": "0.15",
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr05_without_approved_change",
+      "rule": "LR-05",
+      "requirementFrozen": true,
+      "scopeChangeRequested": true,
+      "approvedChangeId": null,
+      "expectedTriggered": true,
+      "expectedEffect": "reject_change"
+    },
+    {
+      "case": "lr05_with_approved_change",
+      "rule": "LR-05",
+      "requirementFrozen": true,
+      "scopeChangeRequested": true,
+      "approvedChangeId": "ch-1",
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr06_two_due_missed",
+      "rule": "LR-06",
+      "stage": "executing",
+      "consecutiveDueMissingWeeklyReports": 2,
+      "expectedTriggered": true,
+      "expectedEffect": "untrusted"
+    },
+    {
+      "case": "lr06_one_due_missed",
+      "rule": "LR-06",
+      "stage": "executing",
+      "consecutiveDueMissingWeeklyReports": 1,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr06_milestone_progress_without_evidence",
+      "rule": "LR-06",
+      "stage": "executing",
+      "keyMilestoneProgressClaim": true,
+      "hasValidEvidence": false,
+      "expectedTriggered": true,
+      "expectedEffect": "untrusted"
+    },
+    {
+      "case": "lr07_missing_p0_without_exception",
+      "rule": "LR-07",
+      "p0Confirmed": false,
+      "requirementSatisfaction": "0.85",
+      "moneyAbsVariance": "0.00",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": true,
+      "signedException": false,
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_closing"
+    },
+    {
+      "case": "lr07_all_gates_ok",
+      "rule": "LR-07",
+      "p0Confirmed": true,
+      "requirementSatisfaction": "1.00",
+      "moneyAbsVariance": "0.00",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": true,
+      "signedException": false,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr08_closed14d_without_lesson",
+      "rule": "LR-08",
+      "state": "closed",
+      "daysSinceClosed": 14,
+      "retrospectiveDone": false,
+      "confirmedLessonCount": 0,
+      "expectedTriggered": true,
+      "expectedEffect": "notify_sponsor"
+    },
+    {
+      "case": "lr08_closed13d_without_lesson",
+      "rule": "LR-08",
+      "state": "closed",
+      "daysSinceClosed": 13,
+      "retrospectiveDone": false,
+      "confirmedLessonCount": 0,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr08_retrospective_done_with_lesson",
+      "rule": "LR-08",
+      "state": "closed",
+      "daysSinceClosed": 14,
+      "retrospectiveDone": true,
+      "confirmedLessonCount": 1,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr07_cost_above_20_sponsor_reason_not_exception",
+      "rule": "LR-07",
+      "p0Confirmed": true,
+      "requirementSatisfaction": "1.00",
+      "moneyAbsVariance": "0.21",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": true,
+      "signedException": false,
+      "sponsorReasonProvided": true,
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_closing"
+    },
+    {
+      "case": "lr07_cost_exact_20_allowed_if_other_gates",
+      "rule": "LR-07",
+      "p0Confirmed": true,
+      "requirementSatisfaction": "1.00",
+      "moneyAbsVariance": "0.20",
+      "effortAbsVariance": "0.20",
+      "blockingRisksResolved": true,
+      "signedException": false,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr07_signed_requirement_exception_does_not_waive_cost",
+      "rule": "LR-07",
+      "p0Confirmed": false,
+      "requirementSatisfaction": "0.80",
+      "moneyAbsVariance": "0.21",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": true,
+      "signedException": true,
+      "validRequirementException": true,
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_closing"
+    },
+    {
+      "case": "lr07_signed_requirement_exception_does_not_waive_risks",
+      "rule": "LR-07",
+      "p0Confirmed": false,
+      "requirementSatisfaction": "0.80",
+      "moneyAbsVariance": "0.00",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": false,
+      "signedException": true,
+      "validRequirementException": true,
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_closing"
+    },
+    {
+      "case": "lr07_signed_requirement_exception_only_all_other_gates_ok",
+      "rule": "LR-07",
+      "p0Confirmed": false,
+      "requirementSatisfaction": "0.85",
+      "moneyAbsVariance": "0.00",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": true,
+      "signedException": true,
+      "validRequirementException": true,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr07_unverified_signature_not_exception",
+      "rule": "LR-07",
+      "p0Confirmed": false,
+      "requirementSatisfaction": "0.80",
+      "moneyAbsVariance": "0.00",
+      "effortAbsVariance": "0.00",
+      "blockingRisksResolved": true,
+      "signedException": true,
+      "validRequirementException": false,
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_closing"
+    },
+    {
+      "case": "lr06_key_milestone_without_claim_not_misflagged",
+      "rule": "LR-06",
+      "stage": "executing",
+      "consecutiveDueMissingWeeklyReports": 0,
+      "keyMilestoneProgressClaim": false,
+      "hasValidEvidence": false,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr08_other_state_no_postclose_warning",
+      "rule": "LR-08",
+      "state": "executing",
+      "daysSinceClosed": 100,
+      "retrospectiveDone": false,
+      "confirmedLessonCount": 0,
+      "expectedTriggered": false
+    },
+    {
+      "case": "lr01_legal_transition_without_decision_is_blocked",
+      "rule": "LR-01",
+      "fromState": "charter_review",
+      "toState": "designing",
+      "gateDecision": null,
+      "evidenceValid": false,
+      "expectedTriggered": true,
+      "expectedEffect": "refuse_transition"
+    },
+    {
+      "case": "lr05_change_not_applied_still_blocked",
+      "rule": "LR-05",
+      "requirementFrozen": true,
+      "scopeChangeRequested": true,
+      "approvedChangeId": "chg-111",
+      "approvedChangeStatus": "pending",
+      "expectedTriggered": true,
+      "expectedEffect": "reject_change"
+    }
+  ],
+  "approval": [
+    {
+      "case": "agent_cannot_decide_even_with_direct_http",
+      "actorType": "agent",
+      "action": "approve_gate",
+      "scopePresent": true,
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "human_reviewer_with_current_hash",
+      "actorType": "human",
+      "role": "reviewer",
+      "action": "approve_gate",
+      "requestHashMatches": true,
+      "sameAsApplicant": false,
+      "expected": "ALLOW_IF_BUSINESS_GATE_PASS"
+    },
+    {
+      "case": "human_self_approval_rejected",
+      "actorType": "human",
+      "role": "reviewer",
+      "action": "approve_gate",
+      "sameAsApplicant": true,
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "expired_approval_rejected",
+      "actorType": "human",
+      "role": "reviewer",
+      "action": "approve_gate",
+      "requestHashMatches": false,
+      "expected": "APPROVAL_STALE"
+    },
+    {
+      "case": "cost_posting_agent_cannot_verify",
+      "actorType": "agent",
+      "action": "cost_posting_verify",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "creator_can_edit_owned_draft",
+      "actorType": "human",
+      "role": "member",
+      "action": "edit_draft",
+      "isDraftCreator": true,
+      "projectStage": "drafting",
+      "expected": "ALLOW"
+    },
+    {
+      "case": "member_cannot_edit_other_person_draft",
+      "actorType": "human",
+      "role": "member",
+      "action": "edit_draft",
+      "isDraftCreator": false,
+      "projectStage": "drafting",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_cannot_accept_sponsor_role",
+      "actorType": "agent",
+      "action": "accept_role_assignment",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "approved_role_assignment_requires_person_acceptance",
+      "actorType": "human",
+      "action": "submit_charter_review",
+      "assignmentStatus": "pending",
+      "expected": "APPROVAL_REQUIRED"
+    },
+    {
+      "case": "denied_attempt_must_not_be_success_audit",
+      "actorType": "human",
+      "action": "transition_project",
+      "businessRuleAllows": false,
+      "expected": "DENIED_AUDITED_SEPARATELY"
+    }
+  ],
+  "report": [
+    {
+      "case": "weekly_four_required_sections_no_money",
+      "structuredFields": {
+        "milestone_progress": [],
+        "effort_person_days": "2.5",
+        "requirement_progress": [],
+        "risks_and_blockers": []
+      },
+      "moneySectionPresent": false,
+      "expectedSubmission": "ACCEPT"
+    },
+    {
+      "case": "weekly_missing_effort_block",
+      "structuredFields": {
+        "milestone_progress": [],
+        "requirement_progress": [],
+        "risks_and_blockers": []
+      },
+      "expectedSubmission": "VALIDATION_FAILED"
+    },
+    {
+      "case": "valid_submitted_counts_weekly_presence",
+      "status": "submitted",
+      "schemaValid": true,
+      "expectedCountsAsMissing": false
+    },
+    {
+      "case": "draft_does_not_count_weekly_presence",
+      "status": "draft",
+      "schemaValid": true,
+      "expectedCountsAsMissing": true
+    },
+    {
+      "case": "model_timeout_keeps_human_flow",
+      "modelResult": "timeout",
+      "expectedReportPreserved": true,
+      "expectedFactAutoVerified": false
+    }
+  ],
+  "mcpPermissions": [
+    {
+      "case": "agent_can_propose_requirement_draft",
+      "tokenActions": [
+        "pmo_requirement_create"
+      ],
+      "projectAllowed": true,
+      "expected": "ALLOW_DRAFT_ONLY"
+    },
+    {
+      "case": "agent_cannot_accept_customer_requirement",
+      "tokenActions": [
+        "pmo_requirement_create"
+      ],
+      "operation": "customer_confirm",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_cannot_finalize_cost_posting",
+      "tokenActions": [
+        "pmo_cost_posting_propose"
+      ],
+      "operation": "verify_cost_posting",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_cannot_expand_project_scope",
+      "tokenProjectIds": [
+        "p1"
+      ],
+      "requestedProjectId": "p2",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_expired_token",
+      "tokenExpired": true,
+      "expected": "UNAUTHORIZED"
+    },
+    {
+      "case": "agent_can_write_owned_draft_if_authorized",
+      "tokenActions": [
+        "pmo_project_draft_update"
+      ],
+      "projectAllowed": true,
+      "isDraftCreator": true,
+      "operation": "pmo_project_draft_update",
+      "expected": "ALLOW_DRAFT_ONLY"
+    },
+    {
+      "case": "agent_cannot_approve_role_assignment",
+      "tokenActions": [
+        "pmo_role_assignment_propose"
+      ],
+      "projectAllowed": true,
+      "operation": "accept_role_assignment",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_cannot_access_project_if_not_scoped",
+      "tokenActions": [
+        "pmo_project_get"
+      ],
+      "tokenProjectIds": [
+        "p1"
+      ],
+      "requestedProjectId": "p2",
+      "operation": "pmo_project_get",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_create_project_org_grant_allowed",
+      "tokenActions": [
+        "pmo_project_create"
+      ],
+      "operation": "pmo_project_create",
+      "projectCreateRequested": true,
+      "allowProjectCreate": true,
+      "delegatorActiveInOrg": true,
+      "tokenOrgId": "o1",
+      "delegatorOrgId": "o1",
+      "expected": "ALLOW_DRAFT_ONLY"
+    },
+    {
+      "case": "agent_create_project_without_org_grant_denied",
+      "tokenActions": [
+        "pmo_project_create"
+      ],
+      "operation": "pmo_project_create",
+      "projectCreateRequested": true,
+      "allowProjectCreate": false,
+      "delegatorActiveInOrg": true,
+      "tokenOrgId": "o1",
+      "delegatorOrgId": "o1",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_create_project_wrong_org_denied",
+      "tokenActions": [
+        "pmo_project_create"
+      ],
+      "operation": "pmo_project_create",
+      "projectCreateRequested": true,
+      "allowProjectCreate": true,
+      "delegatorActiveInOrg": true,
+      "tokenOrgId": "o1",
+      "delegatorOrgId": "o2",
+      "expected": "FORBIDDEN"
+    },
+    {
+      "case": "agent_create_project_inactive_delegator_denied",
+      "tokenActions": [
+        "pmo_project_create"
+      ],
+      "operation": "pmo_project_create",
+      "projectCreateRequested": true,
+      "allowProjectCreate": true,
+      "delegatorActiveInOrg": false,
+      "tokenOrgId": "o1",
+      "delegatorOrgId": "o1",
+      "expected": "FORBIDDEN"
+    }
+  ]
+}

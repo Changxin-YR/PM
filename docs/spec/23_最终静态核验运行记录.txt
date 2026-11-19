@@ -1,0 +1,43 @@
+PMO V1.0.4 Final independent static audit
+Audit date: 2026-11-19
+Scope: specification consistency ONLY, not implemented application functional tests
+
+========== 08_静态核验脚本.py ==========
+V1.0.4 REFERENCE CHECK PASS
+  original HTML SHA-256 unchanged: e88d37a5e59fe2e3c14b768ab9d11ae11100b68308278c9bf9b5a0ab1c68a532
+  domains=16, gates=3, LRs=8, agent_modes=4, states=13
+  vectors_evaluated=102, LR_counts={'LR-01': 3, 'LR-02': 2, 'LR-03': 2, 'LR-04': 2, 'LR-05': 3, 'LR-06': 4, 'LR-07': 8, 'LR-08': 4}
+  MCP input schemas validated=40, HTTP operations mapped=95, human-only operations=37
+  deliberately_corrupted_expected_values_detected=4
+  WARNING: reference oracle tests != product/API/DB/MCP end-to-end tests. No live deployment verified.
+EXIT_CODE=0
+
+========== 15_跨文件契约核验.py ==========
+V1.0.4 REFERENCE CHECK PASS
+  original HTML SHA-256 unchanged: e88d37a5e59fe2e3c14b768ab9d11ae11100b68308278c9bf9b5a0ab1c68a532
+  domains=16, gates=3, LRs=8, agent_modes=4, states=13
+  vectors_evaluated=102, LR_counts={'LR-01': 3, 'LR-02': 2, 'LR-03': 2, 'LR-04': 2, 'LR-05': 3, 'LR-06': 4, 'LR-07': 8, 'LR-08': 4}
+  MCP input schemas validated=40, HTTP operations mapped=95, human-only operations=37
+  deliberately_corrupted_expected_values_detected=4
+  WARNING: reference oracle tests != product/API/DB/MCP end-to-end tests. No live deployment verified.
+
+V1.0.4 CROSS-FILE CONTRACT CHECK PASS
+  original source hash: e88d37a5e59fe2e3c14b768ab9d11ae11100b68308278c9bf9b5a0ab1c68a532
+  spec=PMO-Standalone-1.0.4, ruleVersion=lite-v1.0-standalone.3
+  API operations=95, paths=78, human-only=37
+  MCP tools=40, writes=22, typed output data contracts (runtime SDK verification pending)=40
+  DB dictionary business tables=16, technical tables=17, field declarations=421
+  UNSATISFIED BY DESIGN: real migrations / API server / SDK registration / Web E2E / host compatibility / business approvals
+EXIT_CODE=0
+
+========== 19_最终加固核验.py ==========
+FINAL V1.0.4 STATIC HARDENING CHECK PASS
+  source sha256=e88d37a5e59fe2e3c14b768ab9d11ae11100b68308278c9bf9b5a0ab1c68a532
+  spec=PMO-Standalone-1.0.4, ruleVersion=lite-v1.0-standalone.3
+  source clauses=102, rules=8, states=13
+  API operations=95 human-only=37, MCP typed DTOs=40
+  database field declarations=421, business tables=16, technical tables=17
+  negative tests: 40 extra-root, 40 extra-data, 40 missing-required all detected
+  LIMITATIONS: no app code, migrations, real Host tests, or signed business policies verified
+EXIT_CODE=0
+

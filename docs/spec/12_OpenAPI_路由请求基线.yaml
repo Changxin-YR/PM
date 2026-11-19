@@ -1,0 +1,5257 @@
+openapi: 3.1.0
+info:
+  title: PMO Standalone V1.0 API - M0 baseline
+  version: 1.0.4
+  description: 第三轮终审完成的 M0 路由与入参基线：路径和高危访问边界已对齐，但尚非运行中的 FastAPI OpenAPI。M0 必须补齐响应 data 专用 Schema 和实测。
+servers:
+- url: http://127.0.0.1:8000
+  description: 仅本地开发示例，生产由真实 HTTPS 域名替换
+security:
+- SessionCookie: []
+- AgentToken: []
+paths:
+  /api/v1/projects:
+    get:
+      operationId: pmo_project_list
+      summary: 检索授权范围内项目
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: query
+        name: filters
+        required: false
+        schema:
+          type: object
+          properties:
+            stage:
+              type: string
+            keyword:
+              type: string
+              maxLength: 160
+          additionalProperties: false
+        style: deepObject
+        explode: true
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - in: query
+        name: pageSize
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+    post:
+      operationId: pmo_project_create
+      summary: 只创建本人草稿，不直接授予 sponsor/pm；角色任命需单独邀请并接受；Agent 创建须有显式 allowProjectCreate 授权，orgId 和 creatorId 只能从已验证委托主体推导
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_organization_project_create_for_agent__human_authenticated_org_member
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 2
+                  maxLength: 60
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                description:
+                  type: string
+                  maxLength: 2000
+              required:
+              - code
+              - name
+              additionalProperties: false
+  /api/v1/projects/{projectId}:
+    get:
+      operationId: pmo_project_get
+      summary: 获取授权项目及当前版本
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: pmo_project_draft_update
+      summary: 本人未送审草稿可编辑
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fields:
+                  type: object
+                  maxProperties: 12
+                  additionalProperties: false
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 160
+                    description:
+                      type: string
+                      maxLength: 2000
+              required:
+              - fields
+              additionalProperties: false
+  /api/v1/projects/{projectId}/role-invitations:
+    post:
+      operationId: pmo_role_assignment_propose
+      summary: 创建角色任命邀请申请；本人必须在 Web 接受
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: approval_request
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                personId:
+                  type: string
+                  format: uuid
+                role:
+                  type: string
+                  enum:
+                  - sponsor
+                  - pm
+              required:
+              - personId
+              - role
+              additionalProperties: false
+  /api/v1/projects/{projectId}/charter:
+    put:
+      operationId: pmo_charter_save
+      summary: 草稿立项卡增量保存
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fieldsCharter:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    valueProp:
+                      type: string
+                      minLength: 1
+                      maxLength: 3000
+                    targetClient:
+                      type: string
+                      minLength: 1
+                      maxLength: 2000
+                    attractiveness:
+                      type: string
+                      minLength: 1
+                      maxLength: 3000
+                    expectedBenefit:
+                      type: string
+                      minLength: 1
+                      maxLength: 3000
+                    successCriteria:
+                      type: string
+                      minLength: 1
+                      maxLength: 3000
+                    roughCost:
+                      type: string
+                      pattern: ^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$
+                    roughEffort:
+                      type: string
+                      pattern: ^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$
+                    roughDuration:
+                      type: integer
+                      minimum: 1
+                      maximum: 3650
+                    topRisks:
+                      type: array
+                      minItems: 1
+                      items:
+                        type: object
+                        required:
+                        - statement
+                        - response
+                        properties:
+                          statement:
+                            type: string
+                            minLength: 1
+                          response:
+                            type: string
+                            minLength: 1
+                        additionalProperties: false
+              required:
+              - fieldsCharter
+              additionalProperties: false
+    get:
+      operationId: human_charter_get
+      summary: project_member 的 human_charter_get 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: project_member
+      responses:
+        '200': &id002
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401': &id001
+          description: 错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/reviews/prepare:
+    get:
+      operationId: pmo_review_prepare
+      summary: 生成关口检查及材料草稿不形成裁决
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: derived_read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: gate
+        required: true
+        schema:
+          type: string
+          enum:
+          - charter
+          - feasibility
+          - closing
+  /api/v1/projects/{projectId}/reviews:
+    post:
+      operationId: pmo_review_submit
+      summary: 提交评审申请，不得代审批
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: approval_request
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewType:
+                  type: string
+                  enum:
+                  - charter
+                  - feasibility
+                  - closing
+              required:
+              - reviewType
+              additionalProperties: false
+    get:
+      operationId: pmo_review_list
+      summary: 项目评审与状态
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/reviews/{reviewId}/decisions:
+    get:
+      operationId: pmo_decision_get
+      summary: 授权审查决议
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: reviewId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: human_review_decide
+      summary: reviewer 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: reviewId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verdict:
+                  type: string
+                  enum:
+                  - pass
+                  - conditional_pass
+                  - defer
+                  - redirect
+                  - reject
+                rationale:
+                  type: string
+                  minLength: 4
+                approvalRequestId:
+                  type: string
+                  format: uuid
+              required:
+              - verdict
+              - rationale
+              - approvalRequestId
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/projects/{projectId}/gates/check:
+    get:
+      operationId: pmo_gate_check
+      summary: 纯检查关口条件
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: gate
+        required: true
+        schema:
+          type: string
+          enum:
+          - charter
+          - feasibility
+          - closing
+  /api/v1/projects/{projectId}/milestones:
+    get:
+      operationId: pmo_milestone_list
+      summary: 查看里程碑
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: pmo_milestone_create
+      summary: 创建计划草稿
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                plannedDate:
+                  type: string
+                  format: date
+                forecastDate:
+                  type: string
+                  format: date
+                isKey:
+                  type: boolean
+                ordinal:
+                  type: integer
+                  minimum: 1
+                  maximum: 8
+              required:
+              - name
+              - plannedDate
+              additionalProperties: false
+  /api/v1/milestones/{milestoneId}:
+    patch:
+      operationId: pmo_milestone_draft_update
+      summary: 只修改尚未冻结里程碑
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: milestoneId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fieldsMilestone:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 160
+                    plannedDate:
+                      type: string
+                      format: date
+                    forecastDate:
+                      type: string
+                      format: date
+                    isKey:
+                      type: boolean
+                    ordinal:
+                      type: integer
+                      minimum: 1
+                      maximum: 8
+              required:
+              - fieldsMilestone
+              additionalProperties: false
+  /api/v1/milestones/{milestoneId}/forecast:
+    patch:
+      operationId: pmo_milestone_forecast
+      summary: 只改预测不改计划
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: bounded_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: milestoneId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                newDate:
+                  type: string
+                  format: date
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 2000
+              required:
+              - newDate
+              - reason
+              additionalProperties: false
+  /api/v1/projects/{projectId}/requirements:
+    get:
+      operationId: pmo_requirement_list
+      summary: 查看需求和基线版本
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: filters
+        required: false
+        schema:
+          type: object
+          properties:
+            stage:
+              type: string
+            keyword:
+              type: string
+              maxLength: 160
+          additionalProperties: false
+        style: deepObject
+        explode: true
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - in: query
+        name: pageSize
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+    post:
+      operationId: pmo_requirement_create
+      summary: 创建未冻结需求草稿
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                desc:
+                  type: string
+                  minLength: 5
+                  maxLength: 4000
+                priority:
+                  type: string
+                  enum:
+                  - P0
+                  - P1
+                  - P2
+                acceptanceCriteria:
+                  type: string
+                  minLength: 5
+                  maxLength: 4000
+                plannedConfirmAt:
+                  type: string
+                  format: date
+              required:
+              - desc
+              - priority
+              - acceptanceCriteria
+              additionalProperties: false
+  /api/v1/requirements/{requirementId}:
+    patch:
+      operationId: pmo_requirement_draft_update
+      summary: 只编辑未冻结需求
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: requirementId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fieldsRequirement:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    desc:
+                      type: string
+                      minLength: 5
+                      maxLength: 4000
+                    priority:
+                      type: string
+                      enum:
+                      - P0
+                      - P1
+                      - P2
+                    acceptanceCriteria:
+                      type: string
+                      minLength: 5
+                      maxLength: 4000
+                    plannedConfirmAt:
+                      type: string
+                      format: date
+              required:
+              - fieldsRequirement
+              additionalProperties: false
+  /api/v1/requirements/{requirementId}/deliver:
+    post:
+      operationId: pmo_requirement_deliver
+      summary: 仅标记已交付，不得客户验收
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: bounded_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: requirementId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evidenceRef:
+                  type: string
+                  minLength: 3
+                  maxLength: 256
+              required:
+              - evidenceRef
+              additionalProperties: false
+  /api/v1/requirements/{requirementId}/changes:
+    get:
+      operationId: pmo_requirement_change_history
+      summary: Q8 完整变更史
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: requirementId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/changes:
+    post:
+      operationId: pmo_change_propose
+      summary: 提交变更申请
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: approval_request
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetType:
+                  type: string
+                  enum:
+                  - requirement
+                  - milestone
+                  - budget
+                  - charter
+                targetId:
+                  type: string
+                  format: uuid
+                before:
+                  type: object
+                after:
+                  type: object
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 2000
+              required:
+              - targetType
+              - targetId
+              - before
+              - after
+              - reason
+              additionalProperties: false
+    get:
+      operationId: human_changes_list
+      summary: Web 查询，必须范围检查
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/costs:
+    get:
+      operationId: pmo_cost_summary
+      summary: 查看金额、人天与偏差
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: asOf
+        required: false
+        schema:
+          type: string
+          format: date-time
+  /api/v1/projects/{projectId}/cost-postings:
+    post:
+      operationId: pmo_cost_posting_propose
+      summary: 仅凭证候选不得计入实际
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                  - money
+                  - effort
+                amount:
+                  type: string
+                  pattern: ^-?(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$
+                period:
+                  type: string
+                  minLength: 4
+                  maxLength: 32
+                sourceRef:
+                  type: string
+                  minLength: 3
+                  maxLength: 256
+              required:
+              - type
+              - amount
+              - period
+              - sourceRef
+              additionalProperties: false
+    get:
+      operationId: human_cost_postings_list
+      summary: authorized_cost_viewer 的 human_cost_postings_list 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: authorized_cost_viewer
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/cost-budgets:
+    put:
+      operationId: pmo_cost_budget_draft_save
+      summary: 冻结前预算草稿
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                  - money
+                  - effort
+                budget:
+                  type: string
+                  pattern: ^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$
+              required:
+              - type
+              - budget
+              additionalProperties: false
+  /api/v1/projects/{projectId}/cost-forecasts:
+    put:
+      operationId: pmo_cost_forecast_save
+      summary: 修改剩余预测并记录原因
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: bounded_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                  - money
+                  - effort
+                forecastRemaining:
+                  type: string
+                  pattern: ^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 2000
+              required:
+              - type
+              - forecastRemaining
+              - reason
+              additionalProperties: false
+  /api/v1/analytics/preapproval-spending:
+    get:
+      operationId: pmo_preapproval_spending_list
+      summary: Q4 立项前实际发生支出；以授权项目过滤
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - in: query
+        name: pageSize
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /api/v1/projects/{projectId}/risks:
+    get:
+      operationId: pmo_risk_list
+      summary: 风险及阻塞状态
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: pmo_risk_create
+      summary: 风险登记
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                statement:
+                  type: string
+                  minLength: 5
+                  maxLength: 3000
+                prob:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                impact:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                response:
+                  type: string
+                  maxLength: 3000
+                isBlocking:
+                  type: boolean
+              required:
+              - statement
+              - prob
+              - impact
+              - response
+              additionalProperties: false
+  /api/v1/risks/{riskId}:
+    patch:
+      operationId: pmo_risk_update
+      summary: 只能变更描述与风险概率；降低 isBlocking/正式关闭或移交需人工审核
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: bounded_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: riskId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fieldsRisk:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    statement:
+                      type: string
+                      minLength: 5
+                      maxLength: 3000
+                    prob:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                    impact:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                    response:
+                      type: string
+                      maxLength: 3000
+              required:
+              - fieldsRisk
+              additionalProperties: false
+  /api/v1/projects/{projectId}/tasks:
+    get:
+      operationId: pmo_task_list
+      summary: 仅整改补强任务
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: human_task_create
+      summary: pm 的 human_task_create 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: pm
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        description: 受控目标资源 revision，若操作创建子对象则可为其父项目 revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                assigneeId: &id003
+                  type: string
+                  format: uuid
+                dueAt:
+                  type: string
+                  format: date-time
+                sourceType:
+                  type: string
+                  enum:
+                  - review
+                  - rule_event
+                  - remediation
+                sourceId: *id003
+              required:
+              - title
+              - sourceType
+              - sourceId
+              additionalProperties: false
+  /api/v1/tasks/{taskId}:
+    patch:
+      operationId: pmo_task_update
+      summary: 受控更新任务；不得自动绕过关口
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: bounded_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: taskId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fieldsTask:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    status:
+                      type: string
+                      enum:
+                      - todo
+                      - in_progress
+                      - blocked
+                      - done
+                      - cancelled
+                    dueAt:
+                      type: string
+                      format: date-time
+              required:
+              - fieldsTask
+              additionalProperties: false
+  /api/v1/projects/{projectId}/reports:
+    get:
+      operationId: pmo_report_list
+      summary: 日报周报状态
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: pmo_report_submit
+      summary: 提交结构化周报；记录受托原作者
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: bounded_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reportType:
+                  type: string
+                  enum:
+                  - daily
+                  - weekly
+                period:
+                  type: string
+                  minLength: 4
+                  maxLength: 32
+                structuredFields:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    milestone_progress:
+                      type: array
+                      items:
+                        type: object
+                    effort_person_days:
+                      type: string
+                      pattern: ^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$
+                    requirement_progress:
+                      type: array
+                      items:
+                        type: object
+                    risks_and_blockers:
+                      type: array
+                      items:
+                        type: object
+                  required:
+                  - milestone_progress
+                  - effort_person_days
+                  - requirement_progress
+                  - risks_and_blockers
+                narrative:
+                  type: string
+                  maxLength: 20000
+              required:
+              - reportType
+              - period
+              - structuredFields
+              additionalProperties: false
+  /api/v1/reports/{reportId}:
+    get:
+      operationId: pmo_report_get
+      summary: 单份报告及来源
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/reports/{reportId}/facts/proposals:
+    post:
+      operationId: pmo_fact_propose
+      summary: 仅 Fact 候选；后端定信任等级
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quote:
+                  type: string
+                  minLength: 1
+                  maxLength: 3000
+                sourceRef:
+                  type: string
+                  minLength: 3
+                  maxLength: 256
+                typedValue:
+                  oneOf:
+                  - type: string
+                  - type: number
+                  - type: integer
+                  - type: boolean
+                subject:
+                  type: string
+                  minLength: 1
+                  maxLength: 256
+                predicate:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                asOf:
+                  type: string
+                  format: date-time
+              required:
+              - quote
+              - sourceRef
+              - typedValue
+              - subject
+              - predicate
+              - asOf
+              additionalProperties: false
+  /api/v1/projects/{projectId}/health:
+    get:
+      operationId: pmo_health_get
+      summary: 查询四指标/健康快照
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: asOf
+        required: false
+        schema:
+          type: string
+          format: date-time
+  /api/v1/projects/{projectId}/alerts:
+    get:
+      operationId: pmo_alert_list
+      summary: 预警列表及处理状态
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/lessons/search:
+    get:
+      operationId: pmo_lessons_search
+      summary: 历史教训检索，项目权限过滤
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: read
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: query
+        name: keyword
+        required: false
+        schema:
+          type: string
+          maxLength: 160
+      - in: query
+        name: category
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - in: query
+        name: pageSize
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /api/v1/projects/{projectId}/stakeholders:
+    post:
+      operationId: pmo_stakeholder_create
+      summary: 仅创建联系信息，不绑定认证客户代表
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: draft_write
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                stakeholderType:
+                  type: string
+                  enum:
+                  - customer
+                  - partner
+                  - internal
+                influence:
+                  type: string
+                  maxLength: 100
+                expectation:
+                  type: string
+                  maxLength: 2000
+              required:
+              - name
+              - stakeholderType
+              additionalProperties: false
+    get:
+      operationId: human_stakeholder_list
+      summary: project_member 的 human_stakeholder_list 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: project_member
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/transition-requests:
+    post:
+      operationId: pmo_transition_request
+      summary: 提出迁移申请；不直接写 stage
+      x-actorTypes:
+      - human
+      - agent
+      x-scope: delegated_project_access
+      x-toolKind: approval_request
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 权限拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 版本或幂等冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 业务门槛拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        description: 当前业务记录 revision，十进制整数
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                toStage:
+                  type: string
+                  enum:
+                  - charter_review
+                  - designing
+                  - feasibility_review
+                  - executing
+                  - on_hold
+                  - delivering
+                  - closing_review
+                  - closed
+                  - retrospective
+                  - terminated
+                  - archived
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 2000
+              required:
+              - toStage
+              additionalProperties: false
+  /api/v1/cost-postings/{postingId}/verify:
+    post:
+      operationId: human_verify_cost_posting
+      summary: finance_verifier 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: finance_verifier
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: postingId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 4
+              required:
+              - reason
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cost-postings/{postingId}/reverse:
+    post:
+      operationId: human_reverse_cost_posting
+      summary: finance_verifier 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: finance_verifier
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: postingId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 4
+              required:
+              - reason
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/role-invitations/{invitationId}/accept:
+    post:
+      operationId: human_accept_role_assignment
+      summary: assignee 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: assignee
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: invitationId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/role-invitations/{invitationId}/decline:
+    post:
+      operationId: human_decline_role_assignment
+      summary: assignee 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: assignee
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: invitationId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/requirements/{requirementId}/customer-confirm:
+    post:
+      operationId: human_customer_confirm
+      summary: client_representative 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: client_representative
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: requirementId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evidenceRef:
+                  type: string
+                  minLength: 3
+              required:
+              - evidenceRef
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/projects/{projectId}/transitions:
+    post:
+      operationId: human_execute_transition
+      summary: authorized_reviewer 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                toStage:
+                  type: string
+                approvalRequestId:
+                  type: string
+                  format: uuid
+              required:
+              - toStage
+              - approvalRequestId
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/lessons/{lessonId}/confirm:
+    post:
+      operationId: human_confirm_lesson
+      summary: authorized_reviewer 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: lessonId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/health-snapshots/{snapshotId}/appeals:
+    post:
+      operationId: human_appeal_health
+      summary: pm 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: pm
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: snapshotId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+              required:
+              - reason
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/approvals/{approvalId}/decide:
+    post:
+      operationId: human_decide_approval
+      summary: authorized_approver 人工最终操作
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_approver
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: approvalId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - approve
+                  - reject
+                rationale:
+                  type: string
+                  minLength: 4
+              required:
+              - decision
+              - rationale
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Agent 及无权人被拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/analytics/health-alerts:
+    get:
+      operationId: human_alerts_overview
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+  /api/v1/approvals:
+    get:
+      operationId: human_approval_inbox
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+  /api/v1/admin/audits:
+    get:
+      operationId: admin_audits_list
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+  /api/v1/projects/{projectId}/health/history:
+    get:
+      operationId: human_health_history
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/closing/check:
+    get:
+      operationId: human_closing_check
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/projects/{projectId}/retrospective:
+    get:
+      operationId: human_retrospective_get
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      operationId: human_retrospective_save
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answers:
+                  type: array
+                  minItems: 4
+                  maxItems: 4
+                  items:
+                    type: string
+              required:
+              - answers
+              additionalProperties: false
+  /api/v1/projects/{projectId}/lessons:
+    get:
+      operationId: human_lessons_list
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: human_lessons_draft
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category:
+                  type: string
+                what:
+                  type: string
+                rootCause:
+                  type: string
+                advice:
+                  type: string
+              required:
+              - category
+              - what
+              - rootCause
+              - advice
+              additionalProperties: false
+  /api/v1/auth/me:
+    get:
+      operationId: auth_me
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+  /api/v1/auth/login:
+    post:
+      operationId: auth_login
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+              required:
+              - username
+              - password
+              additionalProperties: false
+  /api/v1/auth/logout:
+    post:
+      operationId: auth_logout
+      summary: Web 人工流程/列表接口（M0 补充详细响应 Schema）
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: false
+  /api/v1/reviews/{reviewId}/scores:
+    post:
+      operationId: human_review_score
+      summary: reviewer（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: reviewId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewType:
+                  type: string
+                  enum:
+                  - charter
+                  - feasibility
+                dimensions:
+                  oneOf:
+                  - type: object
+                    properties:
+                      strategicAlignment: &id006
+                        type: object
+                        required:
+                        - score
+                        - selectedAnchorCode
+                        - rationale
+                        properties:
+                          score:
+                            type: integer
+                            minimum: 1
+                            maximum: 5
+                          selectedAnchorCode:
+                            type: string
+                            minLength: 1
+                            maxLength: 40
+                            enum: &id004
+                            - score_1
+                            - between_1_3
+                            - score_3
+                            - between_3_5
+                            - score_5
+                          rationale:
+                            type: string
+                            minLength: 4
+                            maxLength: 1500
+                          evidenceRefs:
+                            type: array
+                            items: &id005
+                              type: string
+                              minLength: 4
+                              maxLength: 200
+                            maxItems: 12
+                        additionalProperties: false
+                        allOf:
+                        - if:
+                            properties:
+                              score:
+                                const: 1
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_1
+                        - if:
+                            properties:
+                              score:
+                                const: 2
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_1_3
+                        - if:
+                            properties:
+                              score:
+                                const: 3
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_3
+                        - if:
+                            properties:
+                              score:
+                                const: 4
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_3_5
+                        - if:
+                            properties:
+                              score:
+                                const: 5
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_5
+                      customerAttractiveness:
+                        type: object
+                        required:
+                        - score
+                        - selectedAnchorCode
+                        - rationale
+                        properties:
+                          score:
+                            type: integer
+                            minimum: 1
+                            maximum: 5
+                          selectedAnchorCode:
+                            type: string
+                            minLength: 1
+                            maxLength: 40
+                            enum: *id004
+                          rationale:
+                            type: string
+                            minLength: 4
+                            maxLength: 1500
+                          evidenceRefs:
+                            type: array
+                            items: *id005
+                            maxItems: 12
+                        additionalProperties: false
+                        allOf:
+                        - if:
+                            properties:
+                              score:
+                                const: 1
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_1
+                        - if:
+                            properties:
+                              score:
+                                const: 2
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_1_3
+                        - if:
+                            properties:
+                              score:
+                                const: 3
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_3
+                        - if:
+                            properties:
+                              score:
+                                const: 4
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_3_5
+                        - if:
+                            properties:
+                              score:
+                                const: 5
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_5
+                      financialResourceReturn:
+                        type: object
+                        required:
+                        - score
+                        - selectedAnchorCode
+                        - rationale
+                        properties:
+                          score:
+                            type: integer
+                            minimum: 1
+                            maximum: 5
+                          selectedAnchorCode:
+                            type: string
+                            minLength: 1
+                            maxLength: 40
+                            enum: *id004
+                          rationale:
+                            type: string
+                            minLength: 4
+                            maxLength: 1500
+                          evidenceRefs:
+                            type: array
+                            items: *id005
+                            maxItems: 12
+                        additionalProperties: false
+                        allOf:
+                        - if:
+                            properties:
+                              score:
+                                const: 1
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_1
+                        - if:
+                            properties:
+                              score:
+                                const: 2
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_1_3
+                        - if:
+                            properties:
+                              score:
+                                const: 3
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_3
+                        - if:
+                            properties:
+                              score:
+                                const: 4
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_3_5
+                        - if:
+                            properties:
+                              score:
+                                const: 5
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_5
+                      riskControllability:
+                        type: object
+                        required:
+                        - score
+                        - selectedAnchorCode
+                        - rationale
+                        properties:
+                          score:
+                            type: integer
+                            minimum: 1
+                            maximum: 5
+                          selectedAnchorCode:
+                            type: string
+                            minLength: 1
+                            maxLength: 40
+                            enum: *id004
+                          rationale:
+                            type: string
+                            minLength: 4
+                            maxLength: 1500
+                          evidenceRefs:
+                            type: array
+                            items: *id005
+                            maxItems: 12
+                        additionalProperties: false
+                        allOf:
+                        - if:
+                            properties:
+                              score:
+                                const: 1
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_1
+                        - if:
+                            properties:
+                              score:
+                                const: 2
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_1_3
+                        - if:
+                            properties:
+                              score:
+                                const: 3
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_3
+                        - if:
+                            properties:
+                              score:
+                                const: 4
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: between_3_5
+                        - if:
+                            properties:
+                              score:
+                                const: 5
+                            required:
+                            - score
+                          then:
+                            properties:
+                              selectedAnchorCode:
+                                const: score_5
+                    required:
+                    - strategicAlignment
+                    - customerAttractiveness
+                    - financialResourceReturn
+                    - riskControllability
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      technicalPath: *id006
+                      resourceMatch: *id006
+                      externalDependencies: *id006
+                      timeReasonableness: *id006
+                      acceptanceCriteria: *id006
+                    required:
+                    - technicalPath
+                    - resourceMatch
+                    - externalDependencies
+                    - timeReasonableness
+                    - acceptanceCriteria
+                    additionalProperties: false
+                round:
+                  type: integer
+                  minimum: 1
+              required:
+              - reviewType
+              - dimensions
+              - round
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/reviews/{reviewId}/appeals:
+    post:
+      operationId: human_review_appeal
+      summary: authorized_appellant（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_appellant
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: reviewId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 4
+              required:
+              - reason
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/projects/{projectId}/evidence:
+    post:
+      operationId: human_evidence_upload
+      summary: 上传受控附件：由服务端读取原始文件流，计算 sha256、校验 MIME 与 20MiB 限额并保存私有对象；客户端自报摘要不可信
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_member
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              - linkedResourceType
+              - linkedResourceId
+              properties:
+                file:
+                  type: string
+                  format: binary
+                linkedResourceType:
+                  type: string
+                  enum:
+                  - charter
+                  - milestone
+                  - requirement
+                  - review
+                  - risk
+                  - report
+                  - cost_posting
+                  - decision
+                linkedResourceId: *id003
+                description:
+                  type: string
+                  minLength: 0
+                  maxLength: 500
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      x-maxBodyBytes: 20971520
+    get:
+      operationId: human_evidence_list
+      summary: Web 查询，必须范围检查
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/reports/{reportId}/confirm:
+    post:
+      operationId: human_report_confirm
+      summary: pm（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: pm
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/facts/{factId}/verify:
+    post:
+      operationId: human_fact_verify
+      summary: verified_operator（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: verified_operator
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: factId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trust:
+                  type: string
+                  enum:
+                  - high
+                  - medium
+                  - low
+                evidenceRef:
+                  type: string
+              required:
+              - trust
+              - evidenceRef
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/facts/{factId}/clarify:
+    post:
+      operationId: human_fact_clarify
+      summary: pm（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: pm
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: factId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                correctedSourceRef:
+                  type: string
+              required:
+              - reason
+              - correctedSourceRef
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/risks/{riskId}/handoff:
+    post:
+      operationId: human_risk_handoff
+      summary: authorized_reviewer（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: riskId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                receiverPersonId:
+                  type: string
+                  format: uuid
+                acceptanceEvidenceRef:
+                  type: string
+              required:
+              - receiverPersonId
+              - acceptanceEvidenceRef
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/risks/{riskId}/close:
+    post:
+      operationId: human_risk_close
+      summary: authorized_reviewer（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: riskId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resolutionEvidenceRef:
+                  type: string
+              required:
+              - resolutionEvidenceRef
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/requirements/{requirementId}/accept:
+    post:
+      operationId: human_requirement_accept
+      summary: pm_or_reviewer（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: pm_or_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: requirementId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evidenceRef:
+                  type: string
+              required:
+              - evidenceRef
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/changes/{changeId}/approve:
+    post:
+      operationId: human_change_approve
+      summary: authorized_reviewer（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: changeId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rationale:
+                  type: string
+              required:
+              - rationale
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/changes/{changeId}/reject:
+    post:
+      operationId: human_change_reject
+      summary: authorized_reviewer（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: authorized_reviewer
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: changeId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rationale:
+                  type: string
+              required:
+              - rationale
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/me/agent-tokens:
+    post:
+      operationId: human_agent_token_create
+      summary: 申请范围受限的 Agent Token；目标 orgId 必须由服务端身份推导，创建新项目使用单独组织级授予
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: delegator
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowedProjectIds:
+                  type: array
+                  minItems: 0
+                  items:
+                    type: string
+                    format: uuid
+                allowedActions:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+                allowProjectCreate:
+                  type: boolean
+                  default: false
+                  description: 当且仅当服务端验证当前用户具有所在组织新建草稿权时启用
+              required:
+              - allowedProjectIds
+              - allowedActions
+              - expiresAt
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      operationId: human_agent_tokens_list
+      summary: Web 查询，必须范围检查
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+  /api/v1/me/agent-tokens/{tokenId}/revoke:
+    post:
+      operationId: human_agent_token_revoke
+      summary: delegator（Web 限定）
+      x-actorTypes:
+      - human
+      x-forbidAgentEvenViaHttp: true
+      x-requiredRole: delegator
+      security:
+      - SessionCookie: []
+      parameters:
+      - in: path
+        name: tokenId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+              required:
+              - reason
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: 拒绝
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/projects/{projectId}/members:
+    get:
+      operationId: human_members_list
+      summary: Web 查询，必须范围检查
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/evidence/{evidenceId}:
+    get:
+      operationId: human_evidence_get
+      summary: Web 查询，必须范围检查
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: evidenceId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/reports/{reportId}/facts:
+    get:
+      operationId: human_report_fact_list
+      summary: Web 查询，必须范围检查
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/me/role-invitations:
+    get:
+      operationId: human_my_role_invitations
+      summary: authenticated_user 的 human_my_role_invitations 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: authenticated_user
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+  /api/v1/milestones/{milestoneId}/complete:
+    post:
+      operationId: human_milestone_complete
+      summary: pm 的 human_milestone_complete 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: pm
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: milestoneId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        description: 受控目标资源 revision，若操作创建子对象则可为其父项目 revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actualDate:
+                  type: string
+                  format: date
+                evidenceRef: *id005
+                reason:
+                  type: string
+                  minLength: 4
+                  maxLength: 1000
+              required:
+              - actualDate
+              - evidenceRef
+              additionalProperties: false
+  /api/v1/reports/{reportId}/submit:
+    post:
+      operationId: human_report_submit_existing
+      summary: report_author_or_pm 的 human_report_submit_existing 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: report_author_or_pm
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        description: 受控目标资源 revision，若操作创建子对象则可为其父项目 revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 0
+                  maxLength: 500
+              required: []
+              additionalProperties: false
+  /api/v1/reports/{reportId}/analyze:
+    post:
+      operationId: human_report_analyze
+      summary: report_author_or_pm 的 human_report_analyze 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: report_author_or_pm
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        description: 受控目标资源 revision，若操作创建子对象则可为其父项目 revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                modelMode:
+                  type: string
+                  enum:
+                  - process_manager
+                forceNewRun:
+                  type: boolean
+                  default: false
+              required: []
+              additionalProperties: false
+  /api/v1/admin/users:
+    get:
+      operationId: admin_users_list
+      summary: system_admin 的 admin_users_list 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: system_admin
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+  /api/v1/admin/users/invitations:
+    post:
+      operationId: admin_user_invite
+      summary: system_admin 的 admin_user_invite 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: system_admin
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                role:
+                  type: string
+                  enum:
+                  - member
+                  - reviewer
+                  - pm
+                  - sponsor
+                  - client_representative
+              required:
+              - email
+              additionalProperties: false
+  /api/v1/admin/users/{userId}/status:
+    patch:
+      operationId: admin_user_update_status
+      summary: system_admin 的 admin_user_update_status 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: system_admin
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: userId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        description: 受控目标资源 revision，若操作创建子对象则可为其父项目 revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isActive:
+                  type: boolean
+                reason:
+                  type: string
+                  minLength: 4
+                  maxLength: 500
+              required:
+              - isActive
+              - reason
+              additionalProperties: false
+  /api/v1/admin/agents/tokens:
+    get:
+      operationId: admin_agent_tokens_list
+      summary: system_admin 的 admin_agent_tokens_list 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: system_admin
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+  /api/v1/admin/agents/tokens/{tokenId}/revoke:
+    post:
+      operationId: admin_agent_token_revoke
+      summary: system_admin 的 admin_agent_token_revoke 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: system_admin
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+      parameters:
+      - in: path
+        name: tokenId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]*$
+        description: 受控目标资源 revision，若操作创建子对象则可为其父项目 revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 4
+                  maxLength: 500
+              required:
+              - reason
+              additionalProperties: false
+  /api/v1/admin/members:
+    get:
+      operationId: admin_members_list
+      summary: system_admin 的 admin_members_list 操作
+      x-actorTypes:
+      - human
+      security:
+      - SessionCookie: []
+      x-requiredRole: system_admin
+      responses:
+        '200': *id002
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '422': *id001
+      x-forbidAgentEvenViaHttp: true
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: pmo_session
+    AgentToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  schemas:
+    OkResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: object
+        meta:
+          type: object
+          properties:
+            asOf:
+              type: string
+              format: date-time
+            ruleVersion:
+              type: string
+            revision:
+              type: integer
+            sourceRefs:
+              type: array
+              items:
+                type: string
+    ErrorResponse:
+      type: object
+      required:
+      - code
+      - message
+      - requestId
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: object
+x-maturity: design_baseline_not_running_service
+x-responseDataSchemaStatus: M0_ACTION_REQUIRED_define_per_operation_data_schemas

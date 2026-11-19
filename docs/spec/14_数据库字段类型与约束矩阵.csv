@@ -1,0 +1,422 @@
+﻿group,table,field,type_and_constraint,nullable,origin,implementation_status
+BUSINESS,change_entries,after,jsonb!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,approved_by,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,base_revision,bigint! >=1,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,before,jsonb!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,change_entries,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,change_entries,effective_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,change_entries,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,reason,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,requested_by,uuid! fk_persons,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,change_entries,status,varchar(20)! change_status,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,target_id,uuid! same_project_verified_in_service,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,target_type,varchar(32)! whitelisted,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,change_entries,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,charters,attractiveness,text? must_before_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,charters,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,charters,expected_benefit,text? must_before_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,charters,is_frozen,boolean! default_false,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,project_id,uuid! fk_projects unique_project,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,charters,rough_cost,"numeric(18,2)? >=0",YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,rough_duration_days,integer? >=1,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,rough_effort,"numeric(12,2)? >=0",YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,success_criteria,text? must_before_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,target_client,text? must_before_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,top_risks,jsonb? min1_before_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,charters,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,charters,value_prop,text? must_before_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,actual,"numeric(18,2)! server_derived_from_postings_only",NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,baseline_version,bigint! >=1,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,budget,"numeric(18,2)! >=0",NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,category,varchar(100)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,forecast_remaining,"numeric(18,2)! >=0",NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,is_current_baseline,boolean! DEFAULT true,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,period_end,date! >=period_start,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,period_start,date!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,source_ref,varchar(256)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,type,varchar(10)! money_or_effort,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,cost_entries,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,decisions,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,decisions,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,decisions,decided_at,timestamptz!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,decided_by,uuid! fk_persons,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,evidence_ref,varchar(256)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,exception_payload_hash,char(64)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,decisions,option,varchar(30)! review_verdict,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,rationale,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,review_id,uuid! fk_reviews,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,decisions,subject,varchar(255)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,decisions,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,facts,as_of,timestamptz!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,facts,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,facts,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,facts,predicate,varchar(120)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,quote,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,report_id,uuid! fk_reports,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,facts,source_ref,varchar(256)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,subject,varchar(256)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,trust,varchar(8)! high_medium_low,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,facts,validation_status,varchar(20)! candidate_verified_disputed_rejected,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,facts,value,jsonb! typed,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,advice,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,category,varchar(20)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,confirmed_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,confirmed_by,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,lessons,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,lessons,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,lessons,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,lessons,root_cause,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,status,varchar(20)! draft_confirmed,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,lessons,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,lessons,what,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,actual_date,date?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,milestones,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,milestones,evidence_ref,varchar(256)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,forecast_date,date?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,milestones,is_cancelled,boolean! default_false,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,is_key,boolean!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,name,varchar(160)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,ordinal,smallint! between_1_8,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,planned_date,date!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,milestones,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,milestones,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,persons,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,persons,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,persons,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,persons,is_active,boolean!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,persons,name,varchar(120)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,persons,org_id,uuid! fk_organizations,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,persons,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,persons,role,varchar(120)? description_not_privilege,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,persons,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,persons,user_id,uuid? fk_user_accounts,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,code,varchar(60)! unique_org,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,projects,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,projects,description,text?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,projects,initiator_id,uuid! fk_persons,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,name,varchar(160)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,org_id,uuid! fk_organizations,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,pm_id,uuid? fk_persons accepted_assignment_required_on_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,revision,bigint! >=1,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,sponsor_id,uuid? fk_persons accepted_assignment_required_on_review,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,stage,varchar(32)! enum_project_state,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,projects,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reports,author_id,uuid! fk_persons,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reports,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reports,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reports,is_current,boolean!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,is_current_confirmed,boolean! DEFAULT false,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+BUSINESS,reports,narrative,text?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,period,varchar(32)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,period_end,date!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+BUSINESS,reports,period_start,date!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+BUSINESS,reports,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reports,status,varchar(20)! report_state,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,structured_fields,jsonb!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,submitted_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,type,varchar(12)! daily_or_weekly,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reports,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reports,version_no,bigint! >=1,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+BUSINESS,requirements,acceptance_criteria,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,accepted_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,accepted_by,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,baseline_version,integer! >=0,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,requirements,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,requirements,desc,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,evidence_ref,varchar(256)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,requirements,planned_confirm_at,date? mandatory_before_baseline,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,priority,varchar(2)! P0_P1_P2,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,requirements,status,varchar(32)! requirement_state,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,requirements,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reviews,attendees,jsonb!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reviews,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reviews,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reviews,minutes,text?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reviews,round,integer! >=1,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,scheduled_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,snapshot_hash,char(64)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,status,varchar(20)! review_status,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,type,varchar(20)! charter_feasibility_closing,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,reviews,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,reviews,verdict,varchar(25)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,blocked_since,timestamptz? required_if_blocking,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,closed_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,risks,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,risks,handoff_to_id,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,risks,impact,smallint! between_1_5,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,is_blocking,boolean!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,owner_id,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,prob,smallint! between_1_5,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,response,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,risks,statement,text!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,status,varchar(20)! risk_status,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,risks,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,scorecards,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,scorecards,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,scorecards,dimensions,jsonb! score_1_to_5,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,scorecards,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,rationale,jsonb!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,review_id,uuid! fk_reviews,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,reviewed_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,reviewer_id,uuid! fk_persons,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,scorecards,round,integer! >=1,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,rule_version,varchar(64)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,total,"numeric(8,4)? server_calculated",YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,type,varchar(20)! charter_or_feasibility,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,scorecards,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,scorecards,verdict,varchar(40)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,contact_role,varchar(100)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,expectation,text?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,influence,varchar(100)?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,linked_person_id,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,name,varchar(160)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,type,varchar(20)! customer_partner_internal,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,stakeholders,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,tasks,assignee_id,uuid? fk_persons,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,completed_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,created_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,tasks,created_by,uuid! fk_persons,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,tasks,due_at,timestamptz?,YES,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,id,uuid! PRIMARY KEY,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,tasks,project_id,uuid! fk_projects,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,revision,bigint! >=1 DEFAULT 1,NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+BUSINESS,tasks,source_id,uuid!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,source_type,varchar(32)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,status,varchar(20)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,title,varchar(200)!,NO,Lite_16_classes + implementation,M0_MIGRATION_PENDING
+BUSINESS,tasks,updated_at,timestamptz! DEFAULT now(),NO,standalone_common_domain_columns,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,allow_project_create,boolean! DEFAULT false,NO,security_delegation_extension,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,allowed_actions,jsonb!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,allowed_project_ids,jsonb!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,client_label,varchar(100)?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,delegated_by,uuid! fk_user_accounts,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,expires_at,timestamptz!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,last_used_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,org_id,uuid! fk_organizations derived_from_delegator,NO,security_delegation_extension,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,revoked_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,status,varchar(16)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,token_fingerprint,varchar(24)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,agent_credentials,token_hash,char(64)! unique,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,action,varchar(80)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,decided_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,decided_by,uuid? fk_persons,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,delegated_by,uuid? fk_persons,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,expected_revision,bigint!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,payload_hash,char(64)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,reason,text?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,requested_by,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,rule_version,varchar(80)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,snapshot_hash,varchar(64)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,status,varchar(25)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,approval_requests,updated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,action,varchar(120)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,actor_id,uuid!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,actor_type,varchar(10)! human_agent,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,after_hash,char(64)?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,before_hash,char(64)?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,decision_id,uuid? fk_decisions,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,delegated_by,uuid? fk_user_accounts,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,error_code,varchar(80)?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,idempotency_key,varchar(160)?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,operation_id,uuid?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,org_id,uuid? fk_organizations,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,project_id,uuid? fk_projects,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,request_id,varchar(80)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,request_path,varchar(240)?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,result,varchar(20)! success_denied_failed,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,audit_logs,rule_version,varchar(80)?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,amount_signed,"numeric(18,2)! nonzero",NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,correlation_id,uuid?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,cost_entry_id,uuid! fk_cost_entries same_project_type_period,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,created_by,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,occurred_at,timestamptz! real_business_time,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,period,varchar(32)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,posting_of_id,uuid? fk_cost_postings max_one_verified_full_reversal,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,reversal_reason,text?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,source_fingerprint,char(64)? unique_when_verified,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,source_ref,varchar(256)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,source_type,varchar(20)! enum_money_effort,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,status,varchar(20)! draft_pending_verified,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,type,varchar(10)! money_effort,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,verification_note,text?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,verified_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,cost_postings,verified_by,uuid? fk_persons not_same_creator,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,mime_type,varchar(100)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,original_name,varchar(255)! sanitized,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,owner_id,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,quarantine_status,varchar(24)! enum_pending_accepted_rejected,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,sha256,char(64)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,size_bytes,bigint! <=20971520,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,storage_key,varchar(250)! random,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,uploaded_by,uuid! fk_persons,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,verified_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,evidence_files,verified_by,uuid? fk_persons,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,fact_id,uuid! fk_facts,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,reason,text!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,requested_by,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,resolved_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,resolved_by,uuid? fk_persons,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,source_ref,varchar(255)?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,fact_clarifications,status,varchar(20)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_appeals,appealed_by,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_appeals,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,health_appeals,reason,text!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_appeals,reviewed_by,uuid? fk_persons,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_appeals,snapshot_id,uuid! fk_health_snapshots,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_appeals,verdict,varchar(20)?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,as_of,timestamptz!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,calculated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,data_trust,varchar(20)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,input_hash,char(64)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,input_revisions,jsonb!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,results,jsonb!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,rule_event_ids,jsonb?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,rule_version,varchar(64)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,health_snapshots,source_refs,jsonb!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,actor_id,uuid!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,actor_type,varchar(16)! enum_human_agent,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,completed_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,delegated_by,uuid? fk_persons,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,expires_at,timestamptz!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,idempotency_key,varchar(128)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,operation,varchar(120)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,org_id,uuid? fk_organizations,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,request_hash,char(64)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,resource_id,uuid?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,response_body,jsonb? encrypted_or_redacted_response_for_replay,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,response_hash,char(64)?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,response_status,integer?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,idempotency_keys,status,varchar(20)! enum_pending_completed_failed,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,notifications,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,notifications,delivered_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,notifications,delivery_status,varchar(20)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,notifications,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,notifications,payload,jsonb!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,notifications,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,notifications,read_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,notifications,read_by,uuid? fk_persons,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,notifications,recipient_person_id,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,notifications,rule_event_id,uuid? fk_rule_events,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,organizations,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,organizations,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,organizations,name,varchar(160)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,organizations,status,varchar(16)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,dedupe_key,varchar(160)! unique,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,event_type,varchar(80)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,last_error,text? redacted,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,locked_until,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,next_attempt_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,payload,jsonb!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,published_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,retry_count,integer! DEFAULT 0,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,status,varchar(16)! enum_pending_processing_sent_dead_letter,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,outbox_events,updated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_members,accepted_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_members,assigned_by,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_members,assignment_status,varchar(12)! pending_accepted_declined_revoked,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_members,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_members,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,project_members,invitation_decision_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_members,invitation_expires_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_members,person_id,uuid! fk_persons,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_members,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_members,revoked_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_members,role,varchar(40)! sponsor_pm_reviewer_member_client,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_members,updated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,answers,jsonb! four_questions,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,completed_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,confirmed_by,uuid? fk_persons,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,project_id,uuid! fk_projects unique,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,revision,bigint! >=1 DEFAULT 1,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,project_retrospectives,updated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,business_period,varchar(32)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,fingerprint,char(64)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,notified_at,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,project_id,uuid! fk_projects,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,rule_id,varchar(6)! LR_01_to_08,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,rule_version,varchar(80)!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,source_refs,jsonb!,NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,status,varchar(20)!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,rule_events,updated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,created_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,is_active,boolean!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,last_login_at,timestamptz?,YES,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,locked_until,timestamptz?,YES,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,password_hash,text!,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,updated_at,timestamptz! DEFAULT now(),NO,final_v1.0.4_engineering_fix,M0_MIGRATION_PENDING
+TECHNICAL,user_accounts,username,varchar(120)! unique,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,user_roles,id,uuid! PRIMARY KEY,NO,standalone_common_tech_columns,M0_MIGRATION_PENDING
+TECHNICAL,user_roles,role,varchar(40)! system_admin_finance_verifier_etc,NO,standalone_infrastructure,M0_MIGRATION_PENDING
+TECHNICAL,user_roles,user_id,uuid! fk_user_accounts,NO,standalone_infrastructure,M0_MIGRATION_PENDING

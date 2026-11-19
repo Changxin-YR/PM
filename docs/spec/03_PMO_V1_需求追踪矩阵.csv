@@ -1,0 +1,67 @@
+﻿id,source,requirement,module,api_or_mcp,web_page,acceptance,priority
+ENT-Project,§2.1,项目、编号、PM、发起人、生命周期,projects,GET/POST /projects,UI-02/03,"Q2,T01,T03",P0
+ENT-Charter,§2.1,价值主张、客户、吸引力、预算人天周期、风险,charters_reviews,GET/PUT /projects/{id}/charter,UI-04,"Q1,T03",P0
+ENT-Scorecard,§2.1,评分人独立打分、锚点、权重、判定建议,charters_reviews,POST /reviews/{id}/scores,UI-05,"Q1,T04",P0
+ENT-Milestone,§2.1,至多八个、计划/预测/实际、完成证据,milestones,/projects/{id}/milestones,UI-06,"Q2,Q3",P0
+ENT-CostEntry,§2.1,money/effort预算实际剩余预测双口径,costs,/projects/{id}/costs,UI-08,"Q2,Q4,T05",P0
+ENT-Requirement,§2.1,P0/P1/P2需求、验收、客户确认,requirements_changes,/projects/{id}/requirements,UI-07/11,"Q2,Q8,T04",P0
+ENT-ChangeEntry,§2.1,基线变更前后版本、原因、审批,requirements_changes,/projects/{id}/changes,UI-07,"Q8,T05",P0
+ENT-Risk,§2.1,风险概率影响/阻塞、应对、移交,risks_tasks,/projects/{id}/risks,UI-09,Q5,P0
+ENT-Review,§2.1,三道关口、排期、参与人、决议,charters_reviews,/projects/{id}/reviews,UI-05,"Q1,Q5,T03",P0
+ENT-Decision,§2.1,裁决人、原因、时间、例外快照,charters_reviews,/reviews/{id}/decisions,UI-05,"T04,T07",P0
+ENT-Report,§2.1,日报周报、定型字段、叙述、周期,reports_facts,/projects/{id}/reports,UI-10,"Q2,T06",P0
+ENT-Fact,§2.1,事实、原话、来源、信任档、冲突,reports_facts,/reports/{id}/facts,UI-10,T06,P0
+ENT-Task,§2.1,补强、预警、负责人与截止日期,risks_tasks,/projects/{id}/tasks,UI-09,T10,P0
+ENT-Lesson,§2.1,复盘教训、类别、根因、人工确认,lessons,/projects/{id}/lessons,UI-12,"Q6,T08",P0
+ENT-Person,§2.1,组织身份、角色与责任人,auth,/admin/members,UI-14,T02,P0
+ENT-Stakeholder,§2.1,客户、合作方、内部利益相关者,projects,/projects/{id}/stakeholders,UI-03/11,T04,P0
+GATE-01,§3,关口01: 立项价值四维评分与人工决定,charters_reviews,/projects/{id}/gates/{type}/check,UI-05/11,"Q1,T04",P0
+GATE-02,§3,关口02: 可行性五维短板及补强任务,charters_reviews,/projects/{id}/gates/{type}/check,UI-05/11,"T03,T10",P0
+GATE-03,§3,关口03: 结项需求/成本/风险三门槛,charters_reviews,/projects/{id}/gates/{type}/check,UI-05/11,"Q5,T04",P0
+LR-01,§4.2,阻止跳过任意关口,projects,health/transition services,UI-13,T03,P0
+LR-02,§4.2,落地评分任一≤2否决,charters_reviews,health/transition services,UI-13,T10,P0
+LR-03,§4.2,里程碑推迟无变更记录预警,health_rules,health/transition services,UI-13,"Q3,Q7",P0
+LR-04,§4.2,金额或人天>15%超支预警,health_rules,health/transition services,UI-13,"Q2,Q7",P0
+LR-05,§4.2,未审批的需求变更冻结验收,requirements_changes,health/transition services,UI-13,"Q8,T10",P0
+LR-06,§4.2,两期周报缺失或里程碑无证据数据不可信,reports_facts,health/transition services,UI-13,"Q7,T06",P0
+LR-07,§4.2,结项三门槛不达标拒绝,charters_reviews,health/transition services,UI-13,"Q5,T10",P0
+LR-08,§4.2,结项后两周未复盘通知且不能归档,lessons,health/transition services,UI-13,T10,P0
+AG-A1,§6,立项评审助理,agent,internal assistant four modes,UI-15,"Q1,T08",P0
+AG-A2,§6,过程管家,agent,internal assistant four modes,UI-15,"Q2,Q7,T06",P0
+AG-A3,§6,结项回顾助理,agent,internal assistant four modes,UI-15,"Q5,T08",P0
+AG-A4,§6,台账问答,agent,internal assistant four modes,UI-15,"Q2,Q6,T01",P0
+Q1,§7.1,立项分数与弱项/教训,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q1,P0
+Q2,§7.1,四项健康指标与来源,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q2,P0
+Q3,§7.1,预测漂移无变更,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q3,P0
+Q4,§7.1,未评审提前产生支出,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q4,P0
+Q5,§7.1,结项缺口,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q5,P0
+Q6,§7.1,历史 Lesson,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q6,P0
+Q7,§7.1,本周黄红及原因,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q7,P0
+Q8,§7.1,需求变更历史,acceptance,report/read endpoints,UI-03/05/06/07/08/11/12/13,Q8,P0
+T01,独立系统新增验收,Web/MCP读同一项目一致,crosscutting,API+MCP,Web/CLI,T01,P0
+T02,独立系统新增验收,Web/MCP越权隔离,crosscutting,API+MCP,Web/CLI,T02,P0
+T03,独立系统新增验收,跳关均被拒绝,crosscutting,API+MCP,Web/CLI,T03,P0
+T04,独立系统新增验收,Agent自批/客户确认/归档禁用,crosscutting,API+MCP,Web/CLI,T04,P0
+T05,独立系统新增验收,幂等与revision冲突,crosscutting,API+MCP,Web/CLI,T05,P0
+T06,独立系统新增验收,Fact注入/来源不足不污染指标,crosscutting,API+MCP,Web/CLI,T06,P0
+T07,独立系统新增验收,审计与事务一致,crosscutting,API+MCP,Web/CLI,T07,P0
+T08,独立系统新增验收,Lesson用于下一次立项,crosscutting,API+MCP,Web/CLI,T08,P0
+T09,独立系统新增验收,真实MCP Host工具/授权可用,crosscutting,API+MCP,Web/CLI,T09,P0
+T10,独立系统新增验收,规则及备份恢复,crosscutting,API+MCP,Web/CLI,T10,P0
+SEC-01,独立系统实现补充,项目级RBAC与代理授权,auth,crosscutting,UI-01..UI-15,"T02,T04",P0
+SEC-02,独立系统实现补充,事务幂等与乐观锁,common,crosscutting,UI-01..UI-15,"T05,T07",P0
+SEC-03,独立系统实现补充,凭证访问与Fact来源校验,reports_facts,crosscutting,UI-01..UI-15,"T02,T06",P0
+OPS-01,独立系统实现补充,Compose/备份恢复/日志,infra,crosscutting,UI-01..UI-15,T10,P0
+UI-ALL,独立系统实现补充,Web可独立完成项目生命周期,frontend,crosscutting,UI-01..UI-15,"Q1-Q8,T01",P0
+ENG-201,§20.2 (implementation-only),16类领域Owner归属与写入责任,auth_domain,owner-matrix,UI-14,"T02,T07",P0
+ENG-202,§20.3 (implementation-only),成功/拒绝审计包含事件时间和请求身份,audit,audit_logs,UI-14,T07,P0
+ENG-203,§20.3 (implementation-only),幂等响应体及状态码重放和同键异参冲突,common_idempotency,idempotency_keys,ALL,T05,P0
+ENG-204,§20.3 (implementation-only),Outbox调度重试租约与死信去重,notifications,outbox_events,UI-13,T10,P0
+ENG-205,§20.6 (implementation-only),Agent组织级创建后仅本令牌新项目草稿续写,agent_auth,agent_credentials,UI-14,"T02,T09",P0
+ENG-206,§20.4 (implementation-only),人工Decision/状态迁移/审计同事务,gates,transition_project,UI-05,"T03,T07",P0
+ENG-207,§20.5 (implementation-only),逐边状态迁移权限矩阵,auth_domain,transition_project,UI-05,"T03,T04",P0
+ENG-208,§20.3 (implementation-only),报告当前已确认版本和历史保留,reports_facts,reports.version_no,UI-10,T06,P1
+ENG-209,§20.3 (implementation-only),当前预算版本唯一不混合历史,costs,cost_entries.baseline_version,UI-08,"Q2,T05",P0
+ENG-210,§20.6 (implementation-only),40项MCP工具封闭业务返回DTO,mcp,11_MCP_工具契约.json,UI-15,"T01,T09",P0
+ENG-211,§20.7 (implementation-only),Codex自治权限分级与业务签核阻断,governance,17_Codex,UI-14,T04,P0
+ENG-212,§8.6 (implementation-only),无模型时人工业务完整可用,agent_fallback,LLM-disabled,UI-01..15,"T06,T10",P0
