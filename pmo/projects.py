@@ -69,8 +69,33 @@ def create(header,command,key):
         c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==a.credential).values(allowed_project_ids=[str(i) for i in (*a.projects,row.id)]))
         result=Result[ProjectView](data=view(row),meta=meta(op,[f'project:{row.id}@1']))
         response=result.model_dump(mode='json'); digest=fingerprint(response)
-        c.execute(idem.insert().values(actor_id=a.credential,actor_type='agent',org_id=a.org,delegated_by=a.person,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=30),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=row.id))
-        c.execute(db.audit_logs.insert().values(action=op,actor_type='agent',actor_id=a.credential,delegated_by=a.account,org_id=a.org,project_id=row.id,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION))
-        c.execute(db.outbox_events.insert().values(dedupe_key=request_id,event_type='project.created',payload={'projectId':str(row.id)},status='pending'))
+        record_write(c,a,key,op,request_id,row.id,payload_hash,response,digest,'project.created')
+        return result
+    return run(header,op,write)
+
+def record_write(c,a,key,op,request_id,pid,payload_hash,response,digest,event,before=None):
+    c.execute(db.idempotency_keys.insert().values(actor_id=a.credential,actor_type='agent',org_id=a.org,delegated_by=a.person,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=30),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=pid))
+    c.execute(db.audit_logs.insert().values(action=op,actor_type='agent',actor_id=a.credential,delegated_by=a.account,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION))
+    c.execute(db.outbox_events.insert().values(dedupe_key=request_id,event_type=event,payload={'projectId':str(pid)},status='pending'))
+
+def update_draft(header,pid,expected,command,key):
+    op='pmo_project_draft_update'
+    fields=command.fields.model_dump(exclude_unset=True)
+    payload_hash=fingerprint({'projectId':str(pid),'fields':fields,'expectedRevision':expected})
+    def write(c,a,request_id):
+        project=db.projects
+        row=c.execute(sa.select(project).where(visible(a),project.c.id==pid).with_for_update()).mappings().one_or_none()
+        if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
+        if row.initiator_id!=a.person or row.stage!='drafting': raise Failure(403,'FORBIDDEN')
+        idem=db.idempotency_keys
+        old=c.execute(sa.select(idem).where(idem.c.actor_id==a.credential,idem.c.operation==op,idem.c.idempotency_key==key)).mappings().one_or_none()
+        if old:
+            if old.request_hash!=payload_hash: raise Failure(409,'IDEMPOTENCY_CONFLICT')
+            return Result[ProjectView].model_validate(old.response_body)
+        if expected!=row.revision: raise Failure(409,'VERSION_CONFLICT')
+        updated=c.execute(project.update().where(project.c.id==pid,project.c.revision==expected).values(**fields,revision=expected+1,updated_at=sa.func.now()).returning(project)).mappings().one()
+        result=Result[ProjectView](data=view(updated),meta=meta(op,[f'project:{pid}@{updated.revision}']))
+        response=result.model_dump(mode='json')
+        record_write(c,a,key,op,request_id,pid,payload_hash,response,fingerprint(response),'project.updated',before=fingerprint({'name':row.name,'description':row.description,'revision':row.revision}))
         return result
     return run(header,op,write)

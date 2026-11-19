@@ -13,7 +13,7 @@ from mcp.server.stdio import stdio_server
 
 server = Server('pmo-lite')
 catalog = json.loads(next((Path(__file__).resolve().parents[1]/'docs/spec').glob('11_*.json')).read_text(encoding='utf-8'))
-implemented = {'pmo_project_list','pmo_project_create','pmo_project_get'}
+implemented = {'pmo_project_list','pmo_project_create','pmo_project_get','pmo_project_draft_update'}
 tools = {t['name']: types.Tool(name=t['name'],description=t['description'],inputSchema=t['inputSchema'],outputSchema={**t['outputSchema'],'type':'object'}) for t in catalog['tools'] if t['name'] in implemented}
 
 @server.list_tools()
@@ -43,6 +43,9 @@ async def invoke(name,arguments):
                 response=await client.post(url,headers=headers,json={k:v for k,v in arguments.items() if k!='idempotencyKey'})
             elif name=='pmo_project_get':
                 response=await client.get(f"{url}/{UUID(arguments['projectId'])}",headers=headers)
+            elif name=='pmo_project_draft_update':
+                headers.update({'If-Match':str(arguments['expectedRevision']),'Idempotency-Key':arguments['idempotencyKey']})
+                response=await client.patch(f"{url}/{UUID(arguments['projectId'])}",headers=headers,json={'fields':arguments['fields']})
             else:
                 query={k:arguments[k] for k in ('page','pageSize') if k in arguments}
                 query.update({f'filters[{k}]':v for k,v in arguments.get('filters',{}).items()})

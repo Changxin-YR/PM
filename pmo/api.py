@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
-from .contracts import CreateProject, ProjectView, ProjectDetail, Page, Result
+from .contracts import CreateProject, ProjectView, ProjectDetail, Page, Result, UpdateDraft
 from .identity import Failure
 from . import projects
 
@@ -24,3 +24,7 @@ def detail(projectId:UUID,authorization:Auth=None)->Result[ProjectDetail]:
 @app.post('/api/v1/projects',operation_id='pmo_project_create')
 def create(command:CreateProject,key:Annotated[str,Header(alias='Idempotency-Key',min_length=8,max_length=128)],authorization:Auth=None)->Result[ProjectView]:
     return projects.create(authorization,command,key)
+
+@app.patch('/api/v1/projects/{projectId}',operation_id='pmo_project_draft_update')
+def update(projectId:UUID,command:UpdateDraft,key:Annotated[str,Header(alias='Idempotency-Key',min_length=8,max_length=128)],expected:Annotated[str,Header(alias='If-Match',pattern=r'^[1-9][0-9]{0,18}$')],authorization:Auth=None)->Result[ProjectView]:
+    return projects.update_draft(authorization,projectId,int(expected),command,key)

@@ -47,13 +47,17 @@ def test_mcp_stdio(live,actor):
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
-            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get'}
+            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update'}
             async def call(op,args):
                 r=await session.call_tool(op,args); assert not r.isError,r.content
                 jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']
             p=await call('pmo_project_create',{'code':'MCP-1','name':'合成项目','idempotencyKey':uuid4().hex})
             assert (await call('pmo_project_get',{'projectId':p['projectId']}))['project']==p
             assert (await call('pmo_project_list',{'filters':{'keyword':'合成'}}))['items']==[p]
+            args={'projectId':p['projectId'],'fields':{'name':'改名'},'expectedRevision':1,'idempotencyKey':uuid4().hex}
+            updated=await call('pmo_project_draft_update',args)
+            assert updated['revision']==2 and updated['name']=='改名'
+            assert (await call('pmo_project_draft_update',args))==updated
             bad=await session.call_tool('pmo_project_list',{'pageSize':101}); assert bad.isError
             with engine.begin() as c: c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==ident).values(revoked_at=sa.func.now()))
             denied=await session.call_tool('pmo_project_list',{}); assert denied.isError and denied.structuredContent['error']['code']=='UNAUTHORIZED'
@@ -72,3 +76,26 @@ def test_failed_audit_rolls_back_project_and_grant(live,actor):
             assert c.scalar(sa.select(db.idempotency_keys.c.id).where(db.idempotency_keys.c.actor_id==ident)) is None
     finally:
         with engine.begin() as c: c.exec_driver_sql('DROP TRIGGER injected_failure ON audit_logs')
+
+def test_two_credentials_cannot_overwrite_new_revision(live,actor):
+    engine,api,_,_=live; token,ident=actor()
+    headers={'Authorization':'Bearer '+token,'Idempotency-Key':uuid4().hex}
+    project=api.post('/api/v1/projects',headers=headers,json={'code':'LOCK-1','name':'Race'}).json()['data']
+    from hashlib import sha256
+    from secrets import token_urlsafe
+    second=token_urlsafe(32); digest=sha256(second.encode()).hexdigest()
+    with engine.begin() as c:
+        src=dict(c.execute(sa.select(db.agent_credentials).where(db.agent_credentials.c.id==ident)).mappings().one())
+        src.update(id=uuid4(),token_hash=digest,token_fingerprint=digest[:12]); c.execute(db.agent_credentials.insert().values(**src))
+    path='/api/v1/projects/'+project['projectId']
+    def update(pair):
+        index,secret=pair
+        return api.patch(path,headers={'Authorization':'Bearer '+secret,'Idempotency-Key':uuid4().hex,'If-Match':'1'},json={'fields':{'name':f'Winner {index}'}})
+    with ThreadPoolExecutor(2) as pool: responses=list(pool.map(update,enumerate([token,second])))
+    assert sorted(r.status_code for r in responses)==[200,409]
+    winner=next(r.json()['data'] for r in responses if r.is_success)
+    assert next(r for r in responses if not r.is_success).json()['code']=='VERSION_CONFLICT'
+    assert api.get(path,headers=headers).json()['data']['project']==winner
+    assert winner['revision']==2
+    for fields in [{'stage':'closed'},{'name':None},{}]:
+        assert api.patch(path,headers={**headers,'If-Match':'2'},json={'fields':fields}).status_code==422

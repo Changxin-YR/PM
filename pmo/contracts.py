@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Generic, Literal, TypeVar
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 RULE_VERSION = 'lite-v1.0-standalone.3'
 
@@ -21,6 +21,19 @@ class ProjectView(Strict):
     revision: int
     orgId: UUID
     createdAt: datetime
+
+class DraftFields(Strict):
+    name: str | None = Field(default=None,min_length=1,max_length=160,pattern=r'\S')
+    description: str | None = Field(default=None,max_length=2000)
+
+    @model_validator(mode='after')
+    def valid_changes(self):
+        if not self.model_fields_set or any(getattr(self,k) is None for k in self.model_fields_set):
+            raise ValueError('At least one non-null draft field is required')
+        return self
+
+class UpdateDraft(Strict):
+    fields: DraftFields
 
 class Page(Strict):
     items: list[ProjectView]

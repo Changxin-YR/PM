@@ -55,6 +55,6 @@ def actor(live):
             user=c.scalar(db.user_accounts.insert().values(username=uuid4().hex,password_hash='!disabled!',is_active=True).returning(db.user_accounts.c.id))
             person=uuid4(); c.execute(db.persons.insert().values(id=person,created_by=person,user_id=user,org_id=org,name='Fixture',is_active=True))
             digest=hashlib.sha256(token.encode()).hexdigest()
-            credential=c.scalar(db.agent_credentials.insert().values(delegated_by=user,org_id=org,allow_project_create=grant,allowed_project_ids=[],allowed_actions=['pmo_project_list','pmo_project_create','pmo_project_get'],expires_at=datetime.now(UTC)+timedelta(minutes=10),status='active',token_hash=digest,token_fingerprint=digest[:12]).returning(db.agent_credentials.c.id))
+            credential=c.scalar(db.agent_credentials.insert().values(delegated_by=user,org_id=org,allow_project_create=grant,allowed_project_ids=[],allowed_actions=['pmo_project_list','pmo_project_create','pmo_project_get','pmo_project_draft_update'],expires_at=datetime.now(UTC)+timedelta(minutes=10),status='active',token_hash=digest,token_fingerprint=digest[:12]).returning(db.agent_credentials.c.id))
         return token,credential
     return make
