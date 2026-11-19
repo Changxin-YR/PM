@@ -20,4 +20,6 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 
 在第二个 PowerShell 中执行 `.\scripts\dev.ps1 web`，访问 `http://127.0.0.1:5173`。首次使用空库 bootstrap 交互输入组织、账号、姓名和口令，需至少 14 字符，不回显。不能在已初始化库重复运行。系统管理员不自动获得任何项目审批角色。Web 可登录、新建草稿、搜索、分页及改名；送审、成本、结项等尚非可用功能。退出会撤销数据库会话。构建命令 `npm.cmd --prefix web run build`。浏览器测试在 Windows 默认使用已安装的 Microsoft Edge，不需要生产口令或模型密钥。
 
-MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。仅接受环境中的 `PMO_AGENT_TOKEN` 和可选的 `PMO_API_PORT`。当前支持 `pmo_project_list`、`pmo_project_get`、`pmo_project_create`、`pmo_project_draft_update`。测试夹具签发限时合成令牌并真实调用，尚无面向用户的令牌管理页。不应通过直接改库为真实用户授权。
+点击项目名称可维护里程碑（最多八个）及需求草稿。项目进入冻结阶段后，草稿编辑权限不会代替正式变更审批。
+
+MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。使用 `PMO_AGENT_TOKEN` 和可选的 `PMO_API_PORT`。已实现 10 个工具：项目列表/详情/创建/草稿修改，以及里程碑、需求各自的列表/创建/草稿修改。工具白名单见 `pmo/tool_routes.py`。测试夹具签发限时合成令牌并真实调用，尚无面向用户的令牌管理页。不应通过直接改库为真实用户授权。

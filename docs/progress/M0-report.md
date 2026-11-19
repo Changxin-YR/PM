@@ -30,3 +30,9 @@
 起点 `56b26f5`。迁移 0003 新增显式授权来源；被委托人获任 PM 不会使自动草稿令牌继续读取已送审项目。新增里程碑列表、创建、草稿修订三条 REST 和 MCP，以及 Web 项目资料抽屉。运行时基线 10/95 REST、7/40 MCP；真实 SDK 覆盖三个新增工具。最终 `scripts/dev.ps1 test` 8 passed / 11.47s，`scripts/dev.ps1 browser` 1 passed / 11.24s；`scripts/dev.ps1 check` 及 `npm.cmd --prefix web run build` exit 0。
 
 负例覆盖：不同令牌争第八个槽位、同序号冲突、异项目读写、旧版本、冻结计划直接修改、非法 actualDate、自动授权跨阶段以及成员撤销。浏览器初测因项目名称改为可操作按钮导致旧单元格定位失效，更新为检查真实按钮后全程通过。延期预警、完成证据和三道关口未计入上述验收。
+
+## 需求草稿与基线防护
+
+起点 `652615e`，迁移仍为 0003。新增需求创建、分页筛选、草稿修订，真实 stdio 注册并调用三个对应工具。草稿 baselineVersion=0；项目已存在冻结版本时禁止直接创建或修改范围；不提供草稿删除、取消或确认按钮。浏览器显示验收标准和计划确认日期，MCP 返回按 V1 的封闭 DTO 序列化。
+
+`scripts/dev.ps1 test` 9 passed / 10.57s；`mypy pmo --ignore-missing-imports` 18 文件 exit 0；浏览器初测精确定位优先级失败，给原生 select 补充无障碍名称，`scripts/dev.ps1 browser` 实测 1 passed / 21.09s；Vue 类型检查和 Vite 构建退出 0（主包体积警告仍存在）。测试中新设定的冻结记录仅用于拒绝路径，不代表已实现冻结审批。实时查询 8001 `/openapi.json` 有 13 个具名操作。当前 M0 未整体验收。

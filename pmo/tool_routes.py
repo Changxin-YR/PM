@@ -7,4 +7,7 @@ ROUTES = {
     'pmo_milestone_list': ('GET', '/projects/{projectId}/milestones'),
     'pmo_milestone_create': ('POST', '/projects/{projectId}/milestones'),
     'pmo_milestone_draft_update': ('PATCH', '/milestones/{milestoneId}'),
+    'pmo_requirement_list': ('GET', '/projects/{projectId}/requirements'),
+    'pmo_requirement_create': ('POST', '/projects/{projectId}/requirements'),
+    'pmo_requirement_draft_update': ('PATCH', '/requirements/{requirementId}'),
 }

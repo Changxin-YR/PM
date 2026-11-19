@@ -54,6 +54,12 @@ async def invoke(name,arguments):
             if response.status_code>=500: return failed('SERVICE_UNAVAILABLE')
             if not response.is_success: return failed(response.json().get('code','VALIDATION_FAILED'))
             result={'ok':True,**response.json()}
+            # REST editors need these fields; the V1 MCP output contract is closed.
+            if name in {'pmo_requirement_list','pmo_requirement_create','pmo_requirement_draft_update'}:
+                records=result['data']['items'] if name=='pmo_requirement_list' else [result['data']]
+                for record in records:
+                    record.pop('acceptanceCriteria',None)
+                    record.pop('plannedConfirmAt',None)
             jsonschema.Draft202012Validator(tools[name].outputSchema).validate(result)
             return result
     except (httpx.HTTPError,ValueError,jsonschema.ValidationError):
