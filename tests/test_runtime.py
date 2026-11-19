@@ -1,0 +1,74 @@
+import asyncio
+import os
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
+import jsonschema
+import sqlalchemy as sa
+from mcp import ClientSession,StdioServerParameters
+from mcp.client.stdio import stdio_client
+from pmo import schema_v1 as db
+
+def test_postgres_contract_and_downgrade_guard(live,actor):
+    actor()
+    engine,_,_,env=live
+    inspector=sa.inspect(engine)
+    assert len(db.metadata.tables)==33
+    assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
+    result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
+    assert result.returncode and 'Refusing destructive downgrade' in result.stderr
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0001'
+
+def test_concurrent_replay_scope_and_denial(live,actor):
+    engine,api,_,_=live
+    token,ident=actor(); h={'Authorization':'Bearer '+token,'Idempotency-Key':uuid4().hex}
+    body={'code':'QA-1','name':'Acceptance'}
+    def send(_): return api.post('/api/v1/projects',headers=h,json=body)
+    with ThreadPoolExecutor(2) as pool: responses=list(pool.map(send,range(2)))
+    assert [r.status_code for r in responses]==[200,200]
+    assert responses[0].json()==responses[1].json()
+    pid=responses[0].json()['data']['projectId']
+    assert api.post('/api/v1/projects',headers=h,json={**body,'name':'Different'}).status_code==409
+    assert api.get('/api/v1/projects',headers=h).json()['data']['total']==1
+    other,_=actor(False); h2={**h,'Authorization':'Bearer '+other}
+    assert api.get('/api/v1/projects',headers=h2).json()['data']['items']==[]
+    assert api.get('/api/v1/projects/'+pid,headers=h2).status_code==404
+    assert api.post('/api/v1/projects',headers=h2,json=body).status_code==403
+    with engine.connect() as c:
+        for table in [db.project_members,db.audit_logs]:
+            assert c.scalar(sa.select(sa.func.count()).select_from(table).where(table.c.project_id==pid))==(0 if table is db.project_members else 1)
+        assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
+
+def test_mcp_stdio(live,actor):
+    engine,_,port,_=live; token,ident=actor()
+    async def scenario():
+        env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
+        params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
+        async with stdio_client(params) as streams, ClientSession(*streams) as session:
+            await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
+            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get'}
+            async def call(op,args):
+                r=await session.call_tool(op,args); assert not r.isError,r.content
+                jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']
+            p=await call('pmo_project_create',{'code':'MCP-1','name':'合成项目','idempotencyKey':uuid4().hex})
+            assert (await call('pmo_project_get',{'projectId':p['projectId']}))['project']==p
+            assert (await call('pmo_project_list',{'filters':{'keyword':'合成'}}))['items']==[p]
+            bad=await session.call_tool('pmo_project_list',{'pageSize':101}); assert bad.isError
+            with engine.begin() as c: c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==ident).values(revoked_at=sa.func.now()))
+            denied=await session.call_tool('pmo_project_list',{}); assert denied.isError and denied.structuredContent['error']['code']=='UNAUTHORIZED'
+    asyncio.run(scenario())
+
+def test_failed_audit_rolls_back_project_and_grant(live,actor):
+    engine,api,_,_=live; token,ident=actor(); key=uuid4().hex
+    with engine.begin() as c:
+        c.exec_driver_sql('CREATE TRIGGER injected_failure BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION pmo_append_only()')
+    try:
+        response=api.post('/api/v1/projects',headers={'Authorization':'Bearer '+token,'Idempotency-Key':key},json={'code':'FAIL-AUDIT','name':'Rollback'})
+        assert response.status_code==500
+        with engine.connect() as c:
+            assert c.scalar(sa.select(db.projects.c.id).where(db.projects.c.code=='FAIL-AUDIT')) is None
+            assert c.scalar(sa.select(db.agent_credentials.c.allowed_project_ids).where(db.agent_credentials.c.id==ident))==[]
+            assert c.scalar(sa.select(db.idempotency_keys.c.id).where(db.idempotency_keys.c.actor_id==ident)) is None
+    finally:
+        with engine.begin() as c: c.exec_driver_sql('DROP TRIGGER injected_failure ON audit_logs')

@@ -1,0 +1,27 @@
+name: Backend verification
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-alpine
+        env:
+          POSTGRES_DB: pmo_test
+          POSTGRES_USER: pmo_test
+          POSTGRES_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-ci-only
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 2s --health-retries 20
+    env:
+      PMO_TEST_DATABASE_URL: postgresql+psycopg://pmo_test:${{ github.run_id }}-${{ github.run_attempt }}-ci-only@127.0.0.1:5432/pmo_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+      - run: uv sync --locked --python 3.12
+      - run: for s in docs/spec/{08,15,19}_*.py; do uv run --locked python "$s" || exit 1; done
+      - run: uv run --locked mypy pmo --ignore-missing-imports
+      - run: uv run --locked pytest -q

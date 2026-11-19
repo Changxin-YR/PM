@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16.14-alpine
+    environment:
+      POSTGRES_DB: pmo
+      POSTGRES_USER: pmo
+      POSTGRES_PASSWORD: ${PMO_DB_PASSWORD:?set a development-only database password}
+    ports:
+      - "127.0.0.1:${PMO_DB_PORT:-55439}:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pmo -d pmo"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+volumes:
+  dbdata:

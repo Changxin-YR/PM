@@ -1,0 +1,43 @@
+from datetime import datetime
+from typing import Generic, Literal, TypeVar
+from uuid import UUID
+from pydantic import BaseModel, ConfigDict, Field
+
+RULE_VERSION = 'lite-v1.0-standalone.3'
+
+class Strict(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+class CreateProject(Strict):
+    code: str = Field(min_length=2,max_length=60,pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    name: str = Field(min_length=1,max_length=160,pattern=r'\S')
+    description: str = Field(default='',max_length=2000)
+
+class ProjectView(Strict):
+    projectId: UUID
+    code: str
+    name: str
+    stage: Literal['drafting','charter_review','rejected','designing','feasibility_review','executing','on_hold','delivering','closing_review','closed','retrospective','terminated','archived']
+    revision: int
+    orgId: UUID
+    createdAt: datetime
+
+class Page(Strict):
+    items: list[ProjectView]
+    page: int
+    pageSize: int
+    total: int
+
+class ProjectDetail(Strict):
+    project: ProjectView
+
+class Meta(Strict):
+    asOf: datetime
+    sourceRefs: list[str]
+    ruleVersion: str = RULE_VERSION
+    operationId: str
+
+T = TypeVar('T')
+class Result(Strict, Generic[T]):
+    data: T
+    meta: Meta
