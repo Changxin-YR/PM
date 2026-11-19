@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+from hmac import compare_digest
 from hashlib import sha256
 from uuid import UUID
 import sqlalchemy as sa
 from . import schema_v1 as db
+from .session_schema import sessions
 
 class Failure(Exception):
     def __init__(self, status: int, code: str):
@@ -17,8 +19,25 @@ class Actor:
     actions: frozenset[str]
     projects: tuple[UUID,...]
     create: bool
+    kind: str = 'agent'
 
-def authenticate(conn, header: str | None) -> Actor:
+@dataclass(frozen=True)
+class Browser:
+    cookie: str
+    csrf: str
+    writing: bool
+
+def browser_actor(conn,identity):
+    s,p,u,o=sessions,db.persons,db.user_accounts,db.organizations
+    digest=sha256(identity.cookie.encode()).hexdigest()
+    row=conn.execute(sa.select(u.c.id,p.c.id.label('person'),p.c.org_id,s.c.csrf_hash).select_from(s.join(u,u.c.id==s.c.account_id).join(p,p.c.user_id==u.c.id).join(o,o.c.id==p.c.org_id)).where(
+        s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u)).mappings().one_or_none()
+    if not row: raise Failure(401,'UNAUTHORIZED')
+    if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash): raise Failure(403,'CSRF_INVALID')
+    return Actor(row.id,row.person,row.id,row.org_id,frozenset({'pmo_project_list','pmo_project_create','pmo_project_get','pmo_project_draft_update','auth_logout','auth_me'}),(),True,'human')
+
+def authenticate(conn, header: str | Browser | None) -> Actor:
+    if isinstance(header,Browser): return browser_actor(conn,header)
     if not header or not header.startswith('Bearer ') or len(header)>1024:
         raise Failure(401,'UNAUTHORIZED')
     digest = sha256(header[7:].encode()).hexdigest()
@@ -34,4 +53,5 @@ def authenticate(conn, header: str | None) -> Actor:
 def visible(actor):
     p,m=db.projects,db.project_members
     member=sa.exists(sa.select(m.c.id).where(m.c.project_id==p.c.id,m.c.person_id==actor.person,m.c.assignment_status=='accepted',m.c.revoked_at.is_(None)))
-    return sa.and_(p.c.org_id==actor.org,p.c.id.in_(actor.projects),sa.or_(member,sa.and_(p.c.initiator_id==actor.person,p.c.stage=='drafting')))
+    scope=sa.and_(p.c.org_id==actor.org,sa.or_(member,sa.and_(p.c.initiator_id==actor.person,p.c.stage=='drafting')))
+    return sa.and_(scope,p.c.id.in_(actor.projects)) if actor.kind=='agent' else scope

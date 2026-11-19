@@ -8,11 +8,16 @@ PMO Lite 独立项目管理系统，V1.0.4 规格的开发仓库。当前为 M0 
 
 ```powershell
 .\scripts\dev.ps1 setup
+npm.cmd --prefix web ci
 .\scripts\dev.ps1 check
 .\scripts\dev.ps1 test
+.\scripts\dev.ps1 browser
+.\scripts\dev.ps1 bootstrap
 .\scripts\dev.ps1 api
 ```
 
 OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。测试通过随机 PostgreSQL schema 创建合成数据，启动单独的 HTTP 和 MCP 进程；不要将测试 URL 指向生产库。API 不会返回未授权的项目。
+
+在第二个 PowerShell 中执行 `.\scripts\dev.ps1 web`，访问 `http://127.0.0.1:5173`。首次使用空库 bootstrap 交互输入组织、账号、姓名和口令，需至少 14 字符，不回显。不能在已初始化库重复运行。系统管理员不自动获得任何项目审批角色。Web 可登录、新建草稿、搜索、分页及改名；送审、成本、结项等尚非可用功能。退出会撤销数据库会话。构建命令 `npm.cmd --prefix web run build`。浏览器测试在 Windows 默认使用已安装的 Microsoft Edge，不需要生产口令或模型密钥。
 
 MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。仅接受环境中的 `PMO_AGENT_TOKEN` 和可选的 `PMO_API_PORT`。当前支持 `pmo_project_list`、`pmo_project_get`、`pmo_project_create`、`pmo_project_draft_update`。测试夹具签发限时合成令牌并真实调用，尚无面向用户的令牌管理页。不应通过直接改库为真实用户授权。

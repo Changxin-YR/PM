@@ -18,3 +18,9 @@
 ## 后续增量：草稿乐观锁
 
 前一代码提交 `b4fb4b2`。新增 `PATCH /api/v1/projects/{projectId}` 和第四个真实工具 `pmo_project_draft_update`。只允许本人 drafting 草稿，字段白名单为 name/description；请求签名包括项目、版本、字段。重复重放优先于旧版本冲突，但在权限复查之后。两个独立凭据同 revision 的并发请求得到 200/409，数据库最终 revision=2。`scripts/dev.ps1 test` 实际 5 passed / 9.51s，`scripts/dev.ps1 check` 三套静态检查及 mypy 退出 0。当前基线操作/工具均已实现 4 项。不要将这些用例外推到未实现的业务操作。
+
+## 人工会话和浏览器验证
+
+草稿锁提交 `9ad90df`。迁移 0002 增加两张工程支撑表；测试库升级/回滚/再升级和开发库升级成功。新增人工登录、读取当前身份及退出；采用 Argon2id、服务器端限速、HttpOnly SameSite cookie、CSRF 和会话摘要。真实人工与 Agent 共用项目记录，项目修订、审计、权限检查复用同一服务。仅本地 HTTP 开发允许非 Secure Cookie。生产未获准部署。
+
+`scripts/dev.ps1 test` 六项通过（16.76s）；`mypy pmo --ignore-missing-imports` 十一个源文件通过；Vue 类型检查和 Vite 构建 exit 0（主包超过 500kB 警告）；`scripts/dev.ps1 browser` 首次 1 passed / 13.40s，真实 Edge、Vite、HTTP 和 PostgreSQL。以上是草稿链路证据，不是整期验收。

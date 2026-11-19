@@ -1,4 +1,4 @@
-param([ValidateSet('setup','test','api','check')] [string]$Action='api')
+param([ValidateSet('setup','test','api','check','web','browser','bootstrap')] [string]$Action='api')
 $ErrorActionPreference='Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 function Invoke-Checked([scriptblock]$Command) {
@@ -22,6 +22,7 @@ if ($line -notmatch '^PMO_DB_PASSWORD=([0-9a-fA-F]{64})$') { throw 'Invalid loca
 $env:DATABASE_URL="postgresql+psycopg://pmo:$($matches[1])@127.0.0.1:55439/pmo"
 $env:PMO_TEST_DATABASE_URL=$env:DATABASE_URL
 $env:PYTHONUTF8='1'
+$env:PMO_LOCAL_HTTP='1'
 $python='.venv/Scripts/python.exe'
 switch ($Action) {
   setup {
@@ -29,6 +30,9 @@ switch ($Action) {
     Invoke-Checked { & $python -m alembic upgrade head }
   }
   test { Invoke-Checked { & $python -m pytest -q } }
+  browser { Invoke-Checked { & $python -m pytest -q tests/browser_case.py } }
+  web { Invoke-Checked { npm.cmd --prefix web run dev } }
+  bootstrap { $org=Read-Host 'Organization'; $user=Read-Host 'Username'; $name=Read-Host 'Display name'; Invoke-Checked { & $python -m pmo.bootstrap --organization $org --username $user --name $name } }
   check {
     foreach ($prefix in '08','15','19') {
       $script=(Get-Item "docs/spec/$prefix*.py").FullName

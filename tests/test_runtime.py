@@ -18,7 +18,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0001'
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0002'
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live

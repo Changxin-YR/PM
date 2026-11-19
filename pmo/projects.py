@@ -29,7 +29,7 @@ def run(header,op,fn):
     except Failure as e:
         if actor:
             with engine().begin() as c:
-                c.execute(db.audit_logs.insert().values(action=op,actor_type='agent',actor_id=actor.credential,delegated_by=actor.account,org_id=actor.org,result='denied',error_code=e.code,request_id=request_id,rule_version=RULE_VERSION))
+                c.execute(db.audit_logs.insert().values(action=op,actor_type=actor.kind,actor_id=actor.credential,delegated_by=actor.account if actor.kind=='agent' else None,org_id=actor.org,result='denied',error_code=e.code,request_id=request_id,rule_version=RULE_VERSION))
         raise
 
 def listing(header,page,size,stage,keyword):
@@ -66,7 +66,8 @@ def create(header,command,key):
             return Result[ProjectView].model_validate(old.response_body)
         row=c.execute(insert(db.projects).values(**command.model_dump(),org_id=a.org,created_by=a.person,initiator_id=a.person,revision=1,stage='drafting').on_conflict_do_nothing(index_elements=['org_id','code']).returning(db.projects)).mappings().one_or_none()
         if not row: raise Failure(409,'PROJECT_CODE_CONFLICT')
-        c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==a.credential).values(allowed_project_ids=[str(i) for i in (*a.projects,row.id)]))
+        if a.kind=='agent':
+            c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==a.credential).values(allowed_project_ids=[str(i) for i in (*a.projects,row.id)]))
         result=Result[ProjectView](data=view(row),meta=meta(op,[f'project:{row.id}@1']))
         response=result.model_dump(mode='json'); digest=fingerprint(response)
         record_write(c,a,key,op,request_id,row.id,payload_hash,response,digest,'project.created')
@@ -74,8 +75,8 @@ def create(header,command,key):
     return run(header,op,write)
 
 def record_write(c,a,key,op,request_id,pid,payload_hash,response,digest,event,before=None):
-    c.execute(db.idempotency_keys.insert().values(actor_id=a.credential,actor_type='agent',org_id=a.org,delegated_by=a.person,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=30),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=pid))
-    c.execute(db.audit_logs.insert().values(action=op,actor_type='agent',actor_id=a.credential,delegated_by=a.account,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION))
+    c.execute(db.idempotency_keys.insert().values(actor_id=a.credential,actor_type=a.kind,org_id=a.org,delegated_by=a.person if a.kind=='agent' else None,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=30),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=pid))
+    c.execute(db.audit_logs.insert().values(action=op,actor_type=a.kind,actor_id=a.credential,delegated_by=a.account if a.kind=='agent' else None,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION))
     c.execute(db.outbox_events.insert().values(dedupe_key=request_id,event_type=event,payload={'projectId':str(pid)},status='pending'))
 
 def update_draft(header,pid,expected,command,key):
