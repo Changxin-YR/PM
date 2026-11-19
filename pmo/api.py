@@ -1,22 +1,18 @@
 from typing import Annotated
 from uuid import UUID
 import os
-from fastapi import Depends, FastAPI, Header, Query, Request, Response
+from fastapi import FastAPI, Header, Query, Request, Response
 from pydantic import Field, SecretStr
 from fastapi.responses import JSONResponse
 from .contracts import CreateProject, ProjectView, ProjectDetail, Page, Result, UpdateDraft
 from .identity import Browser, Failure
 from .contracts import Strict
 from . import projects, sessions
+from .access import Auth
+from .milestone_routes import router as milestone_router
 
 app=FastAPI(title='PMO Lite',version='0.1.0')
-def identity(request:Request,authorization:Annotated[str|None,Header()]=None):
-    cookie=request.cookies.get('pmo_session')
-    if authorization and cookie: raise Failure(401,'AMBIGUOUS_IDENTITY')
-    if cookie: return Browser(cookie,request.headers.get('X-CSRF-Token',''),request.method not in ('GET','HEAD'))
-    return authorization
-
-Auth=Annotated[Browser|str|None,Depends(identity)]
+app.include_router(milestone_router)
 
 class Login(Strict):
     username:str=Field(min_length=1,max_length=120)

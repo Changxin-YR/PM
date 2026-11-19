@@ -2,7 +2,7 @@
 "ENT-Project","§2.1","项目、编号、PM、发起人、生命周期","Q2,T01,T03","NOT_TESTED","",""
 "ENT-Charter","§2.1","价值主张、客户、吸引力、预算人天周期、风险","Q1,T03","NOT_TESTED","",""
 "ENT-Scorecard","§2.1","评分人独立打分、锚点、权重、判定建议","Q1,T04","NOT_TESTED","",""
-"ENT-Milestone","§2.1","至多八个、计划/预测/实际、完成证据","Q2,Q3","NOT_TESTED","",""
+"ENT-Milestone","§2.1","至多八个、计划/预测/实际、完成证据","Q2,Q3","PARTIAL_DRAFT_AND_CAP","pmo/milestones.py","tests/test_milestones.py;tests/test_runtime.py;tests/browser_case.py"
 "ENT-CostEntry","§2.1","money/effort预算实际剩余预测双口径","Q2,Q4,T05","NOT_TESTED","",""
 "ENT-Requirement","§2.1","P0/P1/P2需求、验收、客户确认","Q2,Q8,T04","NOT_TESTED","",""
 "ENT-ChangeEntry","§2.1","基线变更前后版本、原因、审批","Q8,T05","NOT_TESTED","",""

@@ -24,3 +24,9 @@
 草稿锁提交 `9ad90df`。迁移 0002 增加两张工程支撑表；测试库升级/回滚/再升级和开发库升级成功。新增人工登录、读取当前身份及退出；采用 Argon2id、服务器端限速、HttpOnly SameSite cookie、CSRF 和会话摘要。真实人工与 Agent 共用项目记录，项目修订、审计、权限检查复用同一服务。仅本地 HTTP 开发允许非 Secure Cookie。生产未获准部署。
 
 `scripts/dev.ps1 test` 六项通过（16.76s）；`mypy pmo --ignore-missing-imports` 十一个源文件通过；Vue 类型检查和 Vite 构建 exit 0（主包超过 500kB 警告）；`scripts/dev.ps1 browser` 首次 1 passed / 13.40s，真实 Edge、Vite、HTTP 和 PostgreSQL。以上是草稿链路证据，不是整期验收。
+
+## 项目范围和里程碑
+
+起点 `56b26f5`。迁移 0003 新增显式授权来源；被委托人获任 PM 不会使自动草稿令牌继续读取已送审项目。新增里程碑列表、创建、草稿修订三条 REST 和 MCP，以及 Web 项目资料抽屉。运行时基线 10/95 REST、7/40 MCP；真实 SDK 覆盖三个新增工具。最终 `scripts/dev.ps1 test` 8 passed / 11.47s，`scripts/dev.ps1 browser` 1 passed / 11.24s；`scripts/dev.ps1 check` 及 `npm.cmd --prefix web run build` exit 0。
+
+负例覆盖：不同令牌争第八个槽位、同序号冲突、异项目读写、旧版本、冻结计划直接修改、非法 actualDate、自动授权跨阶段以及成员撤销。浏览器初测因项目名称改为可操作按钮导致旧单元格定位失效，更新为检查真实按钮后全程通过。延期预警、完成证据和三道关口未计入上述验收。

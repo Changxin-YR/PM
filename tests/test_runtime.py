@@ -18,7 +18,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0002'
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0003'
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live
@@ -47,7 +47,7 @@ def test_mcp_stdio(live,actor):
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
-            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update'}
+            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update'}
             async def call(op,args):
                 r=await session.call_tool(op,args); assert not r.isError,r.content
                 jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']
@@ -58,6 +58,9 @@ def test_mcp_stdio(live,actor):
             updated=await call('pmo_project_draft_update',args)
             assert updated['revision']==2 and updated['name']=='改名'
             assert (await call('pmo_project_draft_update',args))==updated
+            m=await call('pmo_milestone_create',{'projectId':p['projectId'],'name':'试运行','plannedDate':'2026-12-15','idempotencyKey':uuid4().hex})
+            m2=await call('pmo_milestone_draft_update',{'milestoneId':m['milestoneId'],'expectedRevision':1,'fieldsMilestone':{'name':'交付验证','isKey':True},'idempotencyKey':uuid4().hex})
+            assert m2['revision']==2 and (await call('pmo_milestone_list',{'projectId':p['projectId']}))['items']==[m2]
             bad=await session.call_tool('pmo_project_list',{'pageSize':101}); assert bad.isError
             with engine.begin() as c: c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==ident).values(revoked_at=sa.func.now()))
             denied=await session.call_tool('pmo_project_list',{}); assert denied.isError and denied.structuredContent['error']['code']=='UNAUTHORIZED'

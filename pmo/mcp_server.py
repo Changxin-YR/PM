@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 from uuid import UUID
+from string import Formatter
+from .tool_routes import ROUTES
 
 import httpx
 import jsonschema
@@ -13,7 +15,7 @@ from mcp.server.stdio import stdio_server
 
 server = Server('pmo-lite')
 catalog = json.loads(next((Path(__file__).resolve().parents[1]/'docs/spec').glob('11_*.json')).read_text(encoding='utf-8'))
-implemented = {'pmo_project_list','pmo_project_create','pmo_project_get','pmo_project_draft_update'}
+implemented = set(ROUTES)
 tools = {t['name']: types.Tool(name=t['name'],description=t['description'],inputSchema=t['inputSchema'],outputSchema={**t['outputSchema'],'type':'object'}) for t in catalog['tools'] if t['name'] in implemented}
 
 @server.list_tools()
@@ -32,24 +34,23 @@ async def invoke(name,arguments):
     except jsonschema.ValidationError:
         return failed('VALIDATION_FAILED')
     port=int(os.environ.get('PMO_API_PORT','8000'))
-    url=f'http://127.0.0.1:{port}/api/v1/projects'
+    method,template=ROUTES[name]
+    body=dict(arguments)
+    path=template.format(**{field:str(UUID(body.pop(field))) for _,field,_,_ in Formatter().parse(template) if field})
+    url=f'http://127.0.0.1:{port}/api/v1{path}'
     token=os.environ.get('PMO_AGENT_TOKEN')
     if not token: return failed('UNAUTHORIZED')
     headers={'Authorization':f'Bearer {token}'}
     try:
         async with httpx.AsyncClient(timeout=10,trust_env=False) as client:
-            if name=='pmo_project_create':
-                headers['Idempotency-Key']=arguments['idempotencyKey']
-                response=await client.post(url,headers=headers,json={k:v for k,v in arguments.items() if k!='idempotencyKey'})
-            elif name=='pmo_project_get':
-                response=await client.get(f"{url}/{UUID(arguments['projectId'])}",headers=headers)
-            elif name=='pmo_project_draft_update':
-                headers.update({'If-Match':str(arguments['expectedRevision']),'Idempotency-Key':arguments['idempotencyKey']})
-                response=await client.patch(f"{url}/{UUID(arguments['projectId'])}",headers=headers,json={'fields':arguments['fields']})
+            if method=='GET':
+                filters=body.pop('filters',{})
+                body.update({f'filters[{k}]':v for k,v in filters.items()})
+                response=await client.get(url,headers=headers,params=body)
             else:
-                query={k:arguments[k] for k in ('page','pageSize') if k in arguments}
-                query.update({f'filters[{k}]':v for k,v in arguments.get('filters',{}).items()})
-                response=await client.get(url,headers=headers,params=query)
+                headers['Idempotency-Key']=body.pop('idempotencyKey')
+                if 'expectedRevision' in body: headers['If-Match']=str(body.pop('expectedRevision'))
+                response=await client.request(method,url,headers=headers,json=body)
             if response.status_code>=500: return failed('SERVICE_UNAVAILABLE')
             if not response.is_success: return failed(response.json().get('code','VALIDATION_FAILED'))
             result={'ok':True,**response.json()}

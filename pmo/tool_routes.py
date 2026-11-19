@@ -1,0 +1,10 @@
+"""Only contract operations backed by a live implementation belong here."""
+ROUTES = {
+    'pmo_project_list': ('GET', '/projects'),
+    'pmo_project_get': ('GET', '/projects/{projectId}'),
+    'pmo_project_create': ('POST', '/projects'),
+    'pmo_project_draft_update': ('PATCH', '/projects/{projectId}'),
+    'pmo_milestone_list': ('GET', '/projects/{projectId}/milestones'),
+    'pmo_milestone_create': ('POST', '/projects/{projectId}/milestones'),
+    'pmo_milestone_draft_update': ('PATCH', '/milestones/{milestoneId}'),
+}
