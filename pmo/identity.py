@@ -35,8 +35,10 @@ class Browser:
 def browser_actor(conn,identity):
     s,p,u,o=sessions,db.persons,db.user_accounts,db.organizations
     digest=sha256(identity.cookie.encode()).hexdigest()
+    # Serialize the account's browser writes without blocking audit foreign-key checks
+    # in an Agent transaction already holding its project lock.
     row=conn.execute(sa.select(u.c.id,p.c.id.label('person'),p.c.org_id,s.c.csrf_hash).select_from(s.join(u,u.c.id==s.c.account_id).join(p,p.c.user_id==u.c.id).join(o,o.c.id==p.c.org_id)).where(
-        s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u)).mappings().one_or_none()
+        s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u, key_share=True)).mappings().one_or_none()
     if not row: raise Failure(401,'UNAUTHORIZED')
     actor=Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
         'human_agent_token_create','human_agent_tokens_list','human_agent_token_revoke','admin_agent_tokens_list','admin_agent_token_revoke',
@@ -44,7 +46,9 @@ def browser_actor(conn,identity):
         'human_evidence_upload','human_evidence_list','human_evidence_get','human_evidence_verify','human_milestone_complete',
         'human_cost_postings_list','human_verify_cost_posting','human_reverse_cost_posting','human_alerts_overview',
         'admin_audits_list','human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
-        'human_accept_role_assignment','human_decline_role_assignment'}),(),True,'human')
+        'human_accept_role_assignment','human_decline_role_assignment',
+        'human_review_workbench','human_review_score','human_review_appeal','human_review_decide',
+        'human_review_confirm','human_review_withdraw'}),(),True,'human')
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
         raise Failure(403,'CSRF_INVALID',actor)
     return actor

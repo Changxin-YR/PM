@@ -21,7 +21,7 @@ def meta(op, refs):
 def fingerprint(value):
     return sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
 
-def run(header,op,fn):
+def run(header,op,fn,*,after_denied=None):
     actor=None
     request_id=correlation_id()
     try:
@@ -34,6 +34,9 @@ def run(header,op,fn):
         if actor:
             with engine().begin() as c:
                 c.execute(db.audit_logs.insert().values(action=op,actor_type=actor.kind,actor_id=actor.credential,delegated_by=actor.account if actor.kind=='agent' else None,org_id=actor.org,project_id=e.project_id,result='denied',error_code=e.code,request_id=request_id,rule_version=RULE_VERSION))
+            if after_denied is not None:
+                with engine().begin() as c:
+                    after_denied(c, actor, e, request_id)
         raise
 
 def listing(header,page,size,stage,keyword):
@@ -74,7 +77,7 @@ def create(header,command,key):
         if not a.create: raise Failure(403,'FORBIDDEN')
         idem=db.idempotency_keys
         payload_hash=fingerprint(command.model_dump())
-        old=c.execute(sa.select(idem).where(idem.c.actor_id==a.credential,idem.c.operation==op,idem.c.idempotency_key==key)).mappings().one_or_none()
+        old=c.execute(sa.select(idem).where(idem.c.actor_type==a.kind,idem.c.actor_id==a.credential,idem.c.operation==op,idem.c.idempotency_key==key)).mappings().one_or_none()
         if old:
             if old.request_hash!=payload_hash: raise Failure(409,'IDEMPOTENCY_CONFLICT')
             if not c.scalar(sa.select(db.projects.c.id).where(visible(a),db.projects.c.id==old.resource_id)): raise Failure(403,'FORBIDDEN')
@@ -107,7 +110,7 @@ def update_draft(header,pid,expected,command,key):
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
         if row.initiator_id!=a.person or row.stage!='drafting': raise Failure(403,'FORBIDDEN')
         idem=db.idempotency_keys
-        old=c.execute(sa.select(idem).where(idem.c.actor_id==a.credential,idem.c.operation==op,idem.c.idempotency_key==key)).mappings().one_or_none()
+        old=c.execute(sa.select(idem).where(idem.c.actor_type==a.kind,idem.c.actor_id==a.credential,idem.c.operation==op,idem.c.idempotency_key==key)).mappings().one_or_none()
         if old:
             if old.request_hash!=payload_hash: raise Failure(409,'IDEMPOTENCY_CONFLICT')
             return Result[ProjectView].model_validate(old.response_body)

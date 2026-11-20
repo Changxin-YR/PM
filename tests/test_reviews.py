@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import os
 from secrets import token_urlsafe
 import sys
+from types import SimpleNamespace
 from uuid import uuid4
 
 from argon2 import PasswordHasher
@@ -17,6 +18,7 @@ from sqlalchemy.exc import DBAPIError
 
 from pmo import schema_v1 as db
 from pmo.projects import fingerprint
+from pmo.review_scores import ANCHORS, WEIGHTS, FeasibilityDimensions, assess
 
 OPS = ('pmo_gate_check', 'pmo_review_prepare', 'pmo_review_list', 'pmo_review_submit')
 CHARTER = {'valueProp': 'Review the demo', 'targetClient': 'Synthetic client', 'attractiveness': 'Measured trial',
@@ -185,9 +187,10 @@ def test_charter_read_only_submit_replay_and_rollback(live, team, actor):
     assert owner.post(path + '/reviews', headers=key, json=body).status_code == 404
 
 
-def planning_setup(engine, pid, people, users):
-    with engine.begin() as c:
-        c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='designing'))
+def planning_setup(engine, pid, people, users, *, seed_stage=True):
+    if seed_stage:
+        with engine.begin() as c:
+            c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='designing'))
     path = f'projects/{pid}'
     pm = users['pm']
     req = data(pm.post(path + '/requirements', headers=headers(), json={'desc': 'Export results', 'acceptanceCriteria': 'Contains IDs',
@@ -265,7 +268,7 @@ def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
     owner = users['initiator']
     path = f'projects/{pid}'
     data(owner.put(path + '/charter', headers=headers(), json={'fieldsCharter': CHARTER}))
-    token = issue(owner, pid)
+    token = issue(owner, pid, actions=(*OPS, 'pmo_decision_get'))
     env = {**{k: os.environ[k] for k in ('SYSTEMROOT', 'PATH', 'TEMP', 'TMP') if k in os.environ}, 'PMO_API_PORT': str(port),
            'PMO_AGENT_TOKEN': token, 'PYTHONUTF8': '1'}
 
@@ -293,5 +296,237 @@ def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
             assert submitted == await call(OPS[3], args)
             assert (await call(OPS[2], {}))['data']['items'] == [submitted['data']]
             assert (await call(OPS[0], {'gate': 'charter'}))['data']['missing'][0]['code'] == 'GATE_STAGE_MISMATCH'
+            review_id = submitted['data']['reviewId']
+            scored = users['reviewer']
+            score(scored, f'reviews/{review_id}', [4, 4, 4, 4])
+            final = data(decide(scored, f'reviews/{review_id}'))
+            response = await session.call_tool('pmo_decision_get', {'reviewId': review_id})
+            assert not response.isError
+            payload = response.structuredContent
+            jsonschema.Draft202012Validator(tools['pmo_decision_get'].outputSchema).validate(payload)
+            api_result = data(owner.get(f'reviews/{review_id}/decisions'))
+            assert payload['data']['items'] == api_result['items']
+            assert payload['data']['items'][0]['decisionId'] == final['decision']['decisionId']
+            assert 'rationale' not in payload['data']['items'][0]
 
     asyncio.run(scenario())
+
+
+def start_charter(pid, users):
+    owner = users['initiator']
+    path = f'projects/{pid}'
+    old = data(owner.get(path))['project']
+    charter = data(owner.get(path + '/charter'))
+    data(owner.put(path + '/charter', headers=headers(charter['expectedRevision']), json={'fieldsCharter': CHARTER}))
+    review = data(owner.post(path + '/reviews', headers=headers(old['revision']), json={'reviewType': 'charter'}))
+    return f"reviews/{review['reviewId']}"
+
+
+def score_command(state, values, *, source=None):
+    return {'reviewType': state['review']['type'], 'round': state['round'], 'dimensions': {
+        dimension['key']: {'score': value, 'selectedAnchorCode': ANCHORS[value-1], 'rationale': 'Compared with the original anchors.',
+                           'evidenceRefs': [source or next(ref for ref in state['materialRefs'] if ref.startswith(
+                               'charter:' if state['review']['type'] == 'charter' else 'milestone:'))]}
+        for dimension, value in zip(state['dimensions'], values, strict=True)}}
+
+
+def bench(client, path):
+    return data(client.get(path + '/workbench'))
+
+
+def score(client, path, values):
+    state = bench(client, path)
+    return data(client.post(path + '/scores', headers=headers(state['review']['revision']), json=score_command(state, values)))
+
+
+def outcome(state, verdict='pass', **kwargs):
+    return {'verdict': verdict, 'rationale': 'Independent decision: reviewed source materials.',
+            'approvalRequestId': state['approvalRequestId'], **kwargs}
+
+
+def decide(client, path, **kwargs):
+    state = bench(client, path)
+    return client.post(path + '/decisions', headers=headers(state['review']['revision']), json=outcome(state, **kwargs))
+
+
+def result_counts(c, pid):
+    return c.execute(sa.text('''SELECT
+        (SELECT stage FROM projects WHERE id=:p),
+        (SELECT count(*) FROM decisions WHERE project_id=:p),
+        (SELECT count(*) FROM review_decision_snapshots s JOIN reviews r ON s.review_id=r.id WHERE r.project_id=:p),
+        (SELECT count(*) FROM project_stage_transitions WHERE project_id=:p),
+        (SELECT count(*) FROM audit_logs WHERE project_id=:p AND action='human_review_decide' AND result='success'),
+        (SELECT count(*) FROM outbox_events WHERE payload->>'projectId'=CAST(:p AS text) AND event_type='human_review_decide'),
+        (SELECT count(*) FROM idempotency_keys WHERE operation='human_review_decide' AND resource_id IN (SELECT id FROM reviews WHERE project_id=:p)),
+        (SELECT count(*) FROM tasks WHERE project_id=:p AND source_type='review')'''), {'p': pid}).one()
+
+
+def test_charter_atomic_decision_acl_replay_and_concurrency(live, team):
+    engine, api, _, _ = live
+    pid, people, users, _ = team
+    reviewer, second, owner, pm = (users[role] for role in ('reviewer', 'outsider', 'initiator', 'pm'))
+    with engine.begin() as c:
+        member(c, pid, people['outsider'], people['initiator'], 'reviewer')
+        member(c, pid, people['initiator'], people['pm'], 'reviewer')
+        uid = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people['pm']))
+        c.execute(db.user_roles.insert().values(user_id=uid, role='system_admin'))
+    path = start_charter(pid, users)
+    state = bench(reviewer, path)
+    assert state['canScore'] and not state['canDecide']
+    body = score_command(state, [4, 3, 3, 3])
+    assert reviewer.post(path + '/scores', headers=headers(), json={**body, 'reviewerId': str(people['reviewer'])}).status_code == 422
+    changed = score_command(state, [4, 3, 3, 3], source=f'charter:{uuid4()}@2')
+    assert reviewer.post(path + '/scores', headers=headers(), json=changed).json()['code'] == 'REVIEW_SOURCE_NOT_FROZEN'
+    wrong = {**body, 'dimensions': {k: {**v, 'score': '3'} for k, v in body['dimensions'].items()}}
+    assert reviewer.post(path + '/scores', headers=headers(), json=wrong).status_code == 422
+    assert owner.post(path + '/scores', headers=headers(), json=body).json()['code'] == 'INDEPENDENT_REVIEWER_REQUIRED'
+    assert pm.post(path + '/scores', headers=headers(), json=body).json()['code'] == 'REVIEWER_ASSIGNMENT_REQUIRED'
+    token = issue(owner, pid, actions=('pmo_review_list', 'pmo_decision_get'))
+    for action, payload in [('scores', body), ('appeals', {'reason': 'Synthetic appeal'}), ('decisions', outcome(state))]:
+        response = api.post(f'/api/v1/{path}/{action}', json=payload, headers={**headers(), 'Authorization': 'Bearer ' + token})
+        assert (response.status_code, response.json()['code']) == (403, 'FORBIDDEN')
+    key = headers(state['review']['revision'])
+    first = reviewer.post(path + '/scores', headers=key, json=body)
+    assert first.json() == reviewer.post(path + '/scores', headers=key, json=body).json()
+    assert 'assessment' not in bench(second, path) and not bench(second, path)['scores']
+    final_state = score(second, path, [4, 3, 3, 3])
+    assert final_state['assessment']['total'] == '3.20'
+    assert final_state['assessment']['classification'] == 'normal'
+    assert len(final_state['assessment']['weakDimensions']) == 3
+    assert owner.post(path + '/decisions', headers=headers(3), json=outcome(state)).json()['code'] == 'INDEPENDENT_REVIEWER_REQUIRED'
+    with engine.begin() as c:
+        # Unrelated work must not invalidate a pending gate.
+        c.execute(db.tasks.insert().values(project_id=pid, created_by=people['pm'], title='Unrelated task',
+                  source_type='manual', source_id=pid, status='open'))
+        c.exec_driver_sql('CREATE TRIGGER decision_outbox_failure BEFORE INSERT ON outbox_events FOR EACH STATEMENT EXECUTE FUNCTION pmo_append_only()')
+    try:
+        h = headers(final_state['review']['revision'])
+        command = outcome(final_state)
+        failure = reviewer.post(path + '/decisions', headers=h, json=command)
+        assert failure.status_code == 500
+        with engine.connect() as c:
+            assert result_counts(c, pid) == ('charter_review', 0, 0, 1, 0, 0, 0, 0)
+    finally:
+        with engine.begin() as c: c.exec_driver_sql('DROP TRIGGER decision_outbox_failure ON outbox_events')
+    assert bench(reviewer, path)['review']['revision'] == final_state['review']['revision']
+    other = headers(final_state['review']['revision'])
+    with ThreadPoolExecutor(2) as pool:
+        replies = list(pool.map(lambda pair: pair[0].post(path + '/decisions', headers=pair[1], json=command), [(reviewer, h), (second, other)]))
+    assert sorted(r.status_code for r in replies) == [200, 409]
+    idx = next(i for i, res in enumerate(replies) if res.is_success)
+    human, used = (reviewer, h) if idx == 0 else (second, other)
+    first = replies[idx]
+    assert human.post(path + '/decisions', headers=used, json=command).json() == first.json()
+    assert human.post(path + '/decisions', headers=used, json={**command, 'rationale': 'Different reason'}).json()['code'] == 'IDEMPOTENCY_CONFLICT'
+    finished = bench(human, path)
+    assert finished['decision']['stage'] == 'designing' and finished['decision']['rationale'] == command['rationale']
+    assert len(finished['scores']) == 2 and len(finished['tasks']) == 3
+    assert all(i['assigneeId'] == str(people['pm']) and i['sourceType'] == 'review' for i in finished['tasks'])
+    assert data(owner.get(f'projects/{pid}'))['project']['stage'] == 'designing'
+    assert decide(human, path).json()['code'] == 'REVIEW_NOT_PENDING'
+    with engine.connect() as c:
+        assert result_counts(c, pid) == ('designing', 1, 1, 2, 1, 1, 1, 3)
+        row = c.execute(sa.text('SELECT * FROM review_decision_snapshots WHERE request_id=:rid'), {'rid': first.headers['X-Request-ID']}).mappings().one()
+        assert row.payload_hash == fingerprint(row.payload) and len(row.payload['scorecards']) == 2
+
+
+def test_charter_veto_appeal_preserves_opinions_fast_confirmation(live, team):
+    engine, _, _, _ = live
+    pid, people, users, _ = team
+    reviewer, second, sponsor, owner = (users[role] for role in ('reviewer', 'outsider', 'sponsor', 'initiator'))
+    with engine.begin() as c: member(c, pid, people['outsider'], people['initiator'], 'reviewer')
+    path = start_charter(pid, users)
+    score(reviewer, path, [1, 5, 5, 5])
+    bad = score(second, path, [5, 5, 5, 5])
+    assert bad['assessment']['total'] == '4.60' and bad['assessment']['classification'] == 'veto'
+    assert decide(second, path).json()['code'] == 'CHARTER_SCORE_VETO'
+    assert decide(second, path, verdict='conditional_pass').json()['code'] == 'CHARTER_SCORE_VETO'
+    appeal = {'reason': 'Review newly available interpretation of the same evidence.'}
+    key = headers(bench(owner, path)['review']['revision'])
+    first = owner.post(path + '/appeals', headers=key, json=appeal)
+    assert data(first)['round'] == 2
+    assert first.json() == owner.post(path + '/appeals', headers=key, json=appeal).json()
+    assert owner.post(path + '/appeals', headers=headers(4), json=appeal).json()['code'] == 'REVIEW_APPEAL_LIMIT'
+    assert decide(second, path).json()['code'] == 'CHARTER_SCORE_VETO'
+    revised = score(reviewer, path, [3, 5, 5, 5])
+    assert [r['round'] for r in revised['scores']] == [1, 2]
+    assert revised['assessment']['total'] == '4.80'
+    assert decide(reviewer, path).json()['code'] == 'SPONSOR_CONFIRMATION_REQUIRED'
+    data(sponsor.post(path + '/confirmations', headers=headers(revised['review']['revision']), json={'role': 'sponsor'}))
+    assert decide(reviewer, path).json()['code'] == 'INITIATOR_CONFIRMATION_REQUIRED'
+    data(owner.post(path + '/confirmations', headers=headers(bench(owner, path)['review']['revision']), json={'role': 'initiator'}))
+    final = data(decide(reviewer, path))
+    assert final['decision']['stage'] == 'designing' and len(final['scores']) == 3
+    assert len(final['confirmations']) == 2 and final['appeal']['reason'] == appeal['reason']
+    assert not final['tasks']
+
+
+def test_review_expired_material_requires_withdraw_and_fresh_submission(live, team):
+    engine, _, _, _ = live
+    pid, people, users, _ = team
+    reviewer, owner, outsider = (users[role] for role in ('reviewer', 'initiator', 'outsider'))
+    path = start_charter(pid, users)
+    score(reviewer, path, [4, 4, 4, 4])
+    with engine.begin() as c:
+        c.execute(db.charters.update().where(db.charters.c.project_id == pid).values(
+            value_prop='Externally imported material revision', revision=db.charters.c.revision+1))
+    expired = bench(reviewer, path)
+    assert expired['stale'] and not expired['canDecide']
+    assert decide(reviewer, path).json()['code'] == 'REVIEW_SNAPSHOT_STALE'
+    assert outsider.get(path + '/workbench').status_code == 404
+    assert outsider.post(path + '/decisions', headers=headers(2), json=outcome(expired)).status_code == 404
+    with engine.begin() as c:
+        member(c, pid, people['outsider'], people['initiator'], 'reviewer')
+    assert decide(outsider, path).json()['code'] == 'REVIEWER_ASSIGNMENT_REQUIRED'
+    data(owner.post(path + '/withdraw', headers=headers(2), json={'reason': 'Review must include updated material.'}))
+    new_path = start_charter(pid, users)
+    assert new_path != path and bench(owner, path)['review']['verdict'] == 'withdrawn'
+    result = score(reviewer, new_path, [4, 4, 4, 4])
+    assert result['assessment']['weakDimensions'] == []
+    assert data(decide(reviewer, new_path))['tasks'] == []
+
+
+def test_feasibility_shortfall_and_conditional_pass_real_previous_gate(live, team):
+    engine, _, _, _ = live
+    pid, people, users, _ = team
+    pm, reviewer = users['pm'], users['reviewer']
+    path = start_charter(pid, users)
+    score(reviewer, path, [4, 4, 4, 4])
+    data(decide(reviewer, path))
+    project, _, _ = planning_setup(engine, pid, people, users, seed_stage=False)
+    conditions = [{'title': 'Validate independent backup design', 'assigneeId': str(people['pm']),
+                   'dueAt': (datetime.now(UTC) + timedelta(days=7)).isoformat()}]
+
+    def submit():
+        stage = data(pm.get(project))['project']
+        return 'reviews/' + data(pm.post(project + '/reviews', headers=headers(stage['revision']), json={'reviewType': 'feasibility'}))['reviewId']
+
+    shortfall = submit()
+    assert score(reviewer, shortfall, [2, 5, 5, 5, 5])['assessment']['classification'] == 'shortfall'
+    assert decide(reviewer, shortfall).json()['code'] == 'FEASIBILITY_SHORTFALL'
+    assert decide(reviewer, shortfall, verdict='conditional_pass', conditions=conditions).json()['code'] == 'FEASIBILITY_SHORTFALL'
+    still_pending = bench(reviewer, shortfall)
+    assert still_pending['review']['status'] == 'pending' and 'decision' not in still_pending and len(still_pending['tasks']) == 1
+    returned = data(decide(reviewer, shortfall, verdict='redirect'))
+    assert returned['decision']['stage'] == 'designing' and len(returned['tasks']) == 1
+    ready = submit()
+    score(reviewer, ready, [3, 3, 3, 3, 3])
+    assert decide(reviewer, ready, verdict='conditional_pass').json()['code'] == 'CONDITIONS_REQUIRED_OR_NOT_ALLOWED'
+    executed = data(decide(reviewer, ready, verdict='conditional_pass', conditions=conditions * 2))
+    assert executed['decision']['stage'] == 'executing' and len(executed['tasks']) == 1
+    assert executed['tasks'][0]['dueAt'] and executed['tasks'][0]['assigneeId'] == str(people['pm'])
+
+
+def test_gate_compares_exact_values_before_display_rounding():
+    def card(values, keys=WEIGHTS):
+        return SimpleNamespace(dimensions={k: {'score': v} for k, v in zip(keys, values, strict=True)})
+    for base, edge, classify_below, classify_at in [(3, '3.20', 'below_threshold', 'normal'), (4, '4.20', 'normal', 'fast_track')]:
+        baseline = card([base] * 4)
+        above = card([base+1, base, base, base])
+        almost = assess('charter', [above] * 99 + [baseline])
+        exact = assess('charter', [above])
+        assert (almost.total, almost.classification) == (edge, classify_below)
+        assert (exact.total, exact.classification) == (edge, classify_at)
+    strong = card([5] * 5, FeasibilityDimensions.model_fields)
+    weak = card([2, 5, 5, 5, 5], FeasibilityDimensions.model_fields)
+    assert assess('feasibility', [strong, weak]).classification == 'shortfall'

@@ -24,7 +24,7 @@ def test_browser_draft_workflow(live,actor):
         username=c.scalar(db.user_accounts.update().where(db.user_accounts.c.id==uid).values(password_hash=PasswordHasher().hash(password)).returning(db.user_accounts.c.username))
         org=c.scalar(sa.select(db.persons.c.org_id).where(db.persons.c.user_id==uid))
         accounts={}
-        for role in ['issuer','nominee','baseline_pm','baseline_client']:
+        for role in ['issuer','nominee','baseline_pm','baseline_client','gate_reviewer']:
             name=uuid4().hex; person=uuid4(); secret=secrets.token_urlsafe(32)
             user=c.scalar(db.user_accounts.insert().values(username=name,password_hash=PasswordHasher().hash(secret),is_active=True).returning(db.user_accounts.c.id))
             c.execute(db.persons.insert().values(id=person,created_by=person,org_id=org,user_id=user,name=role,is_active=True))
@@ -35,7 +35,7 @@ def test_browser_draft_workflow(live,actor):
         pm=accounts['PMO_TEST_BASELINE_PM_ID']; client=accounts['PMO_TEST_BASELINE_CLIENT_ID']
         review_pid=c.scalar(db.projects.insert().values(code='E2E-REVIEW',name='立项送审演练',org_id=org,stage='drafting',
             pm_id=accounts['PMO_TEST_NOMINEE_ID'],sponsor_id=accounts['PMO_TEST_ISSUER_ID'],created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
-        for person,role in ((client,'reviewer'),(accounts['PMO_TEST_NOMINEE_ID'],'pm'),(accounts['PMO_TEST_ISSUER_ID'],'sponsor')):
+        for person,role in ((accounts['PMO_TEST_GATE_REVIEWER_ID'],'reviewer'),(accounts['PMO_TEST_NOMINEE_ID'],'pm'),(accounts['PMO_TEST_ISSUER_ID'],'sponsor')):
             c.execute(db.project_members.insert().values(project_id=review_pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
         c.execute(db.charters.insert().values(project_id=review_pid,created_by=pm,value_prop='降低重复录入',target_client='试点客户',
             attractiveness='已有演练安排',expected_benefit='可追踪交付',rough_cost=100,rough_effort=10,rough_duration_days=15,

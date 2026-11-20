@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,onMounted,ref} from 'vue'
-import {RefreshCw,Send} from 'lucide-vue-next'
+import {ClipboardList,RefreshCw,Send} from 'lucide-vue-next'
+import ReviewWorkbench from './ReviewWorkbench.vue'
 
 type Gate='charter'|'feasibility'|'closing'
 type Draft={gateCheck:{gate:Gate;eligible:boolean;missing:{code:string;message:string;sourceRefs:string[]}[]};draftMaterials:string[]}
@@ -13,9 +14,15 @@ const labels={charter:'立项',feasibility:'落地',closing:'结项'}
 const statuses={draft:'草稿',pending:'待评审',decided:'已裁决'}
 const busy=ref(false),confirm=ref(false),error=ref(''),notice=ref(''),allowed=ref(false)
 const draft=ref<Draft|null>(null),items=ref<Review[]>([]),total=ref(0),revision=ref('')
+const workbenchId=ref(''),workbenchOpen=ref(false)
 const gate=computed(()=>draft.value?.gateCheck.gate)
 let attempt:{gate:Gate;revision:string;key:string}|null=null
 const path=`projects/${props.projectId}`
+
+function openWorkbench(reviewId:string){
+  workbenchId.value=reviewId
+  workbenchOpen.value=true
+}
 
 async function read(){
   draft.value=null;allowed.value=false;revision.value=''
@@ -77,6 +84,9 @@ onMounted(refresh)
       <el-table-column label="关口" min-width="70"><template #default="{row}">{{labels[row.type as Gate]}}</template></el-table-column>
       <el-table-column label="状态" min-width="84"><template #default="{row}">{{statuses[row.status as Review['status']]}}</template></el-table-column>
       <el-table-column prop="reviewId" label="评审编号" min-width="156" show-overflow-tooltip/>
+      <el-table-column label="操作" width="128"><template #default="{row}">
+        <el-button text aria-label="打开评审工作台" @click="openWorkbench(row.reviewId)"><ClipboardList :size="15"/> 工作台</el-button>
+      </template></el-table-column>
     </el-table>
   </section>
   <el-dialog v-model="confirm" title="确认送审" width="min(420px,92vw)" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" append-to-body>
@@ -84,6 +94,7 @@ onMounted(refresh)
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
     <template #footer><el-button :disabled="busy" @click="confirm=false">取消</el-button><el-button type="primary" :loading="busy" @click="submit">确认送审</el-button></template>
   </el-dialog>
+  <ReviewWorkbench v-if="workbenchId" :key="workbenchId" v-model="workbenchOpen" :review-id="workbenchId" :api="api" @saved="refresh"/>
 </template>
 
 <style scoped>

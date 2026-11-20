@@ -217,10 +217,10 @@ def closing_costs(c, p, out, plan):
             out.reject(f'{kind.upper()}_FORECAST_NOT_ZERO', '结项剩余预测未归零。', budget_refs)
 
 
-def evaluate(c, a, p, gate: Gate):
+def evaluate(c, a, p, gate: Gate, *, pending=False):
     out = Materials({'gate': gate, 'ruleVersion': RULE_VERSION, 'project': {k: v for k, v in snapshot(p).items()
-        if k in ('id', 'org_id', 'code', 'name', 'description', 'initiator_id', 'pm_id', 'sponsor_id', 'stage', 'revision')}})
-    if p.stage != ENTRY[gate]:
+        if k in ('id', 'org_id', 'code', 'name', 'description', 'initiator_id', 'pm_id', 'sponsor_id')}})
+    if p.stage != (REVIEW[gate] if pending else ENTRY[gate]):
         out.reject('GATE_STAGE_MISMATCH', '项目当前阶段不能进入此关口。')
         return Check(projectId=p.id, gate=gate, eligible=False, missing=out.gaps, snapshotHash=fingerprint(out.content)), out
     for role in ('pm', 'sponsor'):

@@ -186,8 +186,12 @@ try {
   await expect(reviewPanel.getByText('立项预检 · 材料齐备')).toBeVisible()
   await reviewPanel.getByRole('button',{name:'提交立项评审'}).click()
   const submitDialog=sender.getByRole('dialog',{name:'确认送审',exact:true})
+  const submitted=sender.waitForResponse(r=>r.request().method()==='POST'&&/\/api\/v1\/projects\/[\da-f-]+\/reviews$/.test(r.url()))
   const persistedStage=sender.waitForResponse(r=>r.request().method()==='GET' && /\/api\/v1\/projects\/[\da-f-]+$/.test(r.url()))
   await submitDialog.getByRole('button',{name:'确认送审',exact:true}).click()
+  const submission=await submitted
+  expect(submission.ok(),await submission.text()).toBe(true)
+  const {reviewId}=(await submission.json()).data
   expect((await (await persistedStage).json()).data.project).toMatchObject({stage:'charter_review',revision:2})
   await expect(reviewPanel.getByText('当前阶段：立项评审')).toBeVisible()
   await expect(reviewPanel.getByRole('cell',{name:'待评审',exact:true})).toBeVisible()
@@ -195,5 +199,109 @@ try {
   await expect(sender.getByRole('row').filter({has:projectLink}).getByText('立项评审',{exact:true})).toBeVisible()
   await projectLink.click();await gateTab.click()
   await expect(reviewPanel.getByRole('cell',{name:'待评审',exact:true})).toBeVisible()
+
+  const gateReviewer=await browser.newPage({viewport:{width:1280,height:768}})
+  await gateReviewer.goto(process.env.PMO_BROWSER_URL)
+  await gateReviewer.getByLabel('账号',{exact:true}).fill(process.env.PMO_TEST_GATE_REVIEWER)
+  await gateReviewer.getByLabel('密码',{exact:true}).fill(process.env.PMO_TEST_GATE_REVIEWER_PASSWORD)
+  await gateReviewer.getByRole('button',{name:'登录',exact:true}).click()
+  const reviewerProject=gateReviewer.getByRole('button',{name:'查看 立项送审演练 的项目资料'})
+  const reviewerPanel=gateReviewer.getByRole('region',{name:'关口送审',exact:true})
+  const reviewRow=reviewerPanel.getByRole('row').filter({has:gateReviewer.getByRole('cell',{name:reviewId,exact:true})})
+  const workbench=gateReviewer.getByRole('dialog',{name:'关口人工工作台',exact:true})
+  const reviewRequest=(method,action)=>request=>request.method()===method&&new URL(request.url()).pathname===`/api/v1/reviews/${reviewId}/${action}`
+  function reviewResponse(method,action){
+    return gateReviewer.waitForResponse(r=>reviewRequest(method,action)(r.request()))
+  }
+  async function openWorkbench(){
+    await reviewerProject.click()
+    await gateReviewer.getByRole('tab',{name:'关口送审',exact:true}).click()
+    const loaded=reviewResponse('GET','workbench')
+    await reviewRow.getByRole('button',{name:'打开评审工作台'}).click()
+    const response=await loaded
+    expect(response.ok(),await response.text()).toBe(true)
+    return (await response.json()).data
+  }
+  async function checkWrite(responsePromise,revision,body){
+    const response=await responsePromise
+    expect(response.ok(),await response.text()).toBe(true)
+    expect(response.request().headers()['if-match']).toBe(String(revision))
+    expect(response.request().headers()['idempotency-key']).toBeTruthy()
+    expect(response.request().postDataJSON()).toEqual(body)
+  }
+
+  const pending=await openWorkbench()
+  expect(pending.review).toMatchObject({reviewId,type:'charter',status:'pending'})
+  expect(pending.dimensions.length).toBeGreaterThan(0)
+  const charterRef=pending.materialRefs.find(ref=>ref.startsWith('charter:'))
+  expect(charterRef).toBeTruthy()
+  await workbench.getByRole('button',{name:'填写评分',exact:true}).click()
+  const scoreForm=workbench.getByRole('form',{name:'填写评分',exact:true})
+  const saveScore=scoreForm.getByRole('button',{name:'提交评分',exact:true})
+  const dimensions={}
+  for(const [index,{key,label}] of pending.dimensions.entries()){
+    const fields=scoreForm.getByRole('group',{name:label,exact:true})
+    const rationale=`${label}：已按立项卡核对试点目标与交付依据。`
+    await fields.getByLabel('评分',{exact:true}).selectOption('4')
+    await fields.getByLabel('评分理由',{exact:true}).fill(rationale)
+    await fields.getByText(/^材料引用（至少一项）/).click()
+    const source=fields.getByRole('checkbox',{name:charterRef,exact:true})
+    const anchor=fields.getByLabel('评分锚点',{exact:true})
+    if(index===pending.dimensions.length-1){
+      await source.check()
+      await expect(saveScore).toBeDisabled()
+      await source.uncheck()
+      await anchor.selectOption('between_3_5')
+      await expect(saveScore).toBeDisabled()
+    }else await anchor.selectOption('between_3_5')
+    await source.check()
+    dimensions[key]={score:4,selectedAnchorCode:'between_3_5',rationale,evidenceRefs:[charterRef]}
+  }
+  const retryScore=workbench.getByRole('button',{name:'重试上次提交',exact:true})
+  const reviewerContext=gateReviewer.context()
+  let failedScore
+  await reviewerContext.setOffline(true)
+  try{
+    const offline=gateReviewer.waitForEvent('requestfailed',reviewRequest('POST','scores'))
+    await saveScore.click()
+    failedScore=await offline
+    await expect(retryScore).toBeEnabled()
+  }finally{await reviewerContext.setOffline(false)}
+  const scoreWrite=reviewResponse('POST','scores'), assessed=reviewResponse('GET','workbench')
+  await retryScore.click()
+  await checkWrite(scoreWrite,pending.review.revision,{reviewType:'charter',round:pending.round,dimensions})
+  const retriedScore=(await scoreWrite).request()
+  for(const header of ['idempotency-key','if-match'])expect(retriedScore.headers()[header]).toBe(failedScore.headers()[header])
+  expect(retriedScore.postData()).toBe(failedScore.postData())
+  const scoreState=(await (await assessed).json()).data
+  expect(scoreState.assessment.classification).toBe('normal')
+  expect(scoreState.scores).toEqual([expect.objectContaining({reviewerId:process.env.PMO_TEST_GATE_REVIEWER_ID,dimensions})])
+  await expect(workbench.getByRole('heading',{name:'评分评定 · 常规',exact:true})).toBeVisible()
+
+  const decisionReason='本轮独立评分符合常规通道要求，同意进入方案细化。'
+  await workbench.getByRole('button',{name:'登记裁决',exact:true}).click()
+  const decisionForm=workbench.getByRole('form',{name:'登记裁决',exact:true})
+  await decisionForm.getByLabel('裁决',{exact:true}).selectOption('pass')
+  await decisionForm.getByLabel('裁决理由',{exact:true}).fill(decisionReason)
+  const decisionWrite=reviewResponse('POST','decisions')
+  await decisionForm.getByRole('button',{name:'确认裁决',exact:true}).click()
+  await checkWrite(decisionWrite,scoreState.review.revision,{verdict:'pass',rationale:decisionReason,approvalRequestId:scoreState.approvalRequestId})
+  const decisionHistory=workbench.getByRole('region',{name:'裁决记录',exact:true})
+  await expect(decisionHistory.getByText(decisionReason,{exact:true})).toBeVisible()
+  await gateReviewer.keyboard.press('Escape')
+  await expect(workbench).toBeHidden()
+  await expect(reviewerPanel.getByText('当前阶段：方案细化',{exact:true})).toBeVisible()
+
+  await gateReviewer.reload()
+  await expect(gateReviewer.getByRole('row').filter({has:reviewerProject}).getByText('方案细化',{exact:true})).toBeVisible()
+  const decided=await openWorkbench()
+  expect(decided.review).toMatchObject({status:'decided',verdict:'pass'})
+  expect(decided.decision).toMatchObject({option:'pass',stage:'designing',rationale:decisionReason})
+  await expect(decisionHistory.getByRole('heading',{name:'裁决记录 · 通过',exact:true})).toBeVisible()
+  await expect(decisionHistory.getByText(decisionReason,{exact:true})).toBeVisible()
+  const scoreHistory=workbench.getByRole('region',{name:'评分历史',exact:true})
+  for(const rating of Object.values(dimensions))await expect(scoreHistory.getByText(rating.rationale,{exact:true})).toBeVisible()
+  await expect(workbench.getByRole('button',{name:'登记裁决',exact:true})).toHaveCount(0)
+  await gateReviewer.close()
   for(const signer of signers)await signer.close()
 } finally {await browser.close()}

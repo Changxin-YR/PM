@@ -2,10 +2,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response
 
-from . import reviews
+from . import review_outcomes as outcomes, reviews
 from .access import Auth, Key, Revision
 from .contracts import Result
 from .gates import Check, Gate
+from .review_scores import Score
 
 router = APIRouter(prefix='/api/v1', tags=['Reviews'])
 
@@ -31,3 +32,38 @@ def listing(projectId: UUID, authorization: Auth) -> Result[reviews.ReviewPage]:
 @router.post('/projects/{projectId}/reviews', operation_id=reviews.SUBMIT, response_model_exclude_none=True)
 def submit(projectId: UUID, command: reviews.Submit, authorization: Auth, key: Key, expected: Revision) -> Result[reviews.ReviewView]:
     return reviews.submit(authorization, projectId, command.reviewType, int(expected), key)
+
+
+@router.get('/reviews/{reviewId}/workbench', operation_id=outcomes.WORKBENCH, response_model_exclude_none=True)
+def workbench(reviewId: UUID, authorization: Auth) -> Result[outcomes.Workbench]:
+    return outcomes.read_workbench(authorization, reviewId)
+
+
+@router.get('/reviews/{reviewId}/decisions', operation_id=outcomes.DECISION_GET, response_model_exclude_none=True)
+def decisions(reviewId: UUID, authorization: Auth) -> Result[outcomes.Decisions]:
+    return outcomes.decision_list(authorization, reviewId)
+
+
+@router.post('/reviews/{reviewId}/scores', operation_id=outcomes.SCORE, response_model_exclude_none=True)
+def score(reviewId: UUID, command: Score, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
+    return outcomes.write_action(authorization, outcomes.SCORE, reviewId, command, key, int(expected))
+
+
+@router.post('/reviews/{reviewId}/appeals', operation_id=outcomes.APPEAL, response_model_exclude_none=True)
+def appeal(reviewId: UUID, command: outcomes.ReasonCommand, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
+    return outcomes.write_action(authorization, outcomes.APPEAL, reviewId, command, key, int(expected))
+
+
+@router.post('/reviews/{reviewId}/confirmations', operation_id=outcomes.CONFIRM, response_model_exclude_none=True)
+def confirm(reviewId: UUID, command: outcomes.ConfirmationCommand, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
+    return outcomes.write_action(authorization, outcomes.CONFIRM, reviewId, command, key, int(expected))
+
+
+@router.post('/reviews/{reviewId}/decisions', operation_id=outcomes.DECIDE, response_model_exclude_none=True)
+def decide(reviewId: UUID, command: outcomes.Decide, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
+    return outcomes.write_action(authorization, outcomes.DECIDE, reviewId, command, key, int(expected))
+
+
+@router.post('/reviews/{reviewId}/withdraw', operation_id=outcomes.WITHDRAW, response_model_exclude_none=True)
+def withdraw(reviewId: UUID, command: outcomes.ReasonCommand, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
+    return outcomes.write_action(authorization, outcomes.WITHDRAW, reviewId, command, key, int(expected))

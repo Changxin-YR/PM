@@ -4,6 +4,7 @@ ROUTES = {
     'pmo_review_prepare': ('GET', '/projects/{projectId}/reviews/prepare'),
     'pmo_review_list': ('GET', '/projects/{projectId}/reviews'),
     'pmo_review_submit': ('POST', '/projects/{projectId}/reviews'),
+    'pmo_decision_get': ('GET', '/reviews/{reviewId}/decisions'),
     'pmo_alert_list': ('GET','/projects/{projectId}/alerts'),
     'pmo_milestone_forecast': ('PATCH','/milestones/{milestoneId}/forecast'),
     'pmo_preapproval_spending_list': ('GET','/analytics/preapproval-spending'),

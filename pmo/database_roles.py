@@ -26,21 +26,23 @@ API_READ = frozenset('''organizations user_accounts user_roles persons projects
     requirement_transitions milestone_completions milestone_forecasts milestone_delay_episodes
     agent_credentials agent_project_grants agent_security_events agent_token_versions
     agent_collection_versions web_sessions login_windows idempotency_keys audit_logs
-    rule_events review_submission_snapshots project_stage_transitions'''.split())
+    rule_events review_submission_snapshots project_stage_transitions tasks review_appeals review_confirmations
+    review_decision_snapshots review_strengthening_tasks'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures
     requirement_transitions milestone_completions milestone_forecasts milestone_delay_episodes
     agent_credentials agent_project_grants agent_security_events agent_token_versions
     agent_collection_versions web_sessions login_windows idempotency_keys audit_logs outbox_events
-    rule_events review_submission_snapshots project_stage_transitions'''.split())
+    rule_events review_submission_snapshots project_stage_transitions tasks scorecards decisions
+    review_appeals review_confirmations review_decision_snapshots review_strengthening_tasks'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
 LOCKS = {
     'user_roles': 'id', 'persons': 'id', 'appointment_authorities': 'org_id',
     'change_approval_grants': 'project_id', 'agent_project_grants': 'project_id',
-    'reviews': 'id', 'reports': 'id', 'decisions': 'id', 'stakeholders': 'id',
+    'reports': 'id', 'decisions': 'id', 'stakeholders': 'id',
 }
 API_EDIT = {
     'user_accounts': 'last_login_at', 'web_sessions': 'revoked_at',
@@ -48,6 +50,7 @@ API_EDIT = {
     'agent_credentials': 'status revoked_at allowed_project_ids',
     'agent_collection_versions': 'revision', 'agent_token_versions': 'revision',
     'projects': 'name description revision updated_at pm_id sponsor_id stage',
+    'reviews': 'revision updated_at status verdict',
     'project_members': 'assigned_by assignment_status accepted_at revoked_at invitation_decision_at invitation_expires_at updated_at',
     'role_invitations': 'status issuer_id expires_at decided_at revision',
     'charters': None, 'milestones': None, 'requirements': None, 'risks': None,

@@ -27,12 +27,14 @@ def project_access(c, actor, pid, *, edit=False):
 
 def replay(c, actor, op, key, signature, model):
     i = db.idempotency_keys
-    row = c.execute(sa.select(i.c.request_hash, i.c.response_body).where(i.c.actor_id == actor.credential,
+    row = c.execute(sa.select(i.c.request_hash, i.c.response_body, i.c.status).where(i.c.actor_type == actor.kind, i.c.actor_id == actor.credential,
                     i.c.operation == op, i.c.idempotency_key == key)).mappings().one_or_none()
     if row is None:
         return None
     if row.request_hash != signature:
         raise Failure(409, 'IDEMPOTENCY_CONFLICT')
+    if row.status != 'completed':
+        raise Failure(409, 'REQUEST_IN_PROGRESS')
     return model.model_validate(row.response_body)
 
 

@@ -23,6 +23,7 @@ snapshots = sa.table('review_submission_snapshots', sa.column('review_id', sa.Uu
 transitions = sa.table('project_stage_transitions', sa.column('project_id', sa.Uuid), sa.column('from_revision'),
                        sa.column('to_revision'), sa.column('from_stage'), sa.column('to_stage'), sa.column('review_id', sa.Uuid),
                        sa.column('actor_id', sa.Uuid), sa.column('actor_type'), sa.column('request_id', sa.Uuid))
+APPROVAL_ACTION = 'review_finalize'
 
 
 class Submit(Strict):
@@ -95,8 +96,45 @@ def listing(auth, pid):
     return run(auth, LIST, read)
 
 
-def transition_project(c, a, pid, gate: Gate, expected, key, rid):
-    """Execute the authorized submission edge, never a decision or a direct stage patch."""
+def approval_hash(review, entry_revision, actor_type):
+    return fingerprint([str(review.project_id), str(review.id), review.type, review.round,
+                        entry_revision, str(review.created_by), actor_type])
+
+
+def transition_project(c, a, p, review, destination, rid, *, verdict=None):
+    """The sole writer of the stage and its transition history."""
+    gate = review.type
+    if p.stage == ENTRY[gate] and destination == REVIEW[gate]:
+        allowed = SUBMIT in a.actions and submitter(c, a, p, gate)
+    elif p.stage == REVIEW[gate] and review.status == 'pending' and a.kind == 'human':
+        from .review_outcomes import reviewer_assignment
+        if verdict == 'withdrawn':
+            allowed = destination == ENTRY[gate] and submitter(c, a, p, gate)
+        else:
+            recorded = c.scalar(sa.select(db.decisions.c.id).where(db.decisions.c.review_id == review.id,
+                db.decisions.c.project_id == p.id, db.decisions.c.decided_by == a.person, db.decisions.c.option == verdict))
+            allowed = bool(recorded and destination == decision_stage(gate, verdict) and reviewer_assignment(c, a, p, review))
+    else:
+        allowed = False
+    if not allowed or review.project_id != p.id:
+        raise Failure(403, 'TRANSITION_NOT_AUTHORIZED', project_id=p.id)
+    c.execute(db.projects.update().where(db.projects.c.id == p.id).values(
+        stage=destination, revision=p.revision + 1, updated_at=sa.func.now()))
+    c.execute(transitions.insert().values(project_id=p.id, from_revision=p.revision, to_revision=p.revision + 1,
+        from_stage=p.stage, to_stage=destination, review_id=review.id, actor_id=a.person, actor_type=a.kind, request_id=UUID(rid)))
+
+
+def decision_stage(gate, verdict):
+    if verdict in ('pass', 'conditional_pass'):
+        return {'charter': 'designing', 'feasibility': 'executing', 'closing': 'closed'}[gate]
+    if verdict not in ('reject', 'defer', 'redirect'):
+        return None
+    if gate == 'charter' and verdict == 'reject':
+        return 'rejected'
+    return 'executing' if gate == 'closing' else ENTRY[gate]
+
+
+def submit_review(c, a, pid, gate: Gate, expected, key, rid):
     if SUBMIT not in a.actions:
         raise Failure(403, 'FORBIDDEN')
     p = lock_project(c, a, pid, write=True)
@@ -127,10 +165,12 @@ def transition_project(c, a, pid, gate: Gate, expected, key, rid):
     review_id = row.id
     c.execute(snapshots.insert().values(review_id=review_id, rule_version=RULE_VERSION, snapshot_hash=check.snapshotHash,
                                        materials=materials.content, source_refs=refs(p, materials)))
+    c.execute(db.approval_requests.insert().values(id=review_id, project_id=pid, action=APPROVAL_ACTION,
+        status='pending', expected_revision=p.revision, requested_by=a.person,
+        delegated_by=a.person if a.kind == 'agent' else None, rule_version=RULE_VERSION, snapshot_hash=check.snapshotHash,
+        payload_hash=approval_hash(row, p.revision, a.kind)))
     dest = REVIEW[gate]
-    c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage=dest, revision=p.revision + 1, updated_at=sa.func.now()))
-    c.execute(transitions.insert().values(project_id=pid, from_revision=p.revision, to_revision=p.revision + 1,
-        from_stage=p.stage, to_stage=dest, review_id=review_id, actor_id=a.person, actor_type=a.kind, request_id=UUID(rid)))
+    transition_project(c, a, p, row, dest, rid)
     result = Result[ReviewView](data=view(row), meta=meta(SUBMIT, [f'review:{review_id}@{row.revision}',
         f'project:{pid}@{p.revision + 1}', f'review-snapshot:{review_id}']))
     body = result.model_dump(mode='json', exclude_none=True)
@@ -143,4 +183,4 @@ def transition_project(c, a, pid, gate: Gate, expected, key, rid):
 
 
 def submit(auth, pid, gate: Gate, expected, key):
-    return run(auth, SUBMIT, lambda c, a, rid: transition_project(c, a, pid, gate, expected, key, rid))
+    return run(auth, SUBMIT, lambda c, a, rid: submit_review(c, a, pid, gate, expected, key, rid))
