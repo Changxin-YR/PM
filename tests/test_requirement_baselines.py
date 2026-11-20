@@ -91,11 +91,18 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     with engine.begin() as c: c.execute(db.change_entries.update().where(db.change_entries.c.id==change).values(status='withdrawn'))
     issued=manager.post(tokens,headers=h(manager.get(tokens).json()['data']['collectionRevision']),json=grant); assert issued.status_code==200,issued.text
     token=issued.headers['x-pmo-new-token']
-    async def delegated():
+    async def delegated(propose=False):
         env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); args={**proof,'requirementId':req,'expectedRevision':rev,'idempotencyKey':uuid4().hex}
+            if propose:
+                args={'projectId':pid,'targetId':req,'targetType':'requirement','before':{'priority':'P0'},'after':{'priority':'P1'},
+                    'expectedRevision':rev+3,'reason':'客户建议调整实施顺序','idempotencyKey':uuid4().hex}
+                result=await session.call_tool('pmo_change_propose',args); assert not result.isError,result.content
+                assert result.structuredContent['data']['status']=='pending' and 'approvedBy' not in result.structuredContent['data']
+                assert result.structuredContent==(await session.call_tool('pmo_change_propose',args)).structuredContent
+                return
             delivered=await session.call_tool('pmo_requirement_deliver',args); assert not delivered.isError,delivered.content
             assert delivered.structuredContent['data']['status']=='delivered'
             assert delivered.structuredContent==(await session.call_tool('pmo_requirement_deliver',args)).structuredContent
@@ -110,6 +117,14 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     assert step(client,'customer-confirm',rev+2).status_code==403
     with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=customer))
     final=step(client,'customer-confirm',rev+2); assert final.json()['data']['status']=='customer_confirmed',final.text
+    issued=manager.post(tokens,headers=h(manager.get(tokens).json()['data']['collectionRevision']),json={**grant,'allowedActions':['pmo_change_propose']})
+    assert issued.status_code==200,issued.text
+    token=issued.headers['x-pmo-new-token']; asyncio.run(delegated(propose=True))
+    latest=manager.get(path+'/changes').json()['data']['items'][0]; assert latest['status']=='pending' and latest['reason']=='客户建议调整实施顺序'
+    ledger=f'projects/{pid}/changes'; assert api.get('/api/v1/'+ledger,headers={'Authorization':'Bearer '+token}).status_code==403
+    receipt=manager.get(ledger,params={'pageSize':1}).json()['data']; assert receipt['canPropose'] and receipt['total']==2 and receipt['items']==[latest]
+    assert not client.get(ledger).json()['data']['canPropose']
+    unchanged=manager.get(f'projects/{pid}/requirements').json()['data']['items'][0]; assert unchanged['priority']=='P0' and unchanged['revision']==rev+3
     with engine.connect() as c:
         records=c.execute(sa.text('SELECT status,actor_type,actor_id,evidence_id FROM requirement_transitions WHERE requirement_id=:r ORDER BY revision'),{'r':req}).all()
         assert [(s,k,a) for s,k,a,_ in records]==[('delivered','agent',pm),('accepted','human',pm),('customer_confirmed','human',customer)]

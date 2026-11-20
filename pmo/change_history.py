@@ -25,9 +25,9 @@ class Entry(Strict):
     baseRevision: int
     revision: int
     requestedBy: UUID
-    approvedBy: UUID | None
+    approvedBy: UUID | None = None
     createdAt: datetime
-    effectiveAt: datetime | None
+    effectiveAt: datetime | None = None
 
 
 class Page(Strict):

@@ -165,5 +165,7 @@ try {
   }
   await signers[0].getByRole('tabpanel',{name:'需求',exact:true}).getByRole('button',{name:'查询'}).click();await expect(signers[0].getByRole('cell',{name:'客户已确认',exact:true})).toBeVisible()
   await signers[0].getByRole('button',{name:'需求变更历史'}).click();const history=signers[0].getByRole('dialog',{name:'需求变更历史'});await expect(history.getByText('已撤回 · 验收样例：调整优先级已撤回')).toBeVisible();await expect(history.getByText(/基准版本 1 · 记录版本 1/)).toBeVisible();await expect(history.locator('pre').first()).toContainText('P0');await expect(history.locator('pre').last()).toContainText('P1')
+  await signers[0].keyboard.press('Escape');await expect(history).toBeHidden();await signers[0].getByRole('tab',{name:'变更台账'}).click();const changes=signers[0].getByRole('tabpanel',{name:'变更台账'});await changes.getByRole('button',{name:'调整需求优先级'}).click();await changes.getByLabel('基线需求').selectOption({index:1});await changes.getByLabel('申请优先级').selectOption('P1');await changes.getByLabel('变更原因').fill('隔离试点请求调整顺序');await changes.getByRole('button',{name:'提交变更申请'}).click();await expect(changes.getByRole('cell',{name:'待审批'})).toBeVisible()
+  await signers[1].getByRole('tab',{name:'变更台账'}).click();const otherChanges=signers[1].getByRole('tabpanel',{name:'变更台账'});await expect(otherChanges.getByRole('cell',{name:'隔离试点请求调整顺序'})).toBeVisible();await expect(otherChanges.getByRole('button',{name:'调整需求优先级'})).toHaveCount(0)
   for(const signer of signers)await signer.close()
 } finally {await browser.close()}
