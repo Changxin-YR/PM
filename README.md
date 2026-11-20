@@ -22,4 +22,6 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 
 点击项目名称可维护里程碑（最多八个）及需求草稿。项目进入冻结阶段后，草稿编辑权限不会代替正式变更审批。
 
-MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。使用 `PMO_AGENT_TOKEN` 和可选的 `PMO_API_PORT`。已实现 10 个工具：项目列表/详情/创建/草稿修改，以及里程碑、需求各自的列表/创建/草稿修改。工具白名单见 `pmo/tool_routes.py`。测试夹具签发限时合成令牌并真实调用，尚无面向用户的令牌管理页。不应通过直接改库为真实用户授权。
+在项目资料的「立项卡」页签填写并保存材料；允许草稿信息不完整，保存不表示送审或批准。人工可读完整材料，Agent 通过项目详情只读契约允许的摘要。
+
+MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。使用 `PMO_AGENT_TOKEN` 和可选的 `PMO_API_PORT`。已实现工具见 `pmo/tool_routes.py`。测试夹具签发限时合成令牌并真实调用，尚无面向用户的令牌管理页。不应通过直接改库为真实用户授权。

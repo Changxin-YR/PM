@@ -11,10 +11,12 @@ from . import projects, sessions
 from .access import Auth
 from .milestone_routes import router as milestone_router
 from .requirement_routes import router as requirement_router
+from .charter_routes import router as charter_router
 
 app=FastAPI(title='PMO Lite',version='0.1.0')
 app.include_router(milestone_router)
 app.include_router(requirement_router)
+app.include_router(charter_router)
 
 class Login(Strict):
     username:str=Field(min_length=1,max_length=120)
@@ -60,7 +62,7 @@ async def failure(_:Request,e:Failure):
 def listing(authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),stage:str|None=Query(None,alias='filters[stage]'),keyword:str|None=Query(None,alias='filters[keyword]',max_length=160))->Result[Page]:
     return projects.listing(authorization,page,pageSize,stage,keyword)
 
-@app.get('/api/v1/projects/{projectId}',operation_id='pmo_project_get')
+@app.get('/api/v1/projects/{projectId}',operation_id='pmo_project_get',response_model_exclude_none=True)
 def detail(projectId:UUID,authorization:Auth)->Result[ProjectDetail]:
     return projects.detail(authorization,projectId)
 

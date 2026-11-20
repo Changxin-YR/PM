@@ -41,8 +41,20 @@ class Page(Strict):
     pageSize: int
     total: int
 
+class CharterSummary(Strict):
+    charterId: UUID
+    projectId: UUID
+    revision: int
+    isFrozen: bool
+    valueProp: str | None = None
+    targetClient: str | None = None
+    roughCost: str | None = None
+    roughEffort: str | None = None
+    roughDurationDays: int | None = None
+
 class ProjectDetail(Strict):
     project: ProjectView
+    charterSummary: CharterSummary | None = None
 
 class Meta(Strict):
     asOf: datetime

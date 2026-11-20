@@ -1,5 +1,6 @@
 """Only contract operations backed by a live implementation belong here."""
 ROUTES = {
+    'pmo_charter_save': ('PUT', '/projects/{projectId}/charter'),
     'pmo_project_list': ('GET', '/projects'),
     'pmo_project_get': ('GET', '/projects/{projectId}'),
     'pmo_project_create': ('POST', '/projects'),

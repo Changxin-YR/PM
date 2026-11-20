@@ -36,3 +36,7 @@
 起点 `652615e`，迁移仍为 0003。新增需求创建、分页筛选、草稿修订，真实 stdio 注册并调用三个对应工具。草稿 baselineVersion=0；项目已存在冻结版本时禁止直接创建或修改范围；不提供草稿删除、取消或确认按钮。浏览器显示验收标准和计划确认日期，MCP 返回按 V1 的封闭 DTO 序列化。
 
 `scripts/dev.ps1 test` 9 passed / 10.57s；`mypy pmo --ignore-missing-imports` 18 文件 exit 0；浏览器初测精确定位优先级失败，给原生 select 补充无障碍名称，`scripts/dev.ps1 browser` 实测 1 passed / 21.09s；Vue 类型检查和 Vite 构建退出 0（主包体积警告仍存在）。测试中新设定的冻结记录仅用于拒绝路径，不代表已实现冻结审批。实时查询 8001 `/openapi.json` 有 13 个具名操作。当前 M0 未整体验收。
+## 2026-11-20 立项卡复验（起点 81bd2a7）
+
+开发库查询为 0004。立项卡支持草稿增量保存、完整人工读取、受限 Agent 摘要及不可改写的版本快照。恢复本机隔离数据库后，`scripts/dev.ps1 test` 10 passed / 15.60s，`scripts/dev.ps1 browser` 1 passed / 17.00s，含真实 PostgreSQL、HTTP、stdio、Edge；`scripts/dev.ps1 check` 三套规格校验和 21 个源文件类型检查退出 0，`npm.cmd --prefix web run build` 退出 0，仍有包体积警告。立项评审、送审关口和 Q1 尚未验收。
+
