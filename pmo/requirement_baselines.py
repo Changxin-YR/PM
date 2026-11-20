@@ -73,7 +73,7 @@ def state(c,a,p):
     pm=c.execute(pm_stmt.order_by(s.c.revision.desc()).limit(1)).mappings().one_or_none()
     if pm and not frozen and not active_member(c,p,pm.signer_id,'pm'): pm=None
     role=None
-    if not frozen and p.stage=='designing' and lines and all(i.baseline_version==0 and i.status=='baseline' for i in rows):
+    if not frozen and p.stage=='designing' and lines and all(i.baseline_version==0 and i.status=='baseline' and i.planned_confirm_at for i in rows):
         if not pm and a.person==p.pm_id and active_member(c,p,a.person,'pm'): role='pm'
         elif pm and a.person!=pm.signer_id and active_member(c,p,a.person,'client_representative'):
             t=db.stakeholders
@@ -110,6 +110,7 @@ def sign(projectId:UUID,command:Sign,authorization:Auth,key:Key,expected:Revisio
         if old: return old
         if p.stage!='designing' or current.status=='frozen': raise Failure(422,'BASELINE_LOCKED')
         if current.revision!=int(expected) or command.contentHash!=current.contentHash: raise Failure(409,'BASELINE_CHANGED')
+        if any(i.plannedConfirmAt is None for i in current.items): raise Failure(422,'PLANNED_CONFIRM_DATE_REQUIRED')
         if current.canSignAs!=command.role: raise Failure(403,'FORBIDDEN')
         reason=command.reason.strip()
         if len(reason)<4: raise Failure(422,'INVALID_REASON')

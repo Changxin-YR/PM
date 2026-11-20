@@ -42,6 +42,9 @@ def test_two_current_people_sign_the_same_requirement_snapshot(live,actor):
         manager=login(user); customer_session=login(username)
         def read(who): return who.get(path).json()['data']
         def sign(who,st,role,headers=None): return who.post(path+'/sign',headers=headers or h(st['revision']),json={'contentHash':st['contentHash'],'role':role,'reason':'Reviewed full list'})
+        empty=manager.get(base+'/requirement-metrics').json()['data']; assert 'satisfaction' not in empty and 'changeRate' not in empty
+        incomplete=read(manager); assert 'canSignAs' not in incomplete and sign(manager,incomplete,'pm').json()['code']=='PLANNED_CONFIRM_DATE_REQUIRED'
+        assert manager.patch('requirements/'+req,headers=h(),json={'fieldsRequirement':{'plannedConfirmAt':'2027-01-31'}}).status_code==200
         initial=read(manager); assert initial['canSignAs']=='pm' and 'canSignAs' not in read(customer_session)
         k=h(); result=sign(manager,initial,'pm',k); assert result.status_code==200,result.text
         assert sign(manager,initial,'pm',k).json()==result.json()
@@ -50,7 +53,7 @@ def test_two_current_people_sign_the_same_requirement_snapshot(live,actor):
         with engine.begin() as c:
             c.execute(db.stakeholders.insert().values(project_id=pid,type='customer',created_by=pm,name='Authenticated client',linked_person_id=customer))
         assert read(customer_session)['canSignAs']=='client_representative'
-        assert manager.patch('requirements/'+req,headers=h(),json={'fieldsRequirement':{'acceptanceCriteria':'Export includes source IDs'}}).status_code==200
+        assert manager.patch('requirements/'+req,headers=h(initial['items'][0]['revision']),json={'fieldsRequirement':{'acceptanceCriteria':'Export includes source IDs'}}).status_code==200
         assert sign(customer_session,old,'client_representative').json()['code']=='BASELINE_CHANGED'
         new=read(manager); assert new['status']=='draft' and new['contentHash']!=initial['contentHash']
         assert sign(manager,new,'pm').status_code==200
@@ -71,6 +74,8 @@ def test_two_current_people_sign_the_same_requirement_snapshot(live,actor):
 
 def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,customer,h):
     path=f'requirements/{req}'; files=f'projects/{pid}/evidence'; tokens='me/agent-tokens'
+    quality=lambda: manager.get(f'projects/{pid}/requirement-metrics').json()['data']
+    assert (quality()['activeWeight'],quality()['confirmedWeight'])==(3,0)
     with engine.begin() as c:
         c.execute(db.user_roles.insert().values(user_id=uid,role='delegator'))
         c.execute(db.project_members.insert().values(project_id=pid,person_id=customer,assigned_by=pm,role='reviewer',assignment_status='accepted',accepted_at=sa.func.now()))
@@ -117,9 +122,13 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     assert step(client,'customer-confirm',rev+2).status_code==403
     with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=customer))
     final=step(client,'customer-confirm',rev+2); assert final.json()['data']['status']=='customer_confirmed',final.text
+    assert quality()['satisfaction']=='1.000000' and quality()['confirmedP0']==1
     issued=manager.post(tokens,headers=h(manager.get(tokens).json()['data']['collectionRevision']),json={**grant,'allowedActions':['pmo_change_propose']})
     assert issued.status_code==200,issued.text
     token=issued.headers['x-pmo-new-token']; asyncio.run(delegated(propose=True))
+    assert (quality()['satisfaction'],quality()['frozenCount'],quality()['activeWeight'])==('0.000000',1,3)
+    alerts=lambda: manager.get(f'projects/{pid}/alerts').json()['data']['items']
+    assert [(i['ruleId'],i['status']) for i in alerts()]==[('LR-05','open')]
     latest=manager.get(path+'/changes').json()['data']['items'][0]; assert latest['status']=='pending' and latest['reason']=='客户建议调整实施顺序'
     ledger=f'projects/{pid}/changes'; assert api.get('/api/v1/'+ledger,headers={'Authorization':'Bearer '+token}).status_code==403
     receipt=manager.get(ledger,params={'pageSize':1}).json()['data']; assert receipt['canPropose'] and receipt['total']==2 and receipt['items']==[latest]
@@ -139,6 +148,8 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     key=h(); applied=client.post(decision,headers=key,json=verdict); assert applied.status_code==200,applied.text
     assert applied.json()==client.post(decision,headers=key,json=verdict).json() and applied.json()['data']['approvedBy']==str(customer)
     changed=manager.get(f'projects/{pid}/requirements').json()['data']['items'][0]; assert (changed['priority'],changed['status'],changed['baselineVersion'])==('P1','baseline',2)
+    assert (quality()['activeWeight'],quality()['confirmedWeight'],quality()['changedInitialCount'],quality()['frozenCount'])==(2,0,1,0)
+    assert alerts()[0]['status']=='resolved'
     assert step(manager,'deliver',changed['revision']).json()['code']=='CURRENT_BASELINE_EVIDENCE_REQUIRED'
     assert manager.get(files,params={'requirementId':req,'verifiedOnly':'true','currentBaselineOnly':'true'}).json()['data']['total']==0
     newproof=manager.post(files,headers=h(2),files={'file':('v2.png',buf.getvalue(),'image/png')},data={'linkedResourceType':'requirement','linkedResourceId':req}).json()['data']
@@ -148,3 +159,8 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     with engine.connect() as c:
         snap=c.execute(sa.text('SELECT old_state,new_state,rationale FROM change_decision_records WHERE change_id=:id'),{'id':latest['changeId']}).mappings().one()
         assert snap.old_state['status']=='customer_confirmed' and snap.new_state['accepted_by'] is None and snap.rationale==verdict['rationale']
+    cancel={'targetType':'requirement','targetId':req,'before':{'status':'delivered'},'after':{'status':'cancelled'},'reason':'Customer withdrew scope'}
+    receipt=manager.post(ledger,headers=h(changed['revision']+1),json=cancel).json()['data']; assert quality()['activeWeight']==2
+    assert client.post('changes/'+receipt['changeId']+'/approve',headers=h(),json=verdict).status_code==200
+    empty=quality(); assert empty['activeWeight']==0 and 'satisfaction' not in empty and empty['changeRate']=='1.000000' and empty['approvedChangeCount']==2
+    assert empty['gaps']==['NO_ACTIVE_REQUIREMENTS']

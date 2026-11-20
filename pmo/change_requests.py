@@ -9,6 +9,7 @@ from . import charter_models, milestones, requirements, schema_v1 as db
 from .access import Auth, Key, Revision
 from .change_history import Entry, Page, with_decision
 from .change_intents import authority, capture
+from .scope_quality import scope_event
 from .contracts import Result, Strict
 from .costs import Amount
 from .identity import Failure, visible
@@ -109,6 +110,6 @@ def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:
                 ch.c.status.in_(('draft','pending','approved'))).limit(1)): raise Failure(409,'CHANGE_ALREADY_PENDING')
         i=c.execute(ch.insert().values(project_id=projectId,target_id=row.id,target_type=command.targetType,before=before,after=after,
             base_revision=row.revision,reason=command.reason.strip(),status='pending',requested_by=a.person,created_by=a.person).returning(ch)).mappings().one()
-        capture(c,a,i,row); result=entry(i)
+        capture(c,a,i,row); scope_event(c,i,True); result=entry(i)
         return finish(c,a,op,key,rid,projectId,sig,Result[Entry](data=result,meta=meta(op,[f'change:{i.id}@{i.revision}'])))
     return run(authorization,op,write)

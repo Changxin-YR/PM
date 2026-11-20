@@ -20,6 +20,7 @@ from .milestone_forecasts import reconcile
 from .projects import fingerprint, meta, run
 from .requirement_baselines import active_member
 from .requirement_delivery import baseline_evidence_time, synthetic_confirmation
+from .scope_quality import scope_event
 
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
 
@@ -88,7 +89,7 @@ def decide(auth,approve,cid,command,key,rev):
         c.execute(sa.text('''INSERT INTO change_decision_records(change_id,approver_id,authority_ref,rationale,outcome,old_state,new_state,request_id,decided_at)
             VALUES(:id,:who,:grant,:reason,:outcome,CAST(:old AS jsonb),CAST(:new AS jsonb),:rid,:at)'''),dict(id=cid,who=a.person,grant=grant,reason=reason,
             outcome=status,old=json.dumps(snapshot(old)),new=json.dumps(snapshot(result)) if result else None,rid=UUID(rid),at=at))
-        refs=[f'change:{cid}@{saved.revision}']
+        scope_event(c,saved,False); refs=[f'change:{cid}@{saved.revision}']
         if result: refs.append(f'{i.target_type}:{result.id}@{result.revision}')
         receipt=entry(saved).model_copy(update={'decidedBy':a.person,'decisionReason':reason,'decidedAt':at})
         return finish(c,a,op,key,rid,project.id,sig,Result[Entry](data=receipt,meta=meta(op,refs)),fingerprint(entry(i).model_dump(mode='json')))

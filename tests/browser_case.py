@@ -37,13 +37,13 @@ def test_browser_draft_workflow(live,actor):
         for person,role in ((pm,'pm'),(client,'client_representative')):
             c.execute(db.project_members.insert().values(project_id=pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
         c.execute(db.stakeholders.insert().values(project_id=pid,created_by=pm,name='测试客户代表',type='customer',linked_person_id=client))
-        c.execute(db.requirements.insert().values(project_id=pid,created_by=pm,desc='导出归档清单',priority='P0',acceptance_criteria='导出保留全部来源编号',status='baseline',baseline_version=0))
+        c.execute(db.requirements.insert().values(project_id=pid,created_by=pm,desc='导出归档清单',priority='P0',acceptance_criteria='导出保留全部来源编号',planned_confirm_at='2027-01-31',status='baseline',baseline_version=0))
         evidence_pid=c.scalar(db.projects.insert().values(code='E2E-FILE',name='完工凭据演练',org_id=org,stage='designing',pm_id=pm,created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
         for person,role in ((pm,'pm'),(client,'reviewer'),(client,'client_representative')):
             c.execute(db.project_members.insert().values(project_id=evidence_pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
         c.execute(db.milestones.insert().values(project_id=evidence_pid,created_by=pm,name='试点验收',ordinal=1,is_key=True,planned_date='2020-03-09'))
         c.execute(db.stakeholders.insert().values(project_id=evidence_pid,created_by=pm,name='测试客户代表',type='customer',linked_person_id=client))
-        req=c.scalar(db.requirements.insert().values(project_id=evidence_pid,created_by=pm,desc='完成文件交付',acceptance_criteria='文件中列明验收记录',priority='P0',status='baseline',baseline_version=0).returning(db.requirements.c.id))
+        req=c.scalar(db.requirements.insert().values(project_id=evidence_pid,created_by=pm,desc='完成文件交付',acceptance_criteria='文件中列明验收记录',priority='P0',planned_confirm_at='2027-01-31',status='baseline',baseline_version=0).returning(db.requirements.c.id))
         accounts['PMO_TEST_REQUIREMENT_ID']=str(req)
         c.execute(sa.text("INSERT INTO change_approval_grants VALUES(:p,:u,'requirement','browser fixture',now()+interval '1 hour',NULL)"),dict(p=evidence_pid,u=client))
         c.execute(db.change_entries.insert().values(project_id=evidence_pid,created_by=pm,requested_by=pm,target_type='requirement',target_id=req,base_revision=1,
