@@ -7,7 +7,7 @@ from .db import engine
 from . import schema_v1 as db
 from .sessions import hasher
 
-def bootstrap(connection, organization, username, name, password):
+def bootstrap(connection, organization, username, name, password, *, enable_delegation=False):
     if not (0<len(organization)<=160 and 0<len(username)<=120 and 0<len(name)<=120 and 14<=len(password)<=256):
         raise ValueError('Invalid identity fields or password length (14-256 required)')
     connection.exec_driver_sql('LOCK TABLE organizations, user_accounts IN EXCLUSIVE MODE')
@@ -19,15 +19,19 @@ def bootstrap(connection, organization, username, name, password):
     person=uuid4()
     connection.execute(db.persons.insert().values(id=person,user_id=user,name=name,created_by=person,org_id=org,is_active=True))
     connection.execute(db.user_roles.insert().values(user_id=user,role='system_admin'))
+    if enable_delegation:
+        connection.execute(db.user_roles.insert().values(user_id=user,role='delegator'))
+        connection.execute(db.audit_logs.insert().values(actor_type='human',actor_id=user,org_id=org,action='bootstrap_delegator',result='success',request_id=str(uuid4())))
     connection.execute(db.audit_logs.insert().values(actor_type='human',actor_id=user,org_id=org,action='bootstrap',result='success',request_id=str(uuid4())))
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for arg in ('organization','username','name'): parser.add_argument('--'+arg,required=True)
+    parser.add_argument('--enable-delegation',action='store_true',help='Explicitly allow the initial account to delegate its own project scope')
     args=parser.parse_args()
     password=getpass('Initial password (14+ characters): ')
     if password!=getpass('Confirm password: '): raise SystemExit('Password mismatch')
-    with engine().begin() as c: bootstrap(c,args.organization,args.username,args.name,password)
+    with engine().begin() as c: bootstrap(c,args.organization,args.username,args.name,password,enable_delegation=args.enable_delegation)
     print('Initialized. No project governance roles were assigned.')
 
 if __name__=='__main__': main()

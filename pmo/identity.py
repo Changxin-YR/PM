@@ -38,6 +38,7 @@ def browser_actor(conn,identity):
         s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u)).mappings().one_or_none()
     if not row: raise Failure(401,'UNAUTHORIZED')
     actor=Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
+        'human_agent_token_create','human_agent_tokens_list','human_agent_token_revoke','admin_agent_tokens_list','admin_agent_token_revoke',
         'admin_audits_list','human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
         'human_accept_role_assignment','human_decline_role_assignment'}),(),True,'human')
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
@@ -50,9 +51,12 @@ def authenticate(conn, header: str | Browser | None) -> Actor:
         raise Failure(401,'UNAUTHORIZED')
     digest = sha256(header[7:].encode()).hexdigest()
     a,p,u,o=db.agent_credentials,db.persons,db.user_accounts,db.organizations
+    issued=sa.table('agent_security_events',sa.column('token_id',sa.Uuid),sa.column('action'))
+    managed=sa.exists(sa.select(1).select_from(issued).where(issued.c.token_id==a.c.id,issued.c.action=='issue'))
+    delegator=sa.exists(sa.select(1).select_from(db.user_roles).where(db.user_roles.c.user_id==u.c.id,db.user_roles.c.role=='delegator'))
     query = sa.select(a,p.c.id.label('person')).select_from(a.join(u,u.c.id==a.c.delegated_by).join(p,p.c.user_id==u.c.id).join(o,o.c.id==a.c.org_id)).where(
         a.c.token_hash==digest,a.c.revoked_at.is_(None),a.c.status=='active',a.c.expires_at>sa.func.now(),
-        p.c.org_id==a.c.org_id,p.c.is_active,u.c.is_active,o.c.status=='active',
+        p.c.org_id==a.c.org_id,p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(~managed,delegator),
         sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=a)
     row=conn.execute(query).mappings().one_or_none()
     if row is None: raise Failure(401,'UNAUTHORIZED')

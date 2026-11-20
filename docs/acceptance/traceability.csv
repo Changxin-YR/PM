@@ -46,7 +46,7 @@
 "T06","独立系统新增验收","Fact注入/来源不足不污染指标","T06","NOT_TESTED","",""
 "T07","独立系统新增验收","审计与事务一致","T07","PARTIAL_DRAFT_AUDIT_AND_ROLLBACK","pmo/projects.py;pmo/audits.py","tests/test_admin_audit.py;tests/test_runtime.py;tests/test_error_contract.py;tests/browser_case.py"
 "T08","独立系统新增验收","Lesson用于下一次立项","T08","NOT_TESTED","",""
-"T09","独立系统新增验收","真实MCP Host工具/授权可用","T09","NOT_TESTED","",""
+"T09","独立系统新增验收","真实MCP Host工具/授权可用","T09","PARTIAL_STDIO_SDK_NOT_TARGET_HOST","pmo/agent_tokens.py;pmo/mcp_server.py","tests/test_agent_tokens.py;tests/test_runtime.py"
 "T10","独立系统新增验收","规则及备份恢复","T10","NOT_TESTED","",""
 "SEC-01","独立系统实现补充","项目级RBAC与代理授权","T02,T04","PARTIAL_DRAFT_MEMBERS_AND_AGENT_BOUNDARY","pmo/identity.py;pmo/members.py;pmo/projects.py","tests/test_appointments.py;tests/test_scope_migration.py;tests/test_runtime.py;tests/browser_case.py"
 "SEC-02","独立系统实现补充","事务幂等与乐观锁","T05,T07","PARTIAL_PROJECT_DRAFT_ONLY","pmo/projects.py","tests/test_runtime.py"

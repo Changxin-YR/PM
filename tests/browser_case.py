@@ -17,6 +17,7 @@ def test_browser_draft_workflow(live,actor):
     with engine.begin() as c:
         uid=c.scalar(sa.select(db.agent_credentials.c.delegated_by).where(db.agent_credentials.c.id==aid))
         c.execute(db.user_roles.insert().values(user_id=uid,role='system_admin'))
+        c.execute(db.user_roles.insert().values(user_id=uid,role='delegator'))
         username=c.scalar(db.user_accounts.update().where(db.user_accounts.c.id==uid).values(password_hash=PasswordHasher().hash(password)).returning(db.user_accounts.c.username))
         org=c.scalar(sa.select(db.persons.c.org_id).where(db.persons.c.user_id==uid))
         accounts={}
