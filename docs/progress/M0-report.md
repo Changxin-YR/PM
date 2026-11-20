@@ -40,3 +40,9 @@
 
 开发库查询为 0004。立项卡支持草稿增量保存、完整人工读取、受限 Agent 摘要及不可改写的版本快照。恢复本机隔离数据库后，`scripts/dev.ps1 test` 10 passed / 15.60s，`scripts/dev.ps1 browser` 1 passed / 17.00s，含真实 PostgreSQL、HTTP、stdio、Edge；`scripts/dev.ps1 check` 三套规格校验和 21 个源文件类型检查退出 0，`npm.cmd --prefix web run build` 退出 0，仍有包体积警告。立项评审、送审关口和 Q1 尚未验收。
 
+## 2026-11-20 Sponsor/PM 任命（起点 40267a6）
+
+迁移 0005 创建独立任命授权与邀请记录。本机开发库实查为 0005。无预置真实授权。发起人和 Agent 只能提名；任命人发邀请、当事人接受或拒绝均为人工操作。拒绝、过期或越权不会产生有效成员。Web、REST、stdio 均使用相同服务。工程补充接口及签核边界见 ADR 0003。
+
+`scripts/dev.ps1 test` 12 passed / 11.88s；`scripts/dev.ps1 browser` 1 passed / 14.80s（三个独立 Edge 会话提名、发邀请、接受，刷新后台账可见）；`scripts/dev.ps1 check` 三套规格校验与 mypy 23 文件 exit 0；`npm.cmd --prefix web run build` exit 0（主包体积警告）。基线操作 19/95，加上两个补充操作；MCP 12/40。审计、越权、幂等及真实 MCP 有相应用例，并不表示 T02、Q1 或 M0 整体验收通过。
+

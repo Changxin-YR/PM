@@ -38,7 +38,9 @@ def browser_actor(conn,identity):
         s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u)).mappings().one_or_none()
     if not row: raise Failure(401,'UNAUTHORIZED')
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash): raise Failure(403,'CSRF_INVALID')
-    return Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get'}),(),True,'human')
+    return Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
+        'human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
+        'human_accept_role_assignment','human_decline_role_assignment'}),(),True,'human')
 
 def authenticate(conn, header: str | Browser | None) -> Actor:
     if isinstance(header,Browser): return browser_actor(conn,header)

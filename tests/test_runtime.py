@@ -18,7 +18,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0004'
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0005'
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live
@@ -41,13 +41,13 @@ def test_concurrent_replay_scope_and_denial(live,actor):
         assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
 
 def test_mcp_stdio(live,actor):
-    engine,_,port,_=live; token,ident=actor(extra_actions=('pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save'))
+    engine,_,port,_=live; token,ident=actor(extra_actions=('pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose'))
     async def scenario():
         env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
-            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save'}
+            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose'}
             async def call(op,args):
                 r=await session.call_tool(op,args); assert not r.isError,r.content
                 jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']
@@ -68,6 +68,10 @@ def test_mcp_stdio(live,actor):
             assert revised['priority']=='P0' and revised['revision']==2
             assert (await call('pmo_requirement_list',{'projectId':p['projectId'],'filters':{'keyword':'导出'}}))['items']==[revised]
             bad=await session.call_tool('pmo_project_list',{'pageSize':101}); assert bad.isError
+            with engine.connect() as c: nominee=c.scalar(sa.select(db.projects.c.initiator_id).where(db.projects.c.id==p['projectId']))
+            proposal={'projectId':p['projectId'],'personId':str(nominee),'role':'pm','expectedRevision':2,'idempotencyKey':uuid4().hex}
+            invitation=await call('pmo_role_assignment_propose',proposal)
+            assert invitation['status']=='proposed' and (await call('pmo_role_assignment_propose',proposal))==invitation
             with engine.begin() as c: c.execute(db.agent_credentials.update().where(db.agent_credentials.c.id==ident).values(revoked_at=sa.func.now()))
             denied=await session.call_tool('pmo_project_list',{}); assert denied.isError and denied.structuredContent['error']['code']=='UNAUTHORIZED'
     asyncio.run(scenario())

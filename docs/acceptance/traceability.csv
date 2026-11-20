@@ -13,7 +13,7 @@
 "ENT-Fact","§2.1","事实、原话、来源、信任档、冲突","T06","NOT_TESTED","",""
 "ENT-Task","§2.1","补强、预警、负责人与截止日期","T10","NOT_TESTED","",""
 "ENT-Lesson","§2.1","复盘教训、类别、根因、人工确认","Q6,T08","NOT_TESTED","",""
-"ENT-Person","§2.1","组织身份、角色与责任人","T02","NOT_TESTED","",""
+"ENT-Person","§2.1","组织身份、角色与责任人","T02","PARTIAL_APPOINTMENT","pmo/appointments.py","tests/test_appointments.py;tests/test_runtime.py;tests/browser_case.py"
 "ENT-Stakeholder","§2.1","客户、合作方、内部利益相关者","T04","NOT_TESTED","",""
 "GATE-01","§3","关口01: 立项价值四维评分与人工决定","Q1,T04","NOT_TESTED","",""
 "GATE-02","§3","关口02: 可行性五维短板及补强任务","T03,T10","NOT_TESTED","",""

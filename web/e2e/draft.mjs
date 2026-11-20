@@ -56,6 +56,21 @@ try {
   await expect(drawer.getByLabel('粗估金额（元）')).toHaveValue('109.70')
   await page.keyboard.press('Escape')
   await expect(drawer).toBeHidden()
+  await page.getByRole('button',{name:'人员任命'}).click()
+  await drawer.getByLabel('项目草稿').selectOption({label:'试点范围复核'})
+  await drawer.getByLabel('被提名人 ID').fill(process.env.PMO_TEST_NOMINEE_ID)
+  await drawer.getByRole('button',{name:'提交提名'}).click()
+  await expect(drawer.getByRole('status')).toContainText('已提交提名')
+  await page.keyboard.press('Escape'); await expect(drawer).toBeHidden()
+  for(const [user,action] of [['ISSUER','发出邀请'],['NOMINEE','接受任命']]){
+    const other=await browser.newPage(); await other.goto(process.env.PMO_BROWSER_URL)
+    await other.getByLabel('账号',{exact:true}).fill(process.env['PMO_TEST_'+user]);await other.getByLabel('密码',{exact:true}).fill(process.env['PMO_TEST_'+user+'_PASSWORD'])
+    await other.getByRole('button',{name:'登录',exact:true}).click();await other.getByRole('button',{name:'人员任命'}).click()
+    const inbox=other.getByRole('dialog');await inbox.getByRole('button',{name:action,exact:true}).click()
+    await expect(inbox.getByRole('status')).toContainText(user==='ISSUER'?'邀请已发出':'已接受任命')
+    if(user==='NOMINEE'){await other.reload();await expect(other.getByRole('button',{name:'查看 试点范围复核 的项目资料'})).toBeVisible()}
+    await other.close()
+  }
   await mkdir('test-results',{recursive:true})
   await page.screenshot({path:'test-results/ledger-desktop.png'})
   await page.setViewportSize({width:390,height:844})
