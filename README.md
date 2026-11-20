@@ -37,3 +37,5 @@ MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作�
 本地已有开发库可用 `.\scripts\dev.ps1 migrate` 升级，不重建卷。`.\scripts\dev.ps1 outbox` 处理一批到期项目事件并记录本地消费回执；`.\scripts\dev.ps1 dead-letters` 查询死信标识和错误码，不输出业务载荷。租约 30 秒，失败指数退避，最多 5 次尝试。没有安装后台计划任务；本地事件回执不代表已向用户发送通知或完成任何审批。
 
 数据库与私有附件需作为一个恢复点备份。开发命令、隔离演练和每日保留要求见 [联合备份与恢复手册](docs/ops/backup-and-recovery.md)。
+
+独立部署测试库时，按 [数据库运行账号隔离](docs/ops/database-roles.md) 分开迁移、API 与 Outbox 登录。此流程不会切换现有本机预览的连接账号。

@@ -52,6 +52,7 @@
 "SEC-02","独立系统实现补充","事务幂等与乐观锁","T05,T07","PARTIAL_DRAFT_AND_REVIEW_SUBMISSION","pmo/projects.py;pmo/reviews.py","tests/test_runtime.py;tests/test_reviews.py"
 "SEC-03","独立系统实现补充","凭证访问与Fact来源校验","T02,T06","NOT_TESTED","",""
 "OPS-01","独立系统实现补充","Compose/备份恢复/日志","T10","LOCAL_JOINT_RESTORE_DRILL","pmo/recovery.py;scripts/recovery.ps1;docs/ops/backup-and-recovery.md","tests/test_recovery.py"
+"OPS-02","§9.1;数据库一致性约束","迁移、API、Outbox 登录与审计追加权限隔离","T07,T10","LOCAL_ISOLATED_DATABASE_ROLES","pmo/database_roles.py;docs/ops/database-roles.md","tests/test_database_roles.py"
 "UI-ALL","独立系统实现补充","Web可独立完成项目生命周期","Q1-Q8,T01","NOT_TESTED","",""
 "ENG-201","§20.2 (implementation-only)","16类领域Owner归属与写入责任","T02,T07","NOT_TESTED","",""
 "ENG-202","§20.3 (implementation-only)","成功/拒绝审计包含事件时间和请求身份","T07","PARTIAL_REQUEST_CORRELATION","pmo/request_context.py;pmo/projects.py;pmo/api.py","tests/test_error_contract.py;tests/test_human.py;tests/test_runtime.py"

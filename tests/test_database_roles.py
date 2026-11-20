@@ -1,0 +1,179 @@
+from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime, timedelta
+import os
+from secrets import token_urlsafe
+import socket
+import subprocess
+import sys
+import time
+from uuid import uuid4
+
+import httpx
+import psycopg
+from psycopg import sql
+import pytest
+import sqlalchemy as sa
+
+from pmo.bootstrap import bootstrap
+from pmo.database_roles import apply_roles, RoleError
+from pmo.recovery import connection_args, database_url
+from test_evidence import binary
+
+
+@pytest.fixture
+def split_roles():
+    admin = database_url(os.environ['PMO_TEST_DATABASE_URL'])
+    assert admin.host in ('127.0.0.1', '::1'), 'Use a dedicated local test cluster'
+    suffix = uuid4().hex
+    database = 'pmo_roles_test_' + suffix
+    users = {kind: 'pmo_' + kind + '_' + suffix for kind in ('owner', 'api', 'worker')}
+    with psycopg.connect(**connection_args(admin), autocommit=True) as control, ExitStack() as cleanup:
+        def drop_role(username):
+            control.execute(sql.SQL('DROP ROLE {}').format(sql.Identifier(username)))
+
+        urls = {}
+        for kind, username in users.items():
+            password = token_urlsafe(32)
+            control.execute(sql.SQL('CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION '
+                                    'NOBYPASSRLS PASSWORD {}').format(sql.Identifier(username), sql.Literal(password)))
+            cleanup.callback(drop_role, username)
+            urls[kind] = admin.set(database=database, username=username, password=password)
+        control.execute(sql.SQL('CREATE DATABASE {} OWNER {} TEMPLATE template0').format(
+            sql.Identifier(database), sql.Identifier(users['owner'])))
+        cleanup.callback(control.execute, sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database)))
+        yield urls
+
+
+@contextmanager
+def serve(url, tmp_path):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    env = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False),
+           'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(tmp_path / 'private')}
+    proc = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'pmo.api:app', '--host', '127.0.0.1',
+                             '--port', str(port), '--no-access-log'], env=env)
+    try:
+        with httpx.Client(base_url=f'http://127.0.0.1:{port}/api/v1/', trust_env=False) as api:
+            for _ in range(100):
+                try:
+                    if api.get(f'http://127.0.0.1:{port}/openapi.json').status_code == 200:
+                        break
+                except httpx.ConnectError:
+                    pass
+                assert proc.poll() is None
+                time.sleep(.1)
+            else:
+                pytest.fail('API startup timed out')
+            yield api
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
+def denied(conn, statements):
+    for statement in statements:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(statement)
+
+
+def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, tmp_path):
+    urls = split_roles
+    owner_env = {**os.environ, 'DATABASE_URL': urls['owner'].render_as_string(hide_password=False)}
+    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True, env=owner_env)
+    owner_engine = sa.create_engine(urls['owner'], hide_parameters=True)
+    password = token_urlsafe(32)
+    try:
+        with owner_engine.begin() as seed:
+            bootstrap(seed, 'Synthetic roles', 'fixture-admin', 'Fixture', password, enable_delegation=True)
+            seed.execute(sa.text('GRANT UPDATE (password_hash) ON user_accounts TO '+urls['api'].username))
+    finally:
+        owner_engine.dispose()
+
+    with psycopg.connect(**connection_args(urls['owner']), autocommit=True) as owner:
+        with pytest.raises(RoleError, match='DISTINCT'):
+            apply_roles(owner, urls['owner'].username, urls['worker'].username)
+        command = [sys.executable, '-m', 'pmo.database_roles', '--dedicated-database',
+                   '--api-role', urls['api'].username, '--worker-role', urls['worker'].username]
+        process = subprocess.run(command, capture_output=True, text=True, env={**os.environ,
+                                 'PMO_MIGRATION_DATABASE_URL': owner_env['DATABASE_URL']})
+        assert process.returncode == 0, process.stderr
+        # Apply again to prove ACL replacement and guard installation are repeatable.
+        apply_roles(owner, urls['api'].username, urls['worker'].username)
+
+        with psycopg.connect(**connection_args(urls['api']), autocommit=True) as api_db:
+            assert api_db.execute('SELECT id FROM user_roles FOR SHARE').fetchall()
+            denied(api_db, [
+                'CREATE TABLE public.unauthorized(id int)', 'CREATE TEMP TABLE unauthorized(id int)',
+                'ALTER TABLE audit_logs DISABLE TRIGGER USER', 'TRUNCATE audit_logs',
+                'UPDATE audit_logs SET action=action', 'DELETE FROM audit_logs',
+                "INSERT INTO user_roles(user_id,role) SELECT id,'finance_verifier' FROM user_accounts",
+                'UPDATE user_roles SET id=id', 'UPDATE persons SET id=id',
+                'UPDATE appointment_authorities SET org_id=org_id',
+                'UPDATE change_approval_grants SET project_id=project_id',
+                'UPDATE user_accounts SET password_hash=password_hash',
+                'UPDATE cost_entries SET actual=actual', 'UPDATE alembic_version SET version_num=version_num',
+                'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
+                sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
+            ])
+        with psycopg.connect(**connection_args(urls['worker']), autocommit=True) as worker_db:
+            denied(worker_db, ['SELECT password_hash FROM user_accounts', 'SELECT token_hash FROM agent_credentials',
+                               'SELECT * FROM evidence_files', 'SELECT * FROM audit_logs', 'UPDATE projects SET name=name',
+                               'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
+
+        with serve(urls['api'], tmp_path) as api:
+            logged = api.post('auth/login', json=dict(username='fixture-admin', password=password))
+            assert logged.status_code == 200, logged.text
+            api.headers['X-CSRF-Token'] = logged.json()['csrfToken']
+            key = lambda rev=1: {'Idempotency-Key': uuid4().hex, 'If-Match': str(rev)}
+            draft = api.post('projects', headers=key(), json={'name': 'Restricted runtime', 'code': 'ROLE-SMOKE'})
+            assert draft.status_code == 200, draft.text
+            path = 'projects/' + draft.json()['data']['projectId']
+            assert api.get(path).status_code == 200
+            patch = api.patch(path, headers=key(), json={'fields': {'name': 'Restricted revision'}})
+            assert patch.status_code == 200, patch.text
+            stale = api.patch(path, headers=key(), json={'fields': {'name': 'Stale revision'}})
+            assert stale.status_code == 409 and stale.json()['code'] == 'VERSION_CONFLICT'
+            audit = api.get('admin/audits', params={'requestId': stale.headers['X-Request-ID']})
+            assert audit.json()['data']['items'][0]['result'] == 'denied'
+            ms = api.post(path + '/milestones', headers=key(), json={'name': 'Evidence target', 'plannedDate': '2026-11-01', 'isKey': True})
+            assert ms.status_code == 200, ms.text
+            uploaded = api.post(path + '/evidence', headers=key(), files={'file': ('proof.png', binary('png'), 'image/png')},
+                                data={'linkedResourceType': 'milestone', 'linkedResourceId': ms.json()['data']['milestoneId']})
+            assert uploaded.status_code == 200, uploaded.text
+            posting = api.post(path + '/cost-postings', headers=key(), json={'type': 'money', 'amount': '12.50',
+                              'period': '2020-01', 'sourceRef': 'synthetic-invoice'})
+            assert posting.status_code == 200, posting.text
+            assert api.get(path + '/cost-postings').status_code == 200
+            collection = api.get('me/agent-tokens').json()['data']
+            issue = api.post('me/agent-tokens', headers=key(collection['collectionRevision']), json={
+                'allowedProjectIds': [draft.json()['data']['projectId']], 'allowedActions': ['pmo_project_get'],
+                'expiresAt': (datetime.now(UTC) + timedelta(minutes=30)).isoformat(),
+            })
+            assert issue.status_code == 200, issue.text
+            token = issue.json()['data']
+            with httpx.Client(base_url=api.base_url, trust_env=False) as agent:
+                auth = {'Authorization': 'Bearer ' + issue.headers['X-PMO-New-Token']}
+                assert agent.get(path, headers=auth).status_code == 200
+                revoke = api.post('me/agent-tokens/' + token['tokenId'] + '/revoke', headers=key(token['revision']),
+                                  json={'reason': 'Isolated role check'})
+                assert revoke.status_code == 200, revoke.text
+                assert agent.get(path, headers=auth).status_code == 401
+            assert api.post('auth/logout').status_code == 204
+
+        with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:
+            denied(runtime, ["""INSERT INTO cost_entries(project_id,created_by,type,category,period_start,period_end,budget,actual,forecast_remaining,baseline_version)
+                SELECT id,created_by,'money','forbidden','2020-02-01','2020-02-29',0,99,0,1 FROM projects"""])
+        assert owner.execute('SELECT count(*) FROM cost_baseline_history').fetchone() == (1,)
+        with owner.transaction():
+            owner.execute('''WITH e AS (INSERT INTO rule_events(project_id,rule_id,rule_version,business_period,fingerprint,source_refs,status)
+                SELECT id,'LR-03','synthetic','2026-11',repeat('a',64),'[]','open' FROM projects RETURNING id,project_id)
+                INSERT INTO outbox_events(dedupe_key,event_type,status,payload)
+                SELECT 'scope-test:notification','rule.notify','pending',jsonb_build_object('projectId',e.project_id,'eventId',e.id,
+                       'recipientId',p.initiator_id) FROM e JOIN projects p ON p.id=e.project_id''')
+        worker_process = subprocess.run([sys.executable, '-m', 'pmo.outbox'], check=True, capture_output=True, text=True,
+                                       env={**os.environ, 'DATABASE_URL': urls['worker'].render_as_string(hide_password=False)})
+        assert 'acknowledged' in worker_process.stdout
+        assert owner.execute("SELECT count(*) FROM outbox_events WHERE status<>'sent'").fetchone() == (0,)
+        assert owner.execute('SELECT count(*) FROM project_event_inbox').fetchone()[0] >= 4
+        assert owner.execute("SELECT count(*) FROM notifications WHERE delivery_status='delivered'").fetchone() == (1,)

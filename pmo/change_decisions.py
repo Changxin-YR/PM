@@ -44,8 +44,8 @@ def apply(c,p,actor,i,old):
     else:
         # One entry version is current. Keep existing posting foreign keys on the original version.
         c.execute(t.update().where(t.c.id==old.id).values(is_current_baseline=False,updated_at=sa.func.now(),revision=old.revision+1))
-        values={k:old[k] for k in ('project_id','type','category','period_start','period_end','forecast_remaining','actual')}
-        return c.execute(t.insert().values(**values,created_by=actor.person,budget=Decimal(after['budget']),baseline_version=old.baseline_version+1,
+        values={k:old[k] for k in ('project_id','type','category','period_start','period_end','forecast_remaining')}
+        return c.execute(t.insert().values(**values,actual=0,created_by=actor.person,budget=Decimal(after['budget']),baseline_version=old.baseline_version+1,
             source_ref=f'change:{i.id}').returning(t)).mappings().one()
     saved=c.execute(t.update().where(t.c.id==old.id).values(**fields,updated_at=sa.func.now(),revision=old.revision+1).returning(t)).mappings().one()
     if kind=='milestone': reconcile(c,p,saved)
