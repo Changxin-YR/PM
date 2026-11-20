@@ -18,7 +18,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0009'
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0010'
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live
@@ -41,7 +41,7 @@ def test_concurrent_replay_scope_and_denial(live,actor):
         assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
 
 def test_mcp_stdio(live,actor):
-    cost_ops=('pmo_cost_summary','pmo_cost_budget_draft_save','pmo_cost_forecast_save')
+    cost_ops=('pmo_cost_summary','pmo_cost_budget_draft_save','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_preapproval_spending_list')
     engine,_,port,_=live; token,ident=actor(extra_actions=(*cost_ops,'pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update'))
     async def scenario():
         env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
@@ -55,6 +55,9 @@ def test_mcp_stdio(live,actor):
             p=await call('pmo_project_create',{'code':'MCP-1','name':'合成项目','idempotencyKey':uuid4().hex})
             assert (await call('pmo_project_get',{'projectId':p['projectId']}))['project']==p
             base={'projectId':p['projectId'],'type':'money'}
+            candidate=await call('pmo_cost_posting_propose',{**base,'period':'2020-11','amount':'3.14','sourceRef':'synthetic-receipt','idempotencyKey':uuid4().hex})
+            assert candidate['status']=='pending' and candidate['amountSigned']=='3.14'
+            assert (await call('pmo_preapproval_spending_list',{}))['items']==[]
             plan=await call('pmo_cost_budget_draft_save',{**base,'budget':'109.70','expectedRevision':1,'idempotencyKey':uuid4().hex})
             assert plan['moneyBudget']=='109.70' and plan['revision']==2
             await call('pmo_cost_forecast_save',{**base,'forecastRemaining':'20.05','reason':'Updated quote','expectedRevision':2,'idempotencyKey':uuid4().hex})

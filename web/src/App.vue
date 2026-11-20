@@ -11,6 +11,7 @@ import AuditLog from './AuditLog.vue'
 import AgentTokens from './AgentTokens.vue'
 import Risks from './Risks.vue'
 import Costs from './Costs.vue'
+import PreapprovalSpending from './PreapprovalSpending.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -48,6 +49,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <el-alert v-if="error" :title="error" type="error" :closable="false"/><el-table v-loading="loading" :data="rows" row-key="projectId" empty-text="没有符合条件的授权项目"><el-table-column prop="code" label="编号" min-width="120"/><el-table-column label="项目名称" min-width="190"><template #default="{row}"><button class="project-link" :aria-label="`查看 ${row.name} 的项目资料`" @click="materials(row)">{{row.name}}</button></template></el-table-column><el-table-column label="阶段" min-width="92"><template #default="{row}"><el-tag type="info" effect="plain">{{stageNames[row.stage]??row.stage}}</el-tag></template></el-table-column><el-table-column prop="revision" label="版本" width="72"/><el-table-column label="创建日期" min-width="110"><template #default="{row}">{{new Date(row.createdAt).toLocaleDateString('zh-CN')}}</template></el-table-column><el-table-column label="操作" width="72"><template #default="{row}"><el-button v-if="row.stage==='drafting'" text title="修改草稿名称" aria-label="修改草稿名称" @click="open(row)"><Pencil :size="16"/></el-button></template></el-table-column></el-table>
 <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="prev, pager, next" @current-change="load"/>
 <Appointments :projects="rows" :api="api" @changed="load"/>
+<PreapprovalSpending :api="api"/>
 <AuditLog v-if="admin" :api="api"/>
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>

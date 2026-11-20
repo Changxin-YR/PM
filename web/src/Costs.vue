@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {onMounted,ref} from 'vue'
 import {Pencil,RefreshCw,Save} from 'lucide-vue-next'
+import Postings from './Postings.vue'
 type Kind='money'|'effort'
 type Measure={budget:string;actual:string;forecastRemaining:string;projectedTotal:string;varianceRate?:string;color:string}
 type Summary={money:Measure;effort:Measure;plan:{revision:number;moneyBudget?:string;effortBudget?:string};canSaveBudget:boolean;canSaveForecast:boolean}
@@ -23,5 +24,6 @@ onMounted(refresh)
 <dt>获批预算</dt><dd>{{data[k].budget}}</dd><dt>核验实际</dt><dd>{{data[k].actual}}</dd><dt>剩余预测</dt><dd>{{data[k].forecastRemaining}}</dd><dt>预计总额</dt><dd>{{data[k].projectedTotal}}</dd><dt>偏差率</dt><dd>{{data[k].varianceRate===undefined?'—':(Number(data[k].varianceRate)*100).toFixed(2)+'%'}}</dd><dt>成本线</dt><dd>{{colors[data[k].color]}}</dd><dt>预算草稿</dt><dd>{{data.plan[k==='money'?'moneyBudget':'effortBudget']??'未填写'}}</dd></dl>
 <el-button v-if="data.canSaveBudget" :disabled="busy||!!action" @click="open(k,'budget')"><Pencil :size="14"/>修改预算草稿</el-button><el-button v-if="data.canSaveForecast" :disabled="busy||!!action" @click="open(k,'forecast')"><Pencil :size="14"/>修改预测</el-button></section></div>
 <form v-if="action" @submit.prevent="save"><label>{{labels[kind]}} · {{action==='budget'?'预算草稿':'剩余预测'}}<input v-model="value" inputmode="decimal" pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?" required></label>
-<label v-if="action==='forecast'">预测原因<textarea v-model="reason" minlength="3" maxlength="2000" required/></label><div class="actions"><el-button :disabled="busy" @click="action=''">取消</el-button><el-button type="primary" native-type="submit" :loading="busy"><Save :size="15"/>保存成本</el-button></div></form></template>
+<label v-if="action==='forecast'">预测原因<textarea v-model="reason" minlength="3" maxlength="2000" required/></label><div class="actions"><el-button :disabled="busy" @click="action=''">取消</el-button><el-button type="primary" native-type="submit" :loading="busy"><Save :size="15"/>保存成本</el-button></div></form>
+<Postings :project-id="projectId" :api="api" @changed="refresh"/></template>
 <style scoped>.columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:1.25rem}dl{display:grid;grid-template-columns:auto 1fr;gap:.45rem}dd{text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin:0}form{display:grid;gap:.75rem;margin-top:1rem}</style>

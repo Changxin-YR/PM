@@ -28,6 +28,7 @@ def test_browser_draft_workflow(live,actor):
             accounts.update({f'PMO_TEST_{role.upper()}':name,f'PMO_TEST_{role.upper()}_PASSWORD':secret,f'PMO_TEST_{role.upper()}_ID':str(person)})
             if role=='issuer':
                 c.execute(sa.text("INSERT INTO appointment_authorities VALUES(:org,:person,'pm','SYNTHETIC E2E',now()+interval '1 hour',NULL)"),dict(person=person,org=org))
+            if role=='nominee': c.execute(db.user_roles.insert().values(user_id=user,role='finance_verifier'))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     root=Path(__file__).resolve().parents[1]/'web'

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -28,20 +28,24 @@ def test_cost_snapshot_scope_revision_and_authority(live,actor):
     assert api.put(path+'-forecasts',headers=h(2),json=body).json()['data']['revision']==3
     with engine.begin() as c:
         person=c.scalar(sa.select(db.projects.c.created_by).where(db.projects.c.id==pid))
-        args=dict(project_id=pid,created_by=person,type='money',category='fixture',period_start=date(2026,11,1),
-                  period_end=date(2026,11,30),budget=100,actual=999,forecast_remaining=0,baseline_version=1)
+        verifier=uuid4()
+        c.execute(db.persons.insert().values(id=verifier,created_by=person,org_id=c.scalar(sa.select(db.projects.c.org_id).where(db.projects.c.id==pid)),name='Verifier',is_active=True))
+        args=dict(project_id=pid,created_by=person,type='money',category='fixture',period_start=date(2020,11,1),
+                  period_end=date(2020,11,30),budget=100,actual=999,forecast_remaining=0,baseline_version=1)
         original=c.scalar(db.cost_entries.insert().values(**args).returning(db.cost_entries.c.id))
-        post=dict(project_id=pid,created_by=person,cost_entry_id=original,occurred_at=sa.func.now(),type='money',
-                  period='2026-11',source_type='money',source_ref='synthetic-proof')
-        for amount in (100,-100,70):
-            c.execute(db.cost_postings.insert().values(**post,amount_signed=amount,status='verified',verified_at=sa.func.now()))
+        post=dict(project_id=pid,created_by=person,cost_entry_id=original,occurred_at=datetime(2020,11,5,tzinfo=UTC),type='money',
+                  period='2020-11',source_type='money',source_ref='synthetic-proof')
+        checked=dict(status='verified',verified_at=sa.func.now(),verified_by=verifier,verification_note='Checked fixture')
+        positive=c.scalar(db.cost_postings.insert().values(**post,**checked,amount_signed=100,source_fingerprint='1'*64).returning(db.cost_postings.c.id))
+        c.execute(db.cost_postings.insert().values(**post,**checked,amount_signed=-100,source_fingerprint='2'*64,posting_of_id=positive,reversal_reason='Correction'))
+        c.execute(db.cost_postings.insert().values(**post,**checked,amount_signed=70,source_fingerprint='3'*64))
         c.execute(db.cost_postings.insert().values(**post,amount_signed=555,status='pending'))
     old=summary()['data']; m=old['money']
     assert m=={'budget':'100.00','actual':'70.00','forecastRemaining':'50.00','projectedTotal':'120.00','varianceRate':'0.2000','color':'red'}
     with engine.begin() as c:
         c.execute(db.cost_entries.update().where(db.cost_entries.c.id==original).values(is_current_baseline=False))
         c.execute(db.cost_entries.insert().values(**{**args,'budget':150,'baseline_version':2}))
-        c.execute(db.cost_postings.insert().values(**post,amount_signed=30,status='verified',verified_at=sa.func.now()))
+        c.execute(db.cost_postings.insert().values(**post,**checked,amount_signed=30,source_fingerprint='4'*64))
     current=summary()['data']['money']
     assert current['budget']=='150.00' and current['actual']=='100.00' and current['color']=='green'
     assert summary(asOf=old['asOf'])['data']==old
