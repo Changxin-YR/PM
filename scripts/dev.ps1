@@ -1,4 +1,4 @@
-param([ValidateSet('setup','test','api','check','web','browser','bootstrap')] [string]$Action='api')
+param([ValidateSet('setup','test','api','check','web','browser','bootstrap','migrate','outbox','dead-letters')] [string]$Action='api')
 $ErrorActionPreference='Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 function Invoke-Checked([scriptblock]$Command) {
@@ -30,6 +30,9 @@ switch ($Action) {
     Invoke-Checked { & $python -m alembic upgrade head }
   }
   test { Invoke-Checked { & $python -m pytest -q } }
+  migrate { Invoke-Checked { & $python -m alembic upgrade head } }
+  outbox { Invoke-Checked { & $python -m pmo.outbox } }
+  dead-letters { Invoke-Checked { & $python -m pmo.outbox --dead-letters } }
   browser { Invoke-Checked { & $python -m pytest -q tests/browser_case.py } }
   web { Invoke-Checked { npm.cmd --prefix web run dev } }
   bootstrap { $org=Read-Host 'Organization'; $user=Read-Host 'Username'; $name=Read-Host 'Display name'; Invoke-Checked { & $python -m pmo.bootstrap --organization $org --username $user --name $name } }
