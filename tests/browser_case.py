@@ -4,6 +4,9 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
+from base64 import b64encode
+from io import BytesIO
+from PIL import Image
 import time
 from uuid import uuid4
 import httpx
@@ -35,6 +38,11 @@ def test_browser_draft_workflow(live,actor):
             c.execute(db.project_members.insert().values(project_id=pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
         c.execute(db.stakeholders.insert().values(project_id=pid,created_by=pm,name='测试客户代表',type='customer',linked_person_id=client))
         c.execute(db.requirements.insert().values(project_id=pid,created_by=pm,desc='导出归档清单',priority='P0',acceptance_criteria='导出保留全部来源编号',status='baseline',baseline_version=0))
+        evidence_pid=c.scalar(db.projects.insert().values(code='E2E-FILE',name='完工凭据演练',org_id=org,stage='executing',pm_id=pm,created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
+        for person,role in ((pm,'pm'),(client,'reviewer')):
+            c.execute(db.project_members.insert().values(project_id=evidence_pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
+        c.execute(db.milestones.insert().values(project_id=evidence_pid,created_by=pm,name='试点验收',ordinal=1,is_key=True,planned_date='2020-03-09'))
+        png=BytesIO(); Image.new('RGB',(6,6),(120,90,66)).save(png,'PNG'); accounts['PMO_TEST_PNG']=b64encode(png.getvalue()).decode('ascii')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     root=Path(__file__).resolve().parents[1]/'web'

@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from pmo import schema_v1 as db
 
 @pytest.fixture(scope='session')
-def live():
+def live(tmp_path_factory):
     admin=sa.create_engine(os.environ['PMO_TEST_DATABASE_URL'],hide_parameters=True)
     schema='pmo_test_'+uuid4().hex
     with admin.begin() as c: c.exec_driver_sql(f'CREATE SCHEMA {schema}')
@@ -23,7 +23,7 @@ def live():
     engine=sa.create_engine(url,hide_parameters=True)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
-    env={**os.environ,'DATABASE_URL':url,'PYTHONUTF8':'1','PMO_LOCAL_HTTP':'1'}
+    env={**os.environ,'DATABASE_URL':url,'PYTHONUTF8':'1','PMO_LOCAL_HTTP':'1','PMO_EVIDENCE_DIR':str(tmp_path_factory.mktemp('private_evidence'))}
     proc=None
     try:
         for args in [('upgrade','head'),('downgrade','base'),('upgrade','head')]:

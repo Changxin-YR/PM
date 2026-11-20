@@ -149,5 +149,12 @@ try {
     await expect(baseline.getByText(role==='BASELINE_PM'?'待客户确认':'已冻结',{exact:true})).toBeVisible()
   }
   await signers[0].getByRole('button',{name:'重读基线'}).click();await expect(signers[0].getByText('已冻结',{exact:true})).toBeVisible()
+  async function files(signer){await signer.keyboard.press('Escape');await signer.getByRole('button',{name:'查看 完工凭据演练 的项目资料'}).click();await signer.getByRole('tab',{name:'证据附件',exact:true}).click();return signer.getByRole('tabpanel',{name:'证据附件',exact:true})}
+  const uploader=await files(signers[0]);await uploader.getByRole('button',{name:'上传附件'}).click();await uploader.getByLabel('关联里程碑').selectOption({label:'试点验收'})
+  await uploader.getByLabel('证据文件').setInputFiles({name:'验收记录.png',mimeType:'image/png',buffer:Buffer.from(process.env.PMO_TEST_PNG,'base64')});await uploader.getByRole('button',{name:'提交附件'}).click();await expect(uploader.getByRole('cell',{name:'待核验'})).toBeVisible()
+  const reviewer=await files(signers[1]);await reviewer.getByRole('button',{name:'核验附件',exact:true}).click();const downloaded=signers[1].waitForEvent('download');await reviewer.getByRole('link',{name:'下载核对原文件'}).click();const file=await downloaded;expect(file.suggestedFilename()).toBe('验收记录.png');expect(await file.failure()).toBeNull()
+  await reviewer.getByLabel('核验说明').fill('已核对试点验收记录');await reviewer.getByRole('checkbox').check();await reviewer.getByRole('button',{name:'确认核验附件'}).click();await expect(reviewer.getByRole('cell',{name:'已核验'})).toBeVisible()
+  await uploader.getByRole('button',{name:'刷新附件'}).click();await uploader.getByRole('button',{name:'登记里程碑完成'}).click();await uploader.getByLabel('实际完成日期').fill('2020-03-08');await uploader.getByRole('button',{name:'确认里程碑完成'}).click();await expect(uploader.getByRole('status')).toHaveText('里程碑已完成')
+  await signers[0].getByRole('tab',{name:'里程碑',exact:true}).click();await signers[0].getByRole('button',{name:'刷新里程碑'}).click();await expect(signers[0].getByRole('cell',{name:'2020-03-08'})).toBeVisible()
   for(const signer of signers)await signer.close()
 } finally {await browser.close()}

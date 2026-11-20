@@ -2,7 +2,23 @@
 name = "pmo-lite"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["fastapi>=0.115,<1", "pydantic>=2.10,<3", "sqlalchemy>=2.0,<2.1", "alembic>=1.14,<2", "psycopg[binary]>=3.2,<4", "mcp>=1.12,<2", "uvicorn>=0.34,<1", "httpx>=0.28,<1", "argon2-cffi>=23", "jsonschema>=4,<5", "pyyaml>=6,<7"]
+dependencies = [
+    "fastapi>=0.115,<1",
+    "pydantic>=2.10,<3",
+    "sqlalchemy>=2.0,<2.1",
+    "alembic>=1.14,<2",
+    "psycopg[binary]>=3.2,<4",
+    "mcp>=1.12,<2",
+    "uvicorn>=0.34,<1",
+    "httpx>=0.28,<1",
+    "argon2-cffi>=23",
+    "jsonschema>=4,<5",
+    "pyyaml>=6,<7",
+    "pillow>=13.0.0",
+    "pypdf>=7.1.1",
+    "defusedxml>=0.7.1",
+    "python-multipart>=0.0.34",
+]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "mypy>=1.14,<2", "ruff>=0.9,<1", "types-jsonschema", "types-PyYAML"]

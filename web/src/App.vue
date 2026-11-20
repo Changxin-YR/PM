@@ -4,6 +4,7 @@ import {Layers3,LogOut,Plus,RefreshCw,Search,Pencil,FolderKanban} from 'lucide-v
 import Milestones from './Milestones.vue'
 import Requirements from './Requirements.vue'
 import RequirementBaseline from './RequirementBaseline.vue'
+import Evidence from './Evidence.vue'
 import Stakeholders from './Stakeholders.vue'
 import Charter from './Charter.vue'
 import Appointments from './Appointments.vue'
@@ -26,7 +27,7 @@ function materials(row:Project){materialProject.value=row;showMaterials.value=tr
 const stageNames:Record<string,string>={drafting:'草稿',charter_review:'立项评审',rejected:'已拒绝',designing:'方案细化',feasibility_review:'落地评审',executing:'执行中',on_hold:'已暂停',delivering:'交付验收',closing_review:'结项评审',closed:'已结项',retrospective:'复盘',terminated:'已终止',archived:'已归档'}
 function clearSession(){ user.value=false;admin.value=false; rows.value=[];selected.value=null;dialog.value=false;showMaterials.value=false;materialProject.value=null;csrf.value='';sessionStorage.removeItem('pmo.csrf') }
 async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers)=>void){
-  const r=await fetch('/api/v1/'+path,{...options,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf.value,...options.headers},cache:'no-store'})
+  const r=await fetch('/api/v1/'+path,{...options,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),'X-CSRF-Token':csrf.value,...options.headers},cache:'no-store'})
   if(!r.ok){if(r.status===401)clearSession();const body=await r.json().catch(()=>({}));throw Error(({VERSION_CONFLICT:'版本已变化，请重新读取后再保存。',PROJECT_CODE_CONFLICT:'项目编号已存在。',UNAUTHORIZED:'请重新登录或核对账号密码。',FORBIDDEN:'没有此操作的权限。',RATE_LIMITED:'登录尝试过多，请稍后重试。'} as Record<string,string>)[body.code]||`操作失败（${r.status}）`)}
   const body=r.status===204?null:await r.json();receiveHeaders?.(r.headers);return body
 }
@@ -60,6 +61,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane label="里程碑"><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane label="证据附件" lazy><Evidence :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="联系台账" lazy><Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
