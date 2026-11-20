@@ -41,7 +41,7 @@ def test_concurrent_replay_scope_and_denial(live,actor):
         assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
 
 def test_mcp_stdio(live,actor):
-    cost_ops=('pmo_cost_summary','pmo_cost_budget_draft_save','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_preapproval_spending_list','pmo_milestone_forecast','pmo_alert_list','pmo_requirement_deliver')
+    cost_ops=('pmo_cost_summary','pmo_cost_budget_draft_save','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_preapproval_spending_list','pmo_milestone_forecast','pmo_alert_list','pmo_requirement_deliver','pmo_requirement_change_history')
     engine,_,port,_=live; token,ident=actor(extra_actions=(*cost_ops,'pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update'))
     async def scenario():
         env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
@@ -85,6 +85,13 @@ def test_mcp_stdio(live,actor):
             req=await call('pmo_requirement_create',{'projectId':p['projectId'],'desc':'导出审批明细清单','priority':'P1','acceptanceCriteria':'完整保留所有列名','idempotencyKey':uuid4().hex})
             revised=await call('pmo_requirement_draft_update',{'requirementId':req['requirementId'],'fieldsRequirement':{'priority':'P0'},'expectedRevision':1,'idempotencyKey':uuid4().hex})
             assert revised['priority']=='P0' and revised['revision']==2
+            assert (await call('pmo_requirement_change_history',{'requirementId':req['requirementId']}))['total']==0
+            with engine.begin() as c:
+                author=c.scalar(sa.select(db.projects.c.initiator_id).where(db.projects.c.id==p['projectId']))
+                change=c.scalar(db.change_entries.insert().values(project_id=p['projectId'],target_id=req['requirementId'],target_type='requirement',created_by=author,
+                    requested_by=author,approved_by=author,base_revision=2,status='applied',before={'priority':'P1'},after={'priority':'P0'},reason='Synthetic past approval').returning(db.change_entries.c.id))
+            event=(await call('pmo_requirement_change_history',{'requirementId':req['requirementId']}))['items'][0]
+            assert event['changeId']==str(change) and event['approvedBy']==str(author) and event['before']=={'priority':'P1'} and 'reason' not in event
             assert (await call('pmo_requirement_list',{'projectId':p['projectId'],'filters':{'keyword':'导出'}}))['items']==[revised]
             bad=await session.call_tool('pmo_project_list',{'pageSize':101}); assert bad.isError
             with engine.connect() as c: nominee=c.scalar(sa.select(db.projects.c.initiator_id).where(db.projects.c.id==p['projectId']))

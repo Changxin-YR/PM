@@ -164,5 +164,6 @@ try {
     const dialog=signer.getByRole('dialog',{name:button,exact:true});await expect(dialog.getByRole('button',{name:'确认提交'})).toBeDisabled();await dialog.getByLabel('已核验证据').selectOption({index:1});await dialog.getByRole('button',{name:'确认提交'}).click();await expect(panel.getByRole('cell',{name:status,exact:true})).toBeVisible()
   }
   await signers[0].getByRole('tabpanel',{name:'需求',exact:true}).getByRole('button',{name:'查询'}).click();await expect(signers[0].getByRole('cell',{name:'客户已确认',exact:true})).toBeVisible()
+  await signers[0].getByRole('button',{name:'需求变更历史'}).click();const history=signers[0].getByRole('dialog',{name:'需求变更历史'});await expect(history.getByText('已撤回 · 验收样例：调整优先级已撤回')).toBeVisible();await expect(history.getByText(/基准版本 1 · 记录版本 1/)).toBeVisible();await expect(history.locator('pre').first()).toContainText('P0');await expect(history.locator('pre').last()).toContainText('P1')
   for(const signer of signers)await signer.close()
 } finally {await browser.close()}
