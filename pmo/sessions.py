@@ -1,7 +1,7 @@
 from datetime import UTC,datetime,timedelta
 from hashlib import sha256
 from secrets import token_urlsafe
-from uuid import uuid4
+from .request_context import correlation_id
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from argon2 import PasswordHasher
@@ -35,12 +35,12 @@ def login(username,password,ip):
         try: valid=hasher.verify(row.password_hash if row else dummy,password)
         except (VerifyMismatchError,InvalidHashError,VerificationError): valid=False
         if not row or not valid:
-            if row: c.execute(db.audit_logs.insert().values(action='auth_login',actor_type='human',actor_id=row.id,org_id=row.org_id,result='denied',error_code='UNAUTHORIZED',request_id=str(uuid4())))
+            if row: c.execute(db.audit_logs.insert().values(action='auth_login',actor_type='human',actor_id=row.id,org_id=row.org_id,result='denied',error_code='UNAUTHORIZED',request_id=correlation_id()))
             return None,401
         token,csrf=token_urlsafe(40),token_urlsafe(32)
         c.execute(sessions.insert().values(token_hash=digest(token),csrf_hash=digest(csrf),account_id=row.id,expires_at=now+timedelta(hours=8)))
         c.execute(u.update().where(u.c.id==row.id).values(last_login_at=now))
-        c.execute(db.audit_logs.insert().values(action='auth_login',actor_type='human',actor_id=row.id,org_id=row.org_id,result='success',request_id=str(uuid4())))
+        c.execute(db.audit_logs.insert().values(action='auth_login',actor_type='human',actor_id=row.id,org_id=row.org_id,result='success',request_id=correlation_id()))
         return (token,csrf),200
 
 def signout(c,a,rid,cookie):

@@ -22,7 +22,11 @@ def test_human_and_agent_share_project_and_session_revocation(live,actor):
         assert human.get('projects').json()['data']['items']==[project]
         path='projects/'+project['projectId']; changes={'fields':{'name':'Human edit'}}
         keys={'If-Match':'1','Idempotency-Key':uuid4().hex}
-        assert human.patch(path,headers=keys,json=changes).status_code==403
+        refused=human.patch(path,headers=keys,json=changes)
+        rid=refused.headers['X-Request-ID']
+        assert refused.status_code==403 and refused.json()=={'code':'CSRF_INVALID','message':'CSRF_INVALID','requestId':rid}
+        with engine.connect() as c:
+            assert c.execute(sa.select(db.audit_logs.c.result,db.audit_logs.c.actor_id).where(db.audit_logs.c.request_id==rid)).one()==('denied',uid)
         assert human.patch(path,headers={**keys,**csrf},json=changes).json()['data']['revision']==2
         assert agent_api.get('/api/v1/'+path,headers=h).json()['data']['project']['name']=='Human edit'
         assert human.post('auth/logout',headers=csrf).status_code==204

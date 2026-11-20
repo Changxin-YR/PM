@@ -86,6 +86,7 @@ def test_failed_audit_rolls_back_project_and_grant(live,actor):
     try:
         response=api.post('/api/v1/projects',headers={'Authorization':'Bearer '+token,'Idempotency-Key':key},json={'code':'FAIL-AUDIT','name':'Rollback'})
         assert response.status_code==500
+        assert response.json()=={'code':'DATABASE_FAILURE','message':'DATABASE_FAILURE','requestId':response.headers['X-Request-ID']}
         with engine.connect() as c:
             assert c.scalar(sa.select(db.projects.c.id).where(db.projects.c.code=='FAIL-AUDIT')) is None
             assert c.scalar(sa.select(db.agent_credentials.c.allowed_project_ids).where(db.agent_credentials.c.id==ident))==[]

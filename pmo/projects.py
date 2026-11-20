@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import json
-from uuid import uuid4
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from . import schema_v1 as db
@@ -11,6 +10,7 @@ from .db import engine
 from .charter_models import summary as charter_summary
 from .stakeholder_models import ContactSummary
 from .tool_routes import ROUTES
+from .request_context import correlation_id
 
 def view(row):
     return ProjectView(projectId=row.id, code=row.code, name=row.name, stage=row.stage, revision=row.revision, orgId=row.org_id, createdAt=row.created_at)
@@ -23,13 +23,14 @@ def fingerprint(value):
 
 def run(header,op,fn):
     actor=None
-    request_id=str(uuid4())
+    request_id=correlation_id()
     try:
         with engine().begin() as c:
             actor=authenticate(c,header)
             if op not in actor.actions or (actor.kind=='agent' and op not in ROUTES): raise Failure(403,'FORBIDDEN')
             return fn(c,actor,request_id)
     except Failure as e:
+        actor=actor or e.actor
         if actor:
             with engine().begin() as c:
                 c.execute(db.audit_logs.insert().values(action=op,actor_type=actor.kind,actor_id=actor.credential,delegated_by=actor.account if actor.kind=='agent' else None,org_id=actor.org,result='denied',error_code=e.code,request_id=request_id,rule_version=RULE_VERSION))

@@ -54,7 +54,7 @@
 "OPS-01","独立系统实现补充","Compose/备份恢复/日志","T10","NOT_TESTED","",""
 "UI-ALL","独立系统实现补充","Web可独立完成项目生命周期","Q1-Q8,T01","NOT_TESTED","",""
 "ENG-201","§20.2 (implementation-only)","16类领域Owner归属与写入责任","T02,T07","NOT_TESTED","",""
-"ENG-202","§20.3 (implementation-only)","成功/拒绝审计包含事件时间和请求身份","T07","NOT_TESTED","",""
+"ENG-202","§20.3 (implementation-only)","成功/拒绝审计包含事件时间和请求身份","T07","PARTIAL_REQUEST_CORRELATION","pmo/request_context.py;pmo/projects.py;pmo/api.py","tests/test_error_contract.py;tests/test_human.py;tests/test_runtime.py"
 "ENG-203","§20.3 (implementation-only)","幂等响应体及状态码重放和同键异参冲突","T05","PARTIAL_PROJECT_DRAFT_ONLY","pmo/projects.py","tests/test_runtime.py"
 "ENG-204","§20.3 (implementation-only)","Outbox调度重试租约与死信去重","T10","VERIFIED_LOCAL_EVENT_CONSUMER","pmo/outbox.py;migrations/versions/0006_outbox_consumer.py","tests/test_outbox.py"
 "ENG-205","§20.6 (implementation-only)","Agent组织级创建后仅本令牌新项目草稿续写","T02,T09","PARTIAL_PROJECT_DRAFT_ONLY","pmo/projects.py","tests/test_runtime.py"

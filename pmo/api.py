@@ -1,9 +1,13 @@
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 import os
 from fastapi import FastAPI, Header, Query, Request, Response
 from pydantic import Field, SecretStr
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from .request_context import request_id, correlation_id
 from .contracts import CreateProject, ProjectView, ProjectDetail, Page, Result, UpdateDraft
 from .identity import Browser, Failure
 from .contracts import Strict
@@ -16,13 +20,54 @@ from .appointment_routes import router as appointment_router
 from .stakeholder_routes import router as stakeholder_router
 from .members import router as members_router
 
-app=FastAPI(title='PMO Lite',version='0.1.0')
+class ErrorResponse(Strict):
+    code: str
+    message: str
+    requestId: UUID
+
+
+app=FastAPI(title='PMO Lite',version='0.1.0',responses={s:{'model':ErrorResponse} for s in (401,403,404,409,422,429,500)})
 app.include_router(milestone_router)
 app.include_router(requirement_router)
 app.include_router(charter_router)
 app.include_router(appointment_router)
 app.include_router(stakeholder_router)
 app.include_router(members_router)
+
+
+@app.middleware('http')
+async def trace(request: Request, call_next):
+    rid=str(uuid4())
+    token=request_id.set(rid)
+    try:
+        response=await call_next(request)
+        response.headers['X-Request-ID']=rid
+        response.headers['Cache-Control']='no-store'
+        return response
+    finally:
+        request_id.reset(token)
+
+
+def error(status: int, code: str) -> JSONResponse:
+    return JSONResponse(ErrorResponse(code=code,message=code,requestId=UUID(correlation_id())).model_dump(mode='json'),status_code=status)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_:Request, exc:RequestValidationError):
+    # ValidationError contains raw inputs, including passwords and header values.
+    return error(422,'VALIDATION_FAILED')
+
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error(_:Request, exc:SQLAlchemyError):
+    return error(500,'DATABASE_FAILURE')
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(_:Request, exc:StarletteHTTPException):
+    result=error(exc.status_code,{404:'ROUTE_NOT_FOUND',405:'METHOD_NOT_ALLOWED'}.get(exc.status_code,'HTTP_ERROR'))
+    if exc.headers and 'Allow' in exc.headers: result.headers['Allow']=exc.headers['Allow']
+    return result
 
 class Login(Strict):
     username:str=Field(min_length=1,max_length=120)
@@ -62,7 +107,7 @@ def logout(response:Response,authorization:Auth):
 
 @app.exception_handler(Failure)
 async def failure(_:Request,e:Failure):
-    return JSONResponse({'code':e.code,'message':e.code},status_code=e.status)
+    return error(e.status,e.code)
 
 @app.get('/api/v1/projects',operation_id='pmo_project_list')
 def listing(authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),stage:str|None=Query(None,alias='filters[stage]'),keyword:str|None=Query(None,alias='filters[keyword]',max_length=160))->Result[Page]:

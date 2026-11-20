@@ -11,8 +11,8 @@ explicit_grants = sa.table('agent_project_grants', sa.column('credential_id', sa
                            sa.column('project_id', sa.Uuid), sa.column('granted_by', sa.Uuid))
 
 class Failure(Exception):
-    def __init__(self, status: int, code: str):
-        self.status, self.code = status, code
+    def __init__(self, status: int, code: str, actor: 'Actor | None'=None):
+        self.status, self.code, self.actor = status, code, actor
 
 @dataclass(frozen=True)
 class Actor:
@@ -37,10 +37,12 @@ def browser_actor(conn,identity):
     row=conn.execute(sa.select(u.c.id,p.c.id.label('person'),p.c.org_id,s.c.csrf_hash).select_from(s.join(u,u.c.id==s.c.account_id).join(p,p.c.user_id==u.c.id).join(o,o.c.id==p.c.org_id)).where(
         s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u)).mappings().one_or_none()
     if not row: raise Failure(401,'UNAUTHORIZED')
-    if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash): raise Failure(403,'CSRF_INVALID')
-    return Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
+    actor=Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
         'human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
         'human_accept_role_assignment','human_decline_role_assignment'}),(),True,'human')
+    if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
+        raise Failure(403,'CSRF_INVALID',actor)
+    return actor
 
 def authenticate(conn, header: str | Browser | None) -> Actor:
     if isinstance(header,Browser): return browser_actor(conn,header)
