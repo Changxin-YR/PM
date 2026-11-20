@@ -34,6 +34,10 @@ from .change_requests import router as change_request_router
 from .change_decisions import router as change_decision_router
 from .scope_quality import router as scope_quality_router
 from .review_routes import router as review_router
+from .cost_reconciliation import router as cost_reconciliation_router
+from .risk_resolution import router as risk_resolution_router
+from .project_lifecycle import router as lifecycle_router
+from .retrospectives import router as retrospective_router
 
 class ErrorResponse(Strict):
     code: str
@@ -63,6 +67,10 @@ app.include_router(change_request_router)
 app.include_router(change_decision_router)
 app.include_router(scope_quality_router)
 app.include_router(review_router)
+app.include_router(cost_reconciliation_router)
+app.include_router(risk_resolution_router)
+app.include_router(lifecycle_router)
+app.include_router(retrospective_router)
 
 
 @app.middleware('http')

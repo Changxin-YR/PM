@@ -123,8 +123,12 @@ def issue(command: Issue,response: Response,authorization: Auth,key: Key,expecte
         if not actions.issubset(ROUTES) or command.allowProjectCreate!=('pmo_project_create' in actions) or (command.allowProjectCreate and not a.create):
             raise Failure(403,'INVALID_GRANT')
         for pid in sorted(projects):
-            editing=any(ROUTES[action][0]!='GET' and action not in ('pmo_project_create','pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_milestone_forecast','pmo_requirement_deliver','pmo_change_propose','pmo_review_submit') for action in actions)
+            editing=any(ROUTES[action][0]!='GET' and action not in ('pmo_project_create','pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_milestone_forecast','pmo_requirement_deliver','pmo_change_propose','pmo_review_submit','pmo_transition_request') for action in actions)
             project=project_access(c,a,pid,edit=editing)
+            if 'pmo_transition_request' in actions:
+                from .project_lifecycle import APPROVED, DIRECT, can_request
+                if not any(edge[0]==project.stage and can_request(c,project,a.person,edge) for edge in DIRECT | APPROVED):
+                    raise Failure(403,'FORBIDDEN')
             if 'pmo_review_submit' in actions and not any(project.stage==stage and can_submit_review(c,a,project,gate)
                                                          for gate,stage in GATE_STAGES.items()):
                 raise Failure(403,'FORBIDDEN')

@@ -11,6 +11,11 @@ from .review_scores import Score
 router = APIRouter(prefix='/api/v1', tags=['Reviews'])
 
 
+@router.get('/projects/{projectId}/closing/check', operation_id='human_closing_check')
+def closing_check(projectId: UUID, authorization: Auth) -> Result[Check]:
+    return reviews.preview(authorization, projectId, 'closing', prepare=False, operation='human_closing_check')
+
+
 @router.get('/projects/{projectId}/gates/check', operation_id=reviews.CHECK)
 def check(projectId: UUID, gate: Gate, authorization: Auth) -> Result[Check]:
     return reviews.preview(authorization, projectId, gate, prepare=False)

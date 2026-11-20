@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed,onMounted,ref} from 'vue'
+import {computed,onMounted,ref,watch} from 'vue'
 import {ClipboardList,RefreshCw,Send} from 'lucide-vue-next'
 import ReviewWorkbench from './ReviewWorkbench.vue'
 
@@ -7,7 +7,7 @@ type Gate='charter'|'feasibility'|'closing'
 type Draft={gateCheck:{gate:Gate;eligible:boolean;missing:{code:string;message:string;sourceRefs:string[]}[]};draftMaterials:string[]}
 type Review={reviewId:string;type:Gate;status:'draft'|'pending'|'decided'}
 type Api=(path:string,options?:RequestInit,receiveHeaders?:(headers:Headers)=>void)=>Promise<any>
-const props=defineProps<{projectId:string;stageLabel:string;api:Api}>()
+const props=defineProps<{projectId:string;projectRevision?:number;stageLabel:string;api:Api}>()
 const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number]}>()
 const gates:Record<string,Gate>={drafting:'charter',designing:'feasibility',delivering:'closing'}
 const labels={charter:'立项',feasibility:'落地',closing:'结项'}
@@ -18,6 +18,7 @@ const workbenchId=ref(''),workbenchOpen=ref(false)
 const gate=computed(()=>draft.value?.gateCheck.gate)
 let attempt:{gate:Gate;revision:string;key:string}|null=null
 const path=`projects/${props.projectId}`
+let seenRevision=0
 
 function openWorkbench(reviewId:string){
   workbenchId.value=reviewId
@@ -27,6 +28,7 @@ function openWorkbench(reviewId:string){
 async function read(){
   draft.value=null;allowed.value=false;revision.value=''
   const {project}=(await props.api(path)).data
+  seenRevision=project.revision
   emit('stageRead',props.projectId,project.stage,project.revision)
   const {data:history}=await props.api(`${path}/reviews`)
   items.value=history.items;total.value=history.total
@@ -59,6 +61,7 @@ async function submit(){
   finally{busy.value=false}
 }
 onMounted(refresh)
+watch(()=>props.projectRevision,rev=>{if(!busy.value&&rev!==seenRevision)void refresh()})
 </script>
 
 <template>

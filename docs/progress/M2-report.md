@@ -16,3 +16,18 @@
 - 初次 `pytest -q tests/test_reviews.py tests/test_runtime.py`：FAIL（8 通过、1 失败，退出 1）；PM 同时以人和 Agent 送审时，`audit_logs.delegated_by` 外键锁与账号锁发生死锁。更换为 `FOR NO KEY UPDATE` 后，竞态重测改为一成一拒。一次全量运行：FAIL，退出 1；捕获补强任务空期限的 DTO 重放错误及正在开发的对账测试表未接入；前者已修复、定向重验 PASS，后者在后续迁移批次验证。
 
 结论仅覆盖此处测得的子项，不把 Q/T、全部 LR-01、目标 Host 或政策签核置为 PASS。
+
+## 2026-11-20 对账、风险、结项、复盘与归档（0018–0019）
+
+源条款：主方案 §4、§5.3、LR-07/08、§20.4–20.5，见 [ADR 0011](../adr/0011-closing-evidence-and-lifecycle.md)。基准源码 SHA `5555fac130ce18e8325f3459404ad057072775e5`，测试批次源码树 `4d958feb78d0ed4e7536750dddc8ca4e1ff1c04c`（仅进度文本不在该树）。环境：Windows、回环 HTTP、PostgreSQL 16.14 随机合成 schema、私有附件、本地真实 Edge 157 和 Python MCP SDK；未启用模型，未使用真实业务签核。
+
+| 命令 | 结果 | 实测内容及证据位置 |
+|---|---|---|
+| `scripts/dev.ps1 test` | PASS，退出 0；67 项 / 182.14 秒 | `tests/test_lifecycle.py`：合成普通项目真实 HTTP 从草稿到归档，阶段由业务接口推进；重报与终止复盘独立。另见 `tests/test_cost_reconciliation.py`、`tests/test_risk_resolution.py`、`tests/test_retrospectives.py`、`tests/test_runtime.py`、`tests/test_database_roles.py`。 |
+| `scripts/dev.ps1 browser` | PASS，退出 0；2 项 / 111.45 秒 | `web/e2e/lifecycle.mjs`：浏览器流转交付、独立风险关闭、对账、结项、四问、独立 Lesson 与归档，刷新读回理由和只读状态；前置需求/来源由真实 API 准备。`web/e2e/draft.mjs`：原草稿、台账与人工立项。 |
+| `python -m pytest -q tests/test_human.py tests/test_recovery.py tests/test_retrospectives.py` | PASS，退出 0；8 项 / 98.17 秒 | 独立库带 0016 项目及里程碑原件升级至 0019，新增项目对账来源附件后真 `pg_dump/pg_restore` 恢复并读取两项原件字节及关联；真实限流、证据复查和复盘事务也通过。 |
+| `scripts/dev.ps1 check`、`npm.cmd --prefix web run build` | PASS，退出 0 | 静态参考检查和 mypy、Vue 类型与构建；主包仍有体积警告。 |
+
+失败与根因记录：初次复盘专项 FAIL（4 失败），合成夹具未同时写入 0019 规定的流转申请，已修正后通过。初次综合回归 FAIL（57 通过、9 失败于夹具登录阶段），同源 IP 测试跨用例累计触发真实限流；只在随机隔离 schema 的用例之间推进该 IP 的窗口，新增真实 IP 与账户限流断言，67 项重验通过。Edge 发现脚本语法、更新期间主动关闭、重名按钮和嵌套定位错误，修正后定向重验通过。
+
+阶段边界：正常合成闭环通过，未覆盖需求书面例外、全部终止边及 LR-08 定时通知。真实非零承诺仍阻断；金额、人天和风险绝不受需求例外豁免。

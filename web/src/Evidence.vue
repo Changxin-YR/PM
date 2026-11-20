@@ -5,16 +5,28 @@ type Proof={evidenceId:string;evidenceRef:string;originalName:string;mimeType:st
 type Milestone={milestoneId:string;name:string;revision:number;actualDate?:string}
 const props=defineProps<{projectId:string;stage:string;api:(p:string,o?:RequestInit)=>Promise<any>}>()
 const path=`projects/${props.projectId}/evidence`,items=ref<Proof[]>([]),milestones=ref<Milestone[]>([]),canComplete=ref(false),rev=ref(1),page=ref(1),total=ref(0),busy=ref(false),error=ref(''),notice=ref('')
-const kinds:Record<string,string>={milestone:'里程碑',requirement:'需求',charter:'立项卡',review:'评审',risk:'风险',report:'报告',cost_posting:'成本凭证',decision:'裁决'}
+const kinds:Record<string,string>={milestone:'里程碑',requirement:'需求',charter:'立项卡',review:'评审',risk:'风险',report:'报告',cost_posting:'成本凭证',decision:'裁决',project:'项目成本来源'}
+const originalExtensions=['.pdf','.png','.jpg','.jpeg','.docx'],sourceLimit=16*1024
 const mode=ref<''|'upload'|'verify'|'complete'>(''),chosen=ref<Proof|null>(null),file=ref<File|null>(null),kind=ref('milestone'),target=ref(''),note=ref(''),day=ref(''),checked=ref(false)
 let key='',signature='',expected=0
 async function load(n=page.value){const [list,ms]=await Promise.all([props.api(`${path}?page=${n}`),props.api(`projects/${props.projectId}/milestones`)]);items.value=list.data.items;rev.value=list.data.collectionRevision;page.value=n;total.value=list.data.total;milestones.value=ms.data.items;canComplete.value=ms.data.canForecast&&['executing','delivering'].includes(props.stage)}
 async function refresh(n=page.value){busy.value=true;error.value='';try{await load(n)}catch(e){items.value=[];canComplete.value=false;error.value=String(e)}finally{busy.value=false}}
 function milestone(r:Proof){return r.linkedResourceType==='milestone'?milestones.value.find(m=>m.milestoneId===r.linkedResourceId):undefined}
 function begin(action:'upload'|'verify'|'complete',r:Proof|null=null){mode.value=action;chosen.value=r;note.value='';day.value='';kind.value='milestone';target.value='';checked.value=false;file.value=null;key='';error.value='';notice.value='';expected=action==='upload'?rev.value:action==='verify'?r!.revision:milestone(r!)!.revision}
+function changeKind(){target.value='';file.value=null;key='';error.value=''}
 function selectFile(ev:Event){file.value=(ev.target as HTMLInputElement).files?.[0]??null;key=''}
 async function save(){busy.value=true;error.value='';try{let url:string,body:FormData|string,sig:string;const r=chosen.value
- if(mode.value==='upload'){if(!file.value||file.value.size===0||file.value.size>20*1024*1024)throw Error('文件必须大于零且不超过 20 MiB。');url=path;body=new FormData();body.append('file',file.value);body.append('linkedResourceType',kind.value);body.append('linkedResourceId',target.value);body.append('description',note.value);sig=JSON.stringify([kind.value,target.value,note.value,file.value.name,file.value.size])}
+ if(mode.value==='upload'){
+   const upload=file.value,projectSource=kind.value==='project',resourceId=projectSource?props.projectId:target.value
+   if(!upload||upload.size===0||upload.size>(projectSource?sourceLimit:20*1024*1024))throw Error(projectSource?'成本来源 JSON 必须大于零且不超过 16 KiB。':'文件必须大于零且不超过 20 MiB。')
+   const name=upload.name.toLowerCase()
+   if(projectSource&&!name.endsWith('.json'))throw Error('项目成本来源只接受 JSON 文件。')
+   if(!projectSource&&(upload.type==='application/json'||!originalExtensions.some(ext=>name.endsWith(ext))))throw Error('此关联类型只接受 PDF、图片或 DOCX 文件。')
+   url=path;body=new FormData()
+   body.append('file',projectSource?upload.slice(0,upload.size,'application/json'):upload,upload.name)
+   body.append('linkedResourceType',kind.value);body.append('linkedResourceId',resourceId);body.append('description',note.value)
+   sig=JSON.stringify([kind.value,resourceId,note.value,upload.name,upload.size])
+ }
  else if(mode.value==='verify'&&r){if(!checked.value)throw Error('请先核对原文件。');url=`evidence/${r.evidenceId}/verify`;body=JSON.stringify({reason:note.value.trim(),sha256:r.sha256});sig=body}
  else if(mode.value==='complete'&&r){url=`milestones/${r.linkedResourceId}/complete`;body=JSON.stringify({actualDate:day.value,evidenceRef:r.evidenceRef,...(note.value.trim()?{reason:note.value.trim()}:{})});sig=body}else return
  sig=url+expected+sig;if(!key||signature!==sig){key=crypto.randomUUID();signature=sig}
@@ -24,7 +36,14 @@ onMounted(()=>refresh(1))
 </script>
 <template><div class="toolbar"><span>证据附件 · {{total}}</span><el-button :disabled="busy||!!mode" @click="begin('upload')"><Upload :size="15"/>上传附件</el-button><el-button title="刷新附件" aria-label="刷新附件" :disabled="busy||!!mode" @click="refresh()"><RefreshCw :size="15"/></el-button></div>
 <el-alert v-if="error" type="error" :title="error" :closable="false"/><span role="status">{{notice}}</span>
-<form v-if="mode" @submit.prevent="save"><template v-if="mode==='upload'"><label>关联类型<select v-model="kind" @change="target=''" required><option v-for="(label,k) in kinds" :key="k" :value="k">{{label}}</option></select></label><label v-if="kind==='milestone'">关联里程碑<select v-model="target" required><option value="" disabled>请选择</option><option v-for="m in milestones" :value="m.milestoneId" :key="m.milestoneId">{{m.name}}</option></select></label><label v-else>关联资源编号<input v-model.trim="target" required></label><label>证据文件<input type="file" required accept=".pdf,.png,.jpg,.jpeg,.docx" @change="selectFile"></label><label>附件说明<textarea v-model="note" maxlength="500"/></label></template>
+<form v-if="mode" @submit.prevent="save"><template v-if="mode==='upload'">
+  <label>关联类型<select v-model="kind" :disabled="busy" @change="changeKind" required><option v-for="(label,k) in kinds" :key="k" :value="k">{{label}}</option></select></label>
+  <label v-if="kind==='milestone'">关联里程碑<select v-model="target" required><option value="" disabled>请选择</option><option v-for="m in milestones" :value="m.milestoneId" :key="m.milestoneId">{{m.name}}</option></select></label>
+  <label v-else-if="kind==='project'">关联项目<input :value="projectId" readonly/></label>
+  <label v-else>关联资源编号<input v-model.trim="target" required></label>
+  <label>{{kind==='project'?'成本来源 JSON':'证据文件'}}<input :key="kind" type="file" required :disabled="busy" :accept="kind==='project'?'.json,application/json':originalExtensions.join(',')" @change="selectFile"></label>
+  <label>附件说明<textarea v-model="note" maxlength="500"/></label>
+</template>
 <template v-else-if="mode==='verify'&&chosen"><a :href="`/api/v1/evidence/${chosen.evidenceId}?download=true`" download><Download :size="15"/>下载核对原文件</a><code>{{chosen.sha256}}</code><label>核验说明<textarea v-model="note" required minlength="4" maxlength="1000"/></label><label class="flag"><input type="checkbox" v-model="checked" required>已核对原文件与关联资料</label></template>
 <template v-else-if="chosen"><p>{{milestone(chosen)?.name}} · {{chosen.originalName}}</p><label>实际完成日期<input type="date" v-model="day" required></label><label>完成说明<textarea v-model="note" minlength="4" maxlength="1000"/></label></template><div class="actions"><el-button :disabled="busy" @click="mode=''">取消</el-button><el-button native-type="submit" type="primary" :loading="busy">{{mode==='upload'?'提交附件':mode==='verify'?'确认核验附件':'确认里程碑完成'}}</el-button></div></form>
 <el-table :data="items" v-loading="busy" row-key="evidenceId" empty-text="暂无证据附件"><el-table-column type="expand"><template #default="{row}"><dl><dt>业务引用</dt><dd>{{row.evidenceRef}}</dd><dt>SHA-256</dt><dd>{{row.sha256}}</dd><dt>资源编号</dt><dd>{{row.linkedResourceId}}</dd><dt>说明</dt><dd>{{row.description||'—'}}</dd></dl></template></el-table-column><el-table-column prop="originalName" label="文件" min-width="150"/><el-table-column label="关联资料" min-width="115"><template #default="{row}">{{milestone(row)?.name??kinds[row.linkedResourceType]}}</template></el-table-column><el-table-column label="状态" width="85"><template #default="{row}">{{row.status==='verified'?'已核验':'待核验'}}</template></el-table-column>

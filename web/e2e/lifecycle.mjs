@@ -1,0 +1,158 @@
+import {chromium, expect} from '@playwright/test'
+
+const url = process.env.PMO_BROWSER_URL
+const sessions = JSON.parse(process.env.PMO_TEST_SESSIONS)
+const browser = await chromium.launch({channel:process.env.PMO_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':'chromium')})
+const projectName = 'Synthetic review'
+const exact = name => ({name, exact:true})
+const button = (scope, name) => scope.getByRole('button', exact(name))
+const dialog = (page, name) => page.getByRole('dialog', exact(name))
+const project = page => button(page, '查看 '+projectName+' 的项目资料')
+const drawer = page => dialog(page, projectName+' · 项目资料')
+
+async function closeDialog(panel) {
+  await button(panel,'Close this dialog').click()
+  await expect(panel).toBeHidden()
+}
+
+async function actor(role) {
+  const context = await browser.newContext({viewport:{width:1280,height:820}})
+  const session = sessions[role]
+  await context.addCookies([{name:'pmo_session', value:session.cookie, domain:new URL(url).hostname, path:'/api/v1', httpOnly:true, sameSite:'Strict'}])
+  await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf), session.csrf)
+  const page = await context.newPage()
+  await page.goto(url)
+  await expect(project(page)).toBeVisible()
+  return page
+}
+
+async function open(page, name) {
+  const panel=drawer(page)
+  if(!await panel.isVisible()) await project(page).click()
+  await panel.getByRole('tab',exact(name)).click()
+  return panel
+}
+
+async function write(page, method, pattern, control, versioned=true) {
+  const endpoint = new RegExp(pattern+'$')
+  const waiting = page.waitForResponse(r=>r.request().method()===method&&endpoint.test(new URL(r.url()).pathname))
+  await control.click()
+  const response = await waiting
+  const requestHeaders = response.request().headers()
+  expect(requestHeaders['idempotency-key']).toBeTruthy()
+  if(versioned) expect(requestHeaders['if-match']).toBeTruthy()
+  const body=await response.json()
+  expect(response.status(),JSON.stringify(body)).toBe(200)
+  return body.data
+}
+
+async function requestStage(page, name, next) {
+  const panel=await open(page,'阶段流转')
+  await button(panel,'申请阶段流转').click()
+  const form=dialog(page,'申请阶段流转')
+  await form.getByLabel('目标阶段',{exact:true}).selectOption(next)
+  await form.getByLabel('申请原因',{exact:true}).fill(name)
+  const state=await write(page,'POST','/transition-requests',button(form,'提交流转申请'))
+  expect(state).toMatchObject({toStage:next,status:'pending'})
+  await expect(form).toBeHidden()
+  return panel
+}
+
+async function directStage(page, reason, next, label) {
+  const panel=await requestStage(page,reason,next)
+  await button(panel,'执行阶段流转').click()
+  const state=await write(page,'POST','/projects/[^/]+/transitions',button(dialog(page,'执行阶段流转'),'确认执行流转'))
+  expect(state).toMatchObject({toStage:next,status:'applied'})
+  await expect(panel.getByText('当前阶段：'+label,{exact:true})).toBeVisible()
+}
+
+try {
+  const pm=await actor('pm')
+  if(process.env.PMO_TEST_PHASE==='delivery') {
+    await directStage(pm,'有效里程碑均已完工，并已核验交付凭证。','delivering','交付验收')
+  } else {
+    const reviewer=await actor('reviewer'), reconciler=await actor('outsider')
+    const gatePanel=await open(pm,'关口送审')
+    await expect(gatePanel.getByText('结项预检 · 存在缺口',{exact:true})).toBeVisible()
+
+    const risks=await open(reviewer,'风险')
+    await button(risks,'风险处置').click()
+    const resolution=dialog(reviewer,'风险处置')
+    await button(resolution,'复核关闭').click()
+    await resolution.getByRole('checkbox',{name:new RegExp(process.env.PMO_TEST_RISK_PROOF)}).check()
+    const risk=await write(reviewer,'POST','/risks/[^/]+/close',button(resolution,'签署关闭'))
+    expect(risk.status).toBe('closed')
+    await expect(resolution.getByText('已签署风险关闭。',{exact:true})).toBeVisible()
+    await closeDialog(resolution)
+
+    const costs=await open(reconciler,'成本')
+    await button(costs,'签署对账').click()
+    const signing=dialog(reconciler,'签署成本对账')
+    await signing.getByRole('checkbox',{name:new RegExp(process.env.PMO_TEST_COST_PROOF)}).check()
+    const reconciliation=await write(reconciler,'POST','/cost-reconciliations',button(signing,'确认签署对账'))
+    expect(reconciliation.lines.map(x=>[x.type,x.actual,x.forecastRemaining])).toEqual([['money','100.00','0.00'],['effort','10.00','0.00']])
+    await expect(costs.getByText('已签署成本对账。',{exact:true})).toBeVisible()
+
+    await button(gatePanel,'重读阶段与材料').click()
+    await expect(gatePanel.getByText('结项预检 · 材料齐备',{exact:true})).toBeVisible()
+    await button(gatePanel,'提交结项评审').click()
+    await write(pm,'POST','/projects/[^/]+/reviews',button(dialog(pm,'确认送审'),'确认送审'))
+    const reviewing=await open(reviewer,'关口送审')
+    await button(reviewing.getByRole('row').filter({has:reviewer.getByRole('cell',exact('结项'))}),'打开评审工作台').click()
+    const workbench=dialog(reviewer,'关口人工工作台')
+    await button(workbench,'登记裁决').click()
+    await workbench.getByLabel('裁决',{exact:true}).selectOption('pass')
+    const reason='独立核对了验收、双口径财务对账和风险关闭凭据。'
+    await workbench.getByLabel('裁决理由',{exact:true}).fill(reason)
+    const outcome=await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
+    expect(outcome.decision).toMatchObject({stage:'closed',rationale:reason})
+    await expect(workbench.getByText(reason,{exact:true})).toBeVisible()
+    await closeDialog(workbench)
+
+    await pm.reload()
+    await directStage(pm,'关闭后的独立项目复盘。','retrospective','复盘')
+    const retro=await open(pm,'复盘与教训')
+    await expect(retro.getByText('结项复盘',{exact:true})).toBeVisible()
+    await button(retro,'填写复盘').click()
+    const answers=dialog(pm,'填写项目复盘')
+    const written=JSON.parse(process.env.PMO_TEST_ANSWERS)
+    for(const [i,q] of ['目标与实际结果','交付表现及原因','可复用资产','经验教训与建议'].entries()) {
+      await answers.getByLabel(q,{exact:true}).fill(written[i])
+    }
+    await write(pm,'PUT','/retrospective',button(answers,'保存复盘'))
+    await button(retro,'新增教训草稿').click()
+    const lesson=dialog(pm,'新增教训草稿')
+    const finding='独立的来源能防止台账自证。'
+    for(const [field,value] of Object.entries({'教训分类':'成本治理','发生了什么':finding,'根因':'账务和项目工作台来源独立。','建议':'先核验原件，再支持关口裁决。'})) {
+      await lesson.getByLabel(field,{exact:true}).fill(value)
+    }
+    await write(pm,'POST','/projects/[^/]+/lessons',button(lesson,'保存教训草稿'),false)
+    await expect(button(retro,'独立确认教训')).toHaveCount(0)
+    await reviewer.reload()
+    const peer=await open(reviewer,'复盘与教训')
+    await button(peer,'独立确认教训').click()
+    await write(reviewer,'POST','/lessons/[^/]+/confirm',button(dialog(reviewer,'独立确认教训'),'确认教训'))
+    await expect(peer.getByText('已确认',{exact:true})).toBeVisible()
+
+    const archive=await requestStage(pm,'四问已填写，独立复核人已确认教训。','archived')
+    await expect(button(archive,'裁决阶段流转')).toHaveCount(0)
+    const authorization=await open(reviewer,'阶段流转')
+    await button(authorization,'裁决阶段流转').click()
+    const form=dialog(reviewer,'裁决阶段流转')
+    const archiveReason='已核查四项复盘答复及确认教训的证据。'
+    await form.getByLabel('流转裁决',{exact:true}).selectOption('approve')
+    await form.getByLabel('裁决理由',{exact:true}).fill(archiveReason)
+    const result=await write(reviewer,'POST','/approvals/[^/]+/decide',button(form,'确认流转裁决'))
+    expect(result).toMatchObject({toStage:'archived', status:'applied', decisionReason:archiveReason})
+    await reviewer.reload()
+    const history=await open(reviewer,'阶段流转')
+    await expect(history.getByText('当前阶段：已归档',{exact:true})).toBeVisible()
+    await expect(history.getByText(archiveReason,{exact:true})).toBeVisible()
+    await pm.reload()
+    const readonly=await open(pm,'复盘与教训')
+    await expect(readonly.getByText('已归档 · 只读',{exact:true})).toBeVisible()
+    await expect(readonly.getByText(finding,{exact:true})).toBeVisible()
+    for(const answer of written) await expect(readonly.getByText(answer,{exact:true})).toBeVisible()
+    await expect(button(readonly,'编辑复盘')).toHaveCount(0)
+  }
+} finally { await browser.close() }

@@ -48,7 +48,11 @@ def browser_actor(conn,identity):
         'admin_audits_list','human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
         'human_accept_role_assignment','human_decline_role_assignment',
         'human_review_workbench','human_review_score','human_review_appeal','human_review_decide',
-        'human_review_confirm','human_review_withdraw'}),(),True,'human')
+        'human_review_confirm','human_review_withdraw','human_closing_check',
+        'human_cost_reconciliation_get','human_cost_reconciliation_create',
+        'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
+        'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
+        'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson'}),(),True,'human')
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
         raise Failure(403,'CSRF_INVALID',actor)
     return actor

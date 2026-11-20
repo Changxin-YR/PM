@@ -4,6 +4,8 @@ import httpx
 import sqlalchemy as sa
 from argon2 import PasswordHasher
 from pmo import schema_v1 as db
+from pmo.sessions import digest
+from pmo.session_schema import attempts
 
 def test_human_and_agent_share_project_and_session_revocation(live,actor):
     engine,agent_api,port,_=live
@@ -33,3 +35,18 @@ def test_human_and_agent_share_project_and_session_revocation(live,actor):
         assert human.get('auth/me',headers={'Cookie':'pmo_session='+cookie}).status_code==401
     with engine.connect() as c:
         assert c.scalar(sa.select(db.audit_logs.c.actor_type).where(db.audit_logs.c.project_id==project['projectId'],db.audit_logs.c.action=='pmo_project_draft_update'))=='human'
+
+
+def test_real_login_throttles_account_and_source_ip(live):
+    engine, api, _, _ = live
+    credentials = {'username': uuid4().hex, 'password': 'synthetic-invalid-password'}
+    for _ in range(12):
+        assert api.post('/api/v1/auth/login', json=credentials).status_code == 401
+    account_limit = api.post('/api/v1/auth/login', json=credentials)
+    assert account_limit.status_code == 429 and account_limit.json()['code'] == 'RATE_LIMITED'
+    with engine.begin() as c:
+        c.execute(attempts.update().where(attempts.c.bucket == digest('ip:127.0.0.1')).values(attempt_count=99))
+    fresh = {'username': uuid4().hex, 'password': 'synthetic-invalid-password'}
+    assert api.post('/api/v1/auth/login', json=fresh).status_code == 401
+    denied = api.post('/api/v1/auth/login', json={**fresh, 'username': uuid4().hex})
+    assert denied.status_code == 429 and denied.json()['code'] == 'RATE_LIMITED'

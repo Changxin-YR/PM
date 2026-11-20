@@ -60,3 +60,11 @@ $script | .\.venv\Scripts\python.exe -B -X utf8 -
 命令成功退出不等于目录完整或业务通过。首次盘点未运行 pytest、浏览器、迁移或构建；既有回归证据另见 [M0](M0-report.md)、[M1](M1-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。
 
 [证据矩阵](../acceptance/traceability.csv)末追加的 32 个任务来自[主方案 §11.2](../spec/01_PMO_V1_独立系统完整开发方案.md#112-任务拆分建议)，按 §14 上线定义保留缺口。新增行的 `status` 仅用 `PASS`（完整单项有实测）、`FAIL`（已量测且未达该任务的明确门槛）、`BLOCKED_EXTERNAL`（验收依赖尚未提供的外部输入）、`NOT_RUN`（无整项实测，含只有静态或局部证据）。局部证据保留在 `implementation`、`test`，缺口写在 `requirement`；不归整既有 169 行历史状态，不作为阶段放行结论。
+
+## 0019 生命周期目录复查
+
+依据冻结 OpenAPI/MCP 目录；合成环境与源码树见 [M2](M2-report.md)。`app.openapi()` 按方法、路径和 ID 比对，退出 0：75/95 基线、14 项工程接口。真实 SDK stdio 枚举断言在 `tests/test_runtime.py::test_mcp_stdio`（纳入退出 0 的全量测试）：33/40，仅代表注册；独立真实调用证据见各用例，不按 33 项全部验收。
+
+REST 尚缺：`pmo_task_list`、`human_task_create`、`pmo_task_update`、`pmo_report_list`、`pmo_report_submit`、`pmo_report_get`、`human_report_confirm`、`human_report_submit_existing`、`human_report_analyze`、`pmo_fact_propose`、`human_fact_verify`、`human_fact_clarify`、`human_report_fact_list`、`pmo_health_get`、`human_appeal_health`、`human_health_history`、`admin_users_list`、`admin_user_invite`、`admin_user_update_status`、`admin_members_list`。
+
+MCP 尚缺：`pmo_task_list`、`pmo_task_update`、`pmo_report_list`、`pmo_report_submit`、`pmo_report_get`、`pmo_fact_propose`、`pmo_health_get`。MCP 仍无直接评分、复议、终裁或归档工具。

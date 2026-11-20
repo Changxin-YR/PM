@@ -26,8 +26,8 @@ e=db.evidence_files
 links=sa.table('evidence_links',sa.column('evidence_id',sa.Uuid),sa.column('resource_type'),sa.column('resource_id',sa.Uuid),
     sa.column('description'),sa.column('revision',sa.BigInteger),sa.column('verification_note'))
 tables={'charter':db.charters,'milestone':db.milestones,'requirement':db.requirements,'review':db.reviews,'risk':db.risks,
-    'report':db.reports,'cost_posting':db.cost_postings,'decision':db.decisions}
-Kind=Literal['charter','milestone','requirement','review','risk','report','cost_posting','decision']
+    'report':db.reports,'cost_posting':db.cost_postings,'decision':db.decisions,'project':db.projects}
+Kind=Literal['charter','milestone','requirement','review','risk','report','cost_posting','decision','project']
 
 
 class Link(Strict):
@@ -96,15 +96,19 @@ def lookup(c,a,eid,lock=False,*,shared=False):
 def upload_write(auth,pid,key,expected,link,name,mime,data,digest):
     op='human_evidence_upload'; sig=fingerprint([str(pid),expected,link.model_dump(mode='json'),name,mime,digest])
     def write(c,a,rid):
-        p=c.scalar(sa.select(db.projects.c.id).where(db.projects.c.id==pid,visible(a)).with_for_update())
-        if not p: raise Failure(404,'RESOURCE_NOT_FOUND')
+        p=c.execute(sa.select(db.projects).where(db.projects.c.id==pid,visible(a)).with_for_update()).mappings().one_or_none()
+        if p is None: raise Failure(404,'RESOURCE_NOT_FOUND')
         t=tables[link.linkedResourceType]
-        if not c.scalar(sa.select(t.c.id).where(t.c.id==link.linkedResourceId,t.c.project_id==pid).with_for_update(read=True)): raise Failure(404,'RESOURCE_NOT_FOUND')
+        if link.linkedResourceType=='project':
+            if link.linkedResourceId!=pid: raise Failure(404,'RESOURCE_NOT_FOUND')
+        elif not c.scalar(sa.select(t.c.id).where(t.c.id==link.linkedResourceId,t.c.project_id==pid).with_for_update(read=True)):
+            raise Failure(404,'RESOURCE_NOT_FOUND')
         prior=replay(c,a,op,key,sig,Result[Evidence])
         if prior: return prior
+        if p.stage=='archived': raise Failure(422,'ARCHIVED_READ_ONLY',project_id=pid)
         total=c.scalar(sa.select(sa.func.count()).select_from(e).where(e.c.project_id==pid))
         if total+1!=expected: raise Failure(409,'VERSION_CONFLICT')
-        storage.validate(name,mime,data)
+        storage.validate(name,mime,data,project_source=link.linkedResourceType=='project')
         storage_key=uuid4().hex
         # Publish only after the private object is durably written. No path or key is returned.
         eid=c.scalar(e.insert().values(project_id=pid,original_name=name,owner_id=a.person,uploaded_by=a.person,sha256=digest,
@@ -191,10 +195,15 @@ def get(evidenceId:UUID,authorization:Auth,download:bool=False):
 def verify(evidenceId:UUID,command:Verify,authorization:Auth,key:Key,expected:Revision)->Result[Evidence]:
     op='human_evidence_verify'; sig=fingerprint([str(evidenceId),int(expected),command.model_dump()])
     def write(c,a,rid):
+        p=db.projects
+        project=c.execute(sa.select(p).join(e,e.c.project_id==p.c.id).where(e.c.id==evidenceId,visible(a))
+            .with_for_update(of=p)).mappings().one_or_none()
+        if project is None: raise Failure(404,'RESOURCE_NOT_FOUND')
         row=lookup(c,a,evidenceId,True)
         if row.uploaded_by==a.person or not member(c,a,row.project_id,'reviewer'): raise Failure(403,'INDEPENDENT_REVIEWER_REQUIRED')
         prior=replay(c,a,op,key,sig,Result[Evidence])
         if prior: return prior
+        if project.stage=='archived': raise Failure(422,'ARCHIVED_READ_ONLY',project_id=project.id)
         if row.revision!=int(expected): raise Failure(409,'VERSION_CONFLICT')
         if row.quarantine_status!='pending_review' or row.sha256!=command.sha256 or len(command.reason.strip())<4: raise Failure(422,'INVALID_VERIFICATION')
         storage.checked_bytes(row.storage_key,row.sha256,row.size_bytes)

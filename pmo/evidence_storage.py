@@ -66,8 +66,17 @@ def inspect_pdf(data:bytes):
         elif isinstance(node,list): pending.extend(node)
 
 
-def validate(name:str,mime:str,data:bytes):
+def validate(name:str,mime:str,data:bytes,*,project_source=False):
     if not name or len(name)>255 or re.search(r'[\\/:\x00-\x1f\x7f]',name): raise Failure(422,'INVALID_FILENAME')
+    if project_source:
+        if Path(name).suffix.lower() != '.json' or mime != 'application/json': raise Failure(422,'UNSUPPORTED_EVIDENCE_FORMAT')
+        if not 0 < len(data) <= 16384: raise Failure(422,'INVALID_EVIDENCE_SIZE')
+        try:
+            from .cost_reconciliation import _read_source
+            _read_source(data)
+        except (ValueError, UnicodeError, RecursionError) as exc:
+            raise Failure(422,'INVALID_EVIDENCE_CONTENT') from exc
+        return
     if mime!=MIMES.get(Path(name).suffix.lower()) or mime not in MIMES.values(): raise Failure(422,'UNSUPPORTED_EVIDENCE_FORMAT')
     if not 0<len(data)<=LIMIT: raise Failure(413 if data else 422,'INVALID_EVIDENCE_SIZE')
     try:

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 import json
 import os
 from pathlib import Path
@@ -34,7 +34,7 @@ def recovery_db(tmp_path, monkeypatch):
     with psycopg.connect(**recovery.connection_args(admin), autocommit=True) as control:
         control.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(source.database)))
         try:
-            subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True,
+            subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', '0016'], check=True,
                            env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
             yield admin, source, engine, originals, tools, control
         finally:
@@ -54,18 +54,27 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         milestone = conn.scalar(db.milestones.insert().values(project_id=project, created_by=owner, name='Deliver', ordinal=1,
                                 planned_date=date(2026, 10, 1), is_key=True).returning(db.milestones.c.id))
 
-    def upload():
+    def upload(content=png, resource='milestone', resource_id=milestone, name='record.png', mime='image/png'):
         key = uuid4().hex
         with engine.begin() as conn:
-            eid = conn.scalar(db.evidence_files.insert().values(project_id=project, original_name='record.png', owner_id=owner,
-                              uploaded_by=owner, sha256=sha256(png).hexdigest(), size_bytes=len(png), mime_type='image/png',
+            eid = conn.scalar(db.evidence_files.insert().values(project_id=project, original_name=name, owner_id=owner,
+                              uploaded_by=owner, sha256=sha256(content).hexdigest(), size_bytes=len(content), mime_type=mime,
                               storage_key=key, quarantine_status='pending_review').returning(db.evidence_files.c.id))
             conn.execute(sa.text("""INSERT INTO public.evidence_links (evidence_id, resource_type, resource_id, description)
-                                  VALUES (:eid, 'milestone', :mid, 'Recovery fixture')"""), dict(eid=eid, mid=milestone))
-            evidence_storage.store(png, key)
+                                  VALUES (:eid, :resource, :resource_id, 'Recovery fixture')"""),
+                         dict(eid=eid, resource=resource, resource_id=resource_id))
+            evidence_storage.store(content, key)
         return key
 
     original = upload()
+    with engine.connect() as c:
+        assert c.scalar(sa.text('SELECT version_num FROM alembic_version')) == '0016'
+    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True,
+                   env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
+    book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
+        'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
+                  {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
+    external = upload(book, 'project', project, 'statement.json', 'application/json')
     orphan = uuid4().hex; evidence_storage.store(png, orphan)
     late = []
     run = tools.run
@@ -79,9 +88,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     output = tmp_path / 'points'
     targets = tmp_path / 'drill'
     point, manifest = recovery.backup(source, originals, output, tools)
-    assert [obj.key for obj in manifest.objects] == [original]
+    assert {obj.key for obj in manifest.objects} == {original, external}
     assert manifest.unreferencedCandidates == 2 and recovery.daily_points(output) == 1
-    assert sorted(entry.name for entry in (point / 'evidence').iterdir()) == [original]
+    assert {entry.name for entry in (point / 'evidence').iterdir()} == {original, external}
 
     # Run the operator command end to end, not an in-process stand-in for pg_restore.
     cmd = [sys.executable, '-m', 'pmo.recovery']
@@ -92,18 +101,20 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     receipt = json.loads(result.stdout)
-    assert receipt['result'] == 'verified' and receipt['objects'] == 1 and receipt['revision'] == manifest.revision
+    assert receipt['result'] == 'verified' and receipt['objects'] == 2 and receipt['revision'] == manifest.revision
     name = receipt['database']
     assert name.startswith('pmo_restore_') and name != source.database
     try:
         with psycopg.connect(**recovery.connection_args(admin.set(database=name))) as restored:
             assert restored.execute('SELECT name FROM public.projects WHERE id = %s', (project,)).fetchone() == ('Recovery fixture',)
             assert restored.execute('SELECT count(*) FROM public.evidence_links WHERE resource_id = %s', (milestone,)).fetchone() == (1,)
-            row = restored.execute('SELECT storage_key, sha256, size_bytes FROM public.evidence_files').fetchone()
-            assert row and row[0] == original
+            rows = restored.execute('''SELECT f.storage_key, f.sha256, f.size_bytes, l.resource_type, l.resource_id
+                FROM public.evidence_files f JOIN public.evidence_links l ON l.evidence_id=f.id''').fetchall()
+            assert {(r[0],r[3],r[4]) for r in rows} == {(original,'milestone',milestone), (external,'project',project)}
+            assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
             monkeypatch.setenv('PMO_EVIDENCE_DIR', str(targets / receipt['evidenceDirectory']))
-            assert evidence_storage.checked_bytes(*row) == png
-        assert {p.name for p in originals.iterdir()} == {original, orphan, late[0]}
+            assert {r[0]: evidence_storage.checked_bytes(*r[:3]) for r in rows} == {original: png, external: book}
+        assert {p.name for p in originals.iterdir()} == {original, external, orphan, late[0]}
     finally:
         control.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
         monkeypatch.setenv('PMO_EVIDENCE_DIR', str(originals))

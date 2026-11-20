@@ -131,6 +131,7 @@ class Workbench(Strict):
     assessment: Assessment | None = None
     confirmations: list[Confirmation]
     decision: Decision | None = None
+    withdrawalReason: str | None = None
     tasks: list[Task]
     canScore: bool
     canAppeal: bool
@@ -318,6 +319,7 @@ def workbench(c, a, p, review, frozen):
         confirmations=confirmations_found if can_read_scores else [], decision=Decision(**decision_public(record).model_dump(),
             rationale=record.rationale, stage=stored.payload['stage'] if stored else p.stage) if record else None,
         tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy,
+        withdrawalReason=review.minutes if review.verdict == 'withdrawn' else None,
         canScore=valid and reviewer and bool(rubric(review.type)) and not any(r.reviewer_id == a.person and r.round == round_no for r in rows),
         canAppeal=valid and owner and bool(rows) and reconsideration is None,
         canDecide=valid and reviewer and not no_policy and (calculated is not None or review.type == 'closing'),
@@ -508,7 +510,7 @@ def write_action(auth, op, review_id, command, key, expected):
                 t = db.approval_requests
                 c.execute(t.update().where(t.c.id == intent.id).values(status='withdrawn', reason=why, decided_at=sa.func.now(),
                     decided_by=a.person, updated_at=sa.func.now()))
-            saved = bump(c, review, status='decided', verdict='withdrawn')
+            saved = bump(c, review, status='decided', verdict='withdrawn', minutes=why)
         else:
             if not current(c, a, p, review, frozen, intent):
                 raise Failure(409, 'REVIEW_SNAPSHOT_STALE', project_id=p.id)

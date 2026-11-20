@@ -22,7 +22,8 @@ snapshots = sa.table('review_submission_snapshots', sa.column('review_id', sa.Uu
                      sa.column('snapshot_hash'), sa.column('materials', JSONB), sa.column('source_refs', JSONB))
 transitions = sa.table('project_stage_transitions', sa.column('project_id', sa.Uuid), sa.column('from_revision'),
                        sa.column('to_revision'), sa.column('from_stage'), sa.column('to_stage'), sa.column('review_id', sa.Uuid),
-                       sa.column('actor_id', sa.Uuid), sa.column('actor_type'), sa.column('request_id', sa.Uuid))
+                       sa.column('actor_id', sa.Uuid), sa.column('actor_type'), sa.column('request_id', sa.Uuid),
+                       sa.column('approval_request_id', sa.Uuid))
 APPROVAL_ACTION = 'review_finalize'
 
 
@@ -61,8 +62,8 @@ def refs(project, materials):
     return list(dict.fromkeys([f'project:{project.id}@{project.revision}', *materials.refs]))
 
 
-def preview(auth, pid, gate, *, prepare):
-    op = PREPARE if prepare else CHECK
+def preview(auth, pid, gate, *, prepare, operation=None):
+    op = operation or (PREPARE if prepare else CHECK)
 
     def read(c, a, _):
         p = lock_project(c, a, pid)
@@ -101,10 +102,13 @@ def approval_hash(review, entry_revision, actor_type):
                         entry_revision, str(review.created_by), actor_type])
 
 
-def transition_project(c, a, p, review, destination, rid, *, verdict=None):
+def transition_project(c, a, p, review, destination, rid, *, verdict=None, intent_id=None):
     """The sole writer of the stage and its transition history."""
-    gate = review.type
-    if p.stage == ENTRY[gate] and destination == REVIEW[gate]:
+    gate = review.type if review is not None else None
+    if review is None:
+        from .project_lifecycle import permit_transition
+        allowed = intent_id is not None and permit_transition(c, a, p, destination, intent_id)
+    elif p.stage == ENTRY[gate] and destination == REVIEW[gate]:
         allowed = SUBMIT in a.actions and submitter(c, a, p, gate)
     elif p.stage == REVIEW[gate] and review.status == 'pending' and a.kind == 'human':
         from .review_outcomes import reviewer_assignment
@@ -116,12 +120,13 @@ def transition_project(c, a, p, review, destination, rid, *, verdict=None):
             allowed = bool(recorded and destination == decision_stage(gate, verdict) and reviewer_assignment(c, a, p, review))
     else:
         allowed = False
-    if not allowed or review.project_id != p.id:
+    if not allowed or (review is not None and (review.project_id != p.id or intent_id is not None)):
         raise Failure(403, 'TRANSITION_NOT_AUTHORIZED', project_id=p.id)
     c.execute(db.projects.update().where(db.projects.c.id == p.id).values(
         stage=destination, revision=p.revision + 1, updated_at=sa.func.now()))
     c.execute(transitions.insert().values(project_id=p.id, from_revision=p.revision, to_revision=p.revision + 1,
-        from_stage=p.stage, to_stage=destination, review_id=review.id, actor_id=a.person, actor_type=a.kind, request_id=UUID(rid)))
+        from_stage=p.stage, to_stage=destination, review_id=review.id if review else None, approval_request_id=intent_id,
+        actor_id=a.person, actor_type=a.kind, request_id=UUID(rid)))
 
 
 def decision_stage(gate, verdict):

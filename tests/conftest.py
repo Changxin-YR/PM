@@ -13,9 +13,10 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from pmo import schema_v1 as db
+from pmo.session_schema import attempts
 
 @pytest.fixture(scope='session')
-def live(tmp_path_factory):
+def live_stack(tmp_path_factory):
     admin=sa.create_engine(os.environ['PMO_TEST_DATABASE_URL'],hide_parameters=True)
     schema='pmo_test_'+uuid4().hex
     with admin.begin() as c: c.exec_driver_sql(f'CREATE SCHEMA {schema}')
@@ -46,6 +47,20 @@ def live(tmp_path_factory):
         engine.dispose()
         with admin.begin() as c: c.exec_driver_sql(f'DROP SCHEMA {schema} CASCADE')
         admin.dispose()
+
+
+@pytest.fixture
+def live(live_stack):
+    # All HTTP fixtures use one loopback IP. Expire only its test window across cases;
+    # per-account buckets and throttling within each case still use the real handler.
+    engine, _, _, env = live_stack
+    with engine.begin() as c:
+        assert c.scalar(sa.text('SELECT current_schema()')) == env['PMO_SYNTHETIC_POLICY_SCHEMA']
+        loopback = hashlib.sha256(b'ip:127.0.0.1').hexdigest()
+        c.execute(attempts.update().where(attempts.c.bucket == loopback).values(
+            started_at=sa.func.now() - sa.text("interval '11 minutes'")))
+    return live_stack
+
 
 @pytest.fixture
 def actor(live):

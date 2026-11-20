@@ -160,9 +160,16 @@ def planning_material(c, a, p, gate, out):
             out.reject('MILESTONE_NOT_COMPLETED', '仍有未完成的里程碑。', [f'milestone:{m.id}@{m.revision}'])
         else:
             evidence(c, a, out, m, 'milestone')
-    if any(r.is_blocking and (r.status != 'closed' or r.closed_at is None) for r in risks):
-        out.reject('BLOCKING_RISK_UNRESOLVED', '阻塞风险尚未关闭或未有可核验的接收确认。', risk_refs)
-    closing_costs(c, p, out, plan)
+    from .risk_resolution import resolve_risk
+    for r in (r for r in risks if r.is_blocking):
+        receipt = resolve_risk(c, a, p, r)
+        if receipt is None:
+            out.reject('BLOCKING_RISK_UNRESOLVED', '阻塞风险尚未关闭或未有可核验的接收确认。',
+                       [f'risk:{r.id}@{r.revision}'])
+        else:
+            out.content.setdefault('riskResolutions', []).append(snapshot(receipt))
+            out.refs += [f'risk-resolution:{receipt.id}', f'evidence:{receipt.evidence_id}']
+    closing_costs(c, a, p, out, plan)
 
 
 def evidence(c, a, out, row, kind):
@@ -187,7 +194,8 @@ def evidence(c, a, out, row, kind):
     })
 
 
-def closing_costs(c, p, out, plan):
+def closing_costs(c, a, p, out, plan):
+    from .cost_reconciliation import current_reconciliation
     budgets = [r for r in rows_in(c, db.cost_entries, p.id) if r.is_current_baseline]
     budget_refs = out.include('budgets', 'cost-entry', budgets)
     postings = rows_in(c, db.cost_postings, p.id)
@@ -199,9 +207,14 @@ def closing_costs(c, p, out, plan):
     out.refs.extend(post_refs)
     if len(verified) != len(postings):
         out.reject('UNVERIFIED_OR_FUTURE_POSTINGS', '仍有未核验或尚未发生的凭证。', post_refs)
-    # Individual verification neither attests ledger completeness nor reconciles the project totals.
-    # There is no governed reconciliation receipt yet. Do not interpret notes or zero totals as one.
-    out.reject('COST_RECONCILIATION_REQUIRED', '缺少正式对账记录。逐笔核验不等同于项目已对账。', post_refs)
+    reconciled = current_reconciliation(c, a, p)
+    if not reconciled:
+        out.reject('COST_RECONCILIATION_REQUIRED', '缺少当前有效的正式对账记录。逐笔核验不等同于项目已对账。', post_refs)
+    else:
+        receipt, proof_refs = reconciled
+        out.content['costReconciliation'] = {k: v for k, v in snapshot(receipt).items()
+            if k in ('id', 'revision', 'receipt_hash', 'cost_hash', 'signed_by', 'signed_at', 'covered_through')}
+        out.refs.extend(proof_refs)
     for kind in ('money', 'effort'):
         lines = [r for r in budgets if r.type == kind]
         total = sum((r.budget for r in lines), Decimal(0))
@@ -214,7 +227,9 @@ def closing_costs(c, p, out, plan):
         elif actual < 0 or abs(actual - total) * 5 > total:
             out.reject(f'{kind.upper()}_CLOSING_VARIANCE', '结项最终偏差绝对值需不超过 20%。', [*budget_refs, *post_refs])
         if remaining != 0:
-            out.reject(f'{kind.upper()}_FORECAST_NOT_ZERO', '结项剩余预测未归零。', budget_refs)
+            unit = 'CNY' if kind == 'money' else '人天'
+            out.reject(f'{kind.upper()}_FORECAST_NOT_ZERO',
+                f'结项剩余预测为 {remaining:.2f} {unit}；真实后续承诺须逐项列明，现有例外范围不能放行。', budget_refs)
 
 
 def evaluate(c, a, p, gate: Gate, *, pending=False):

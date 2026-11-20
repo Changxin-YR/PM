@@ -1,4 +1,6 @@
 """Run explicitly after npm ci: pytest tests/browser_case.py."""
+from contextlib import contextmanager
+import json
 import os
 from pathlib import Path
 import secrets
@@ -13,6 +15,8 @@ import httpx
 import sqlalchemy as sa
 from argon2 import PasswordHasher
 from pmo import schema_v1 as db
+from test_lifecycle import ANSWERS, close_materials, complete_milestones, execution_fixture, stage
+from test_reviews import team as team
 
 def test_browser_draft_workflow(live,actor):
     engine,_,api_port,_=live
@@ -62,6 +66,12 @@ def test_browser_draft_workflow(live,actor):
             path=f'projects/{evidence_pid}/requirement-baseline'; state=signer.get(path).json()['data']
             signer.post(path+'/sign',headers={'If-Match':str(state['revision']),'Idempotency-Key':uuid4().hex},json={'contentHash':state['contentHash'],'role':sign_as,'reason':'Browser fixture baseline'}).raise_for_status()
     with engine.begin() as c: c.execute(db.projects.update().where(db.projects.c.id==evidence_pid).values(stage='executing'))
+    with vite(api_port) as (root, url):
+        run_browser(root, url, 'draft', {**accounts,'PMO_TEST_USER':username,'PMO_TEST_PASSWORD':password})
+
+
+@contextmanager
+def vite(api_port):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     root=Path(__file__).resolve().parents[1]/'web'
@@ -75,5 +85,29 @@ def test_browser_draft_workflow(live,actor):
                 except httpx.ConnectError: pass
                 time.sleep(.15)
             else: raise RuntimeError('Vite startup failed')
-        subprocess.run(['node','e2e/draft.mjs'],cwd=root,check=True,timeout=120,env={**os.environ,**accounts,'PMO_BROWSER_URL':url,'PMO_TEST_USER':username,'PMO_TEST_PASSWORD':password})
+        yield root, url
     finally: proc.terminate(); proc.wait(timeout=10)
+
+
+def run_browser(root, url, case, values):
+    subprocess.run(['node', f'e2e/{case}.mjs'], cwd=root, check=True, timeout=120,
+                   env={**os.environ, **values, 'PMO_BROWSER_URL':url})
+
+
+def test_browser_delivery_through_archive(live, team):
+    _, _, users, _ = team
+    pm, reviewer, customer = (users[k] for k in ('pm', 'reviewer', 'client_representative'))
+    project, requirement, risk = execution_fixture(live, team)
+    complete_milestones(pm, reviewer, project)
+    # Before any UI stage write, prepare the remaining independent materials using HTTP.
+    # The customer signs only after the UI has reached the delivering stage.
+    sessions = {role: {'cookie': users[role].cookies['pmo_session'], 'csrf': users[role].headers['X-CSRF-Token']}
+                for role in ('pm', 'reviewer', 'outsider')}
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(sessions), 'PMO_TEST_PHASE':'delivery'})
+        assert stage(pm, project)['stage'] == 'delivering'
+        _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk)
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(sessions), 'PMO_TEST_PHASE':'closing',
+            'PMO_TEST_RISK_PROOF':risk_proof['evidenceRef'], 'PMO_TEST_COST_PROOF':cost_proof['evidenceRef'],
+            'PMO_TEST_ANSWERS':json.dumps(ANSWERS)})
+    assert stage(pm, project)['stage'] == 'archived'

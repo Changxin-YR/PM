@@ -17,6 +17,9 @@ import Costs from './Costs.vue'
 import PreapprovalSpending from './PreapprovalSpending.vue'
 import Alerts from './Alerts.vue'
 import Reviews from './Reviews.vue'
+import ProjectLifecycle from './ProjectLifecycle.vue'
+import Retrospective from './Retrospective.vue'
+import IncomingRisk from './IncomingRisk.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -27,14 +30,29 @@ const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false)
 function materials(row:Project){materialProject.value=row;showMaterials.value=true}
 function stageRead(projectId:string,stage:string,revision:number){
-  if(materialProject.value?.projectId===projectId)materialProject.value={...materialProject.value,stage,revision}
-  rows.value=rows.value.map(row=>row.projectId===projectId?{...row,stage,revision}:row)
+  if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision)materialProject.value={...materialProject.value,stage,revision}
+  rows.value=rows.value.map(row=>row.projectId===projectId&&revision>=row.revision?{...row,stage,revision}:row)
 }
 const stageNames:Record<string,string>={drafting:'草稿',charter_review:'立项评审',rejected:'已拒绝',designing:'方案细化',feasibility_review:'落地评审',executing:'执行中',on_hold:'已暂停',delivering:'交付验收',closing_review:'结项评审',closed:'已结项',retrospective:'复盘',terminated:'已终止',archived:'已归档'}
 function clearSession(){ user.value=false;admin.value=false; rows.value=[];selected.value=null;dialog.value=false;showMaterials.value=false;materialProject.value=null;csrf.value='';sessionStorage.removeItem('pmo.csrf') }
 async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers)=>void){
   const r=await fetch('/api/v1/'+path,{...options,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),'X-CSRF-Token':csrf.value,...options.headers},cache:'no-store'})
-  if(!r.ok){if(r.status===401)clearSession();const body=await r.json().catch(()=>({}));throw Error(({POLICY_PENDING:'该操作的业务策略尚待签核。',APPROVAL_STALE:'申请所依据的数据或授权已变化，请拒绝旧申请后重新提交。',INDEPENDENT_APPROVER_REQUIRED:'需要有项目审批授权的独立人员裁决。',INVALID_REQUIREMENT_TRANSITION:'当前状态不允许此操作，请重新查询。',PENDING_SCOPE_CHANGE:'需求存在未决范围变更。',INDEPENDENT_CUSTOMER_REQUIRED:'须由未参与本需求交付或内部验收的客户代表确认。',VERSION_CONFLICT:'版本已变化，请重新读取后再保存。',PROJECT_CODE_CONFLICT:'项目编号已存在。',UNAUTHORIZED:'请重新登录或核对账号密码。',FORBIDDEN:'没有此操作的权限。',RATE_LIMITED:'登录尝试过多，请稍后重试。'} as Record<string,string>)[body.code]||`操作失败（${r.status}）`)}
+  if(!r.ok){
+    if(r.status===401)clearSession()
+    const body=await r.json().catch(()=>({}))
+    const descriptions:Record<string,string>={
+      POLICY_PENDING:'该操作的业务策略尚待签核。',APPROVAL_STALE:'申请所依据的数据或授权已变化，请拒绝旧申请后重新提交。',
+      INDEPENDENT_APPROVER_REQUIRED:'需要有项目审批授权的独立人员裁决。',INVALID_REQUIREMENT_TRANSITION:'当前状态不允许此操作，请重新查询。',
+      PENDING_SCOPE_CHANGE:'需求存在未决范围变更。',INDEPENDENT_CUSTOMER_REQUIRED:'须由未参与本需求交付或内部验收的客户代表确认。',
+      VERSION_CONFLICT:'版本已变化，请重新读取后再保存。',PROJECT_CODE_CONFLICT:'项目编号已存在。',UNAUTHORIZED:'请重新登录或核对账号密码。',
+      FORBIDDEN:'没有此操作的权限。',RATE_LIMITED:'登录尝试过多，请稍后重试。',
+      TRANSITION_STALE:'申请对应的阶段或材料已变化，请使用最新材料重新申请。',
+      MILESTONE_COMPLETION_REQUIRED:'全部有效里程碑须完成并附核验凭证。',
+      RETROSPECTIVE_ANSWERS_REQUIRED:'请先保存完整的复盘四问。',CONFIRMED_LESSON_REQUIRED:'归档须有至少一条经独立人工确认的教训。',
+      REVIEW_SNAPSHOT_STALE:'已冻结的评审材料发生变化，请撤回后重送。',
+    }
+    throw Error(descriptions[body.code]||(typeof body.code==='string'?`操作失败（${body.code}）`:`操作失败（${r.status}）`))
+  }
   const body=r.status===204?null:await r.json();receiveHeaders?.(r.headers);return body
 }
 function message(e:unknown){return e instanceof TypeError?'无法连接服务，请检查网络。':e instanceof Error?e.message:'操作失败。'}
@@ -60,6 +78,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <Appointments :projects="rows" :api="api" @changed="load"/>
 <PreapprovalSpending :api="api"/>
 <Alerts :api="api"/>
+<IncomingRisk :api="api"/>
 <AuditLog v-if="admin" :api="api"/>
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>
@@ -74,7 +93,9 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane label="风险" lazy><Risks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane label="成本" lazy><Costs :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :project-revision="materialProject.revision" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane label="复盘与教训" lazy><Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"/></el-tab-pane>
   </el-tabs>
 </el-drawer>
 <el-dialog v-model="dialog" :title="title" width="min(440px,94vw)" :close-on-click-modal="false"><form @submit.prevent="save"><label>项目编号<input v-model="code" :disabled="!!selected" maxlength="60" required></label><label>项目名称<input v-model="name" maxlength="160" required></label><label v-if="!selected">说明<textarea v-model="description" maxlength="2000" rows="3"></textarea></label><el-alert v-if="formError" :title="formError" type="error" :closable="false"/><div class="actions"><el-button v-if="selected && formError" @click="reread">重新读取版本</el-button><el-button @click="dialog=false">取消</el-button><el-button type="primary" native-type="submit" :loading="busy">保存</el-button></div></form></el-dialog></main>

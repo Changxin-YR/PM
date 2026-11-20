@@ -90,7 +90,7 @@ try {
   await costs.getByRole('button',{name:'保存成本'}).click();await expect(money.getByText('123.45',{exact:true})).toBeVisible()
   await money.getByRole('button',{name:'修改预测'}).click();await costs.getByLabel('金额（元） · 剩余预测').fill('45.76');await costs.getByLabel('预测原因').fill('供应商重新报价')
   await costs.getByRole('button',{name:'保存成本'}).click();await expect(costs.getByRole('status')).toHaveText('已保存')
-  await costs.getByRole('button',{name:'刷新成本'}).click();await expect(money.getByText('45.76',{exact:true})).toHaveCount(2)
+  await costs.getByRole('button',{name:'刷新成本',exact:true}).click();await expect(money.getByText('45.76',{exact:true})).toHaveCount(2)
   const ledger=costs.getByRole('region',{name:'成本凭证'})
   await ledger.getByRole('button',{name:'登记候选凭证'}).click();await ledger.getByLabel('凭证数额').fill('100.00');await ledger.getByLabel('统计月份（UTC）').fill('2020-02');await ledger.getByLabel('凭证来源').fill('E2E-发票-001')
   await ledger.getByRole('button',{name:'提交候选凭证'}).click();await expect(ledger.getByRole('cell',{name:'待核验'})).toBeVisible();await expect(ledger.getByRole('button',{name:'核验凭证'})).toHaveCount(0)
