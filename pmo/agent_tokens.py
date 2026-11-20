@@ -19,6 +19,7 @@ from .projects import fingerprint, meta, record_receipt, run
 from .tool_routes import ROUTES
 from .risks import WRITABLE as RISK_STAGES, can_manage as manages_risks
 from .postings import OPEN as POSTING_STAGES
+from .requirement_delivery import STAGES as DELIVERY_STAGES, can_deliver
 
 router=APIRouter(prefix='/api/v1',tags=['Agent credentials'])
 t=db.agent_credentials
@@ -120,8 +121,10 @@ def issue(command: Issue,response: Response,authorization: Auth,key: Key,expecte
         if not actions.issubset(ROUTES) or command.allowProjectCreate!=('pmo_project_create' in actions) or (command.allowProjectCreate and not a.create):
             raise Failure(403,'INVALID_GRANT')
         for pid in sorted(projects):
-            editing=any(ROUTES[action][0]!='GET' and action not in ('pmo_project_create','pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_milestone_forecast') for action in actions)
+            editing=any(ROUTES[action][0]!='GET' and action not in ('pmo_project_create','pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_milestone_forecast','pmo_requirement_deliver') for action in actions)
             project=project_access(c,a,pid,edit=editing)
+            if 'pmo_requirement_deliver' in actions and (project.stage not in DELIVERY_STAGES or not can_deliver(c,a,project)):
+                raise Failure(403,'FORBIDDEN')
             if 'pmo_cost_posting_propose' in actions and (project.stage not in POSTING_STAGES or not manages_risks(c,a,project)):
                 raise Failure(403,'FORBIDDEN')
             if actions & {'pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_milestone_forecast'} and (project.stage not in RISK_STAGES or not manages_risks(c,a,project)):

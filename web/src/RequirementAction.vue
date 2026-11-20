@@ -1,0 +1,14 @@
+<script setup lang="ts">
+import {ref} from 'vue'
+import {FileCheck2} from 'lucide-vue-next'
+const props=defineProps<{api:(path:string,options?:RequestInit)=>Promise<any>;projectId:string;row:{requirementId:string;revision:number;status:string;desc:string;acceptanceCriteria:string};actions:string[]}>()
+const emit=defineEmits<{saved:[]}>()
+const steps:Record<string,[string,string]>={baseline:['deliver','标记交付'],delivered:['accept','内部验收'],accepted:['customer-confirm','客户确认']}
+const open=ref(false),busy=ref(false),error=ref(''),selected=ref(''),page=ref(1),total=ref(0),files=ref<{originalName:string;evidenceRef:string;evidenceId:string}[]>([])
+let key='',last='',revision=0,action=''
+async function load(n:number){busy.value=true;error.value='';selected.value='';files.value=[];try{const q=new URLSearchParams({page:String(n),requirementId:props.row.requirementId,verifiedOnly:'true'});const r=await props.api(`projects/${props.projectId}/evidence?${q}`);files.value=r.data.items;page.value=n;total.value=r.data.total}catch(e){error.value=String(e)}finally{busy.value=false}}
+async function begin(){key='';revision=props.row.revision;action=steps[props.row.status][0];open.value=true;await load(1)}
+async function submit(){busy.value=true;error.value='';try{if(!key||last!==selected.value){key=crypto.randomUUID();last=selected.value}await props.api(`requirements/${props.row.requirementId}/${action}`,{method:'POST',headers:{'If-Match':String(revision),'Idempotency-Key':key},body:JSON.stringify({evidenceRef:selected.value})});open.value=false;emit('saved')}catch(e){error.value=String(e)}finally{busy.value=false}}
+</script>
+<template><el-button v-if="steps[row.status]&&actions.includes(steps[row.status][0])" text :title="steps[row.status][1]" @click="begin"><FileCheck2 :size="16"/>{{steps[row.status][1]}}</el-button><span v-else-if="row.status==='accepted'&&actions.includes('policy-pending')">策略待签核</span>
+<el-dialog v-model="open" append-to-body :title="steps[row.status]?.[1]||'需求确认'" width="min(440px,94vw)" :close-on-click-modal="false"><form @submit.prevent="submit"><p>{{row.desc}}</p><p>验收标准：{{row.acceptanceCriteria}}</p><label>已核验证据<select v-model="selected" required><option disabled value="">{{files.length?'请选择':'暂无已核验证据'}}</option><option v-for="f in files" :key="f.evidenceId" :value="f.evidenceRef">{{f.originalName}} · {{f.evidenceId.slice(0,8)}}</option></select></label><el-pagination v-if="total>20" :current-page="page" :page-size="20" :total="total" layout="prev,pager,next" :disabled="busy" @current-change="load"/><el-alert v-if="error" :title="error" type="error" :closable="false"/><div class="actions"><el-button :disabled="busy" @click="open=false">取消</el-button><el-button type="primary" native-type="submit" :disabled="!selected" :loading="busy">确认提交</el-button></div></form></el-dialog></template>

@@ -1,4 +1,12 @@
 from contextlib import ExitStack
+import asyncio
+import os
+import sys
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from PIL import Image
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from secrets import token_urlsafe
 from uuid import uuid4
 
@@ -57,4 +65,52 @@ def test_two_current_people_sign_the_same_requirement_snapshot(live,actor):
         row=manager.get(base+'/requirements').json()['data']['items'][0]; assert row['baselineVersion']==1 and row['status']=='baseline'
         assert manager.patch('requirements/'+req,headers=h(row['revision']),json={'fieldsRequirement':{'priority':'P1'}}).json()['code']=='BASELINE_FROZEN'
         assert manager.post(base+'/requirements',headers=h(),json=body).json()['code']=='BASELINE_FROZEN'
+        requirement_delivery(engine,api,port,manager,customer_session,pid,req,row['revision'],pm,uid,customer,h)
     with engine.connect() as c: assert c.scalar(sa.text('SELECT count(*) FROM requirement_baseline_signatures WHERE project_id=:pid'),{'pid':pid})==3
+
+
+def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,customer,h):
+    path=f'requirements/{req}'; files=f'projects/{pid}/evidence'; tokens='me/agent-tokens'
+    with engine.begin() as c:
+        c.execute(db.user_roles.insert().values(user_id=uid,role='delegator'))
+        c.execute(db.project_members.insert().values(project_id=pid,person_id=customer,assigned_by=pm,role='reviewer',assignment_status='accepted',accepted_at=sa.func.now()))
+    grant={'allowedActions':['pmo_requirement_deliver'],'allowedProjectIds':[pid],'expiresAt':(datetime.now(UTC)+timedelta(minutes=30)).isoformat()}
+    assert manager.post(tokens,headers=h(),json=grant).status_code==403
+    with engine.begin() as c: c.execute(db.projects.update().where(db.projects.c.id==pid).values(stage='executing'))
+    buf=BytesIO(); Image.new('RGB',(3,3)).save(buf,'PNG')
+    evidence=manager.post(files,headers=h(),files={'file':('record.png',buf.getvalue(),'image/png')},data={'linkedResourceType':'requirement','linkedResourceId':req}).json()['data']
+    proof={'evidenceRef':evidence['evidenceRef']}
+    def step(user,name,version): return user.post(path+'/'+name,headers=h(version),json=proof)
+    assert step(manager,'deliver',rev).json()['code']=='VERIFIED_EVIDENCE_REQUIRED'
+    assert step(manager,'accept',rev).json()['code']=='INVALID_REQUIREMENT_TRANSITION'
+    assert step(client,'deliver',rev).status_code==403
+    assert client.post('evidence/'+evidence['evidenceId']+'/verify',headers=h(),json={'sha256':evidence['sha256'],'reason':'Checked original'}).status_code==200
+    with engine.begin() as c: change=c.scalar(db.change_entries.insert().values(project_id=pid,created_by=pm,requested_by=pm,target_id=req,target_type='requirement',
+        base_revision=rev,status='pending',before={},after={},reason='Scope under review').returning(db.change_entries.c.id))
+    assert step(manager,'deliver',rev).json()['code']=='PENDING_SCOPE_CHANGE'
+    with engine.begin() as c: c.execute(db.change_entries.update().where(db.change_entries.c.id==change).values(status='withdrawn'))
+    issued=manager.post(tokens,headers=h(manager.get(tokens).json()['data']['collectionRevision']),json=grant); assert issued.status_code==200,issued.text
+    token=issued.headers['x-pmo-new-token']
+    async def delegated():
+        env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
+        params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
+        async with stdio_client(params) as streams, ClientSession(*streams) as session:
+            await session.initialize(); args={**proof,'requirementId':req,'expectedRevision':rev,'idempotencyKey':uuid4().hex}
+            delivered=await session.call_tool('pmo_requirement_deliver',args); assert not delivered.isError,delivered.content
+            assert delivered.structuredContent['data']['status']=='delivered'
+            assert delivered.structuredContent==(await session.call_tool('pmo_requirement_deliver',args)).structuredContent
+    asyncio.run(delegated())
+    for action in ('accept','customer-confirm'):
+        assert api.post('/api/v1/'+path+'/'+action,headers={**h(rev+1),'Authorization':'Bearer '+token},json=proof).status_code==403
+    assert step(client,'customer-confirm',rev+1).json()['code']=='INVALID_REQUIREMENT_TRANSITION'
+    assert step(manager,'accept',rev).json()['code']=='VERSION_CONFLICT'
+    accepted=step(manager,'accept',rev+1); assert accepted.json()['data']['status']=='accepted' and accepted.json()['data']['acceptedAt']
+    assert step(manager,'customer-confirm',rev+2).status_code==403
+    with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=None))
+    assert step(client,'customer-confirm',rev+2).status_code==403
+    with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=customer))
+    final=step(client,'customer-confirm',rev+2); assert final.json()['data']['status']=='customer_confirmed',final.text
+    with engine.connect() as c:
+        records=c.execute(sa.text('SELECT status,actor_type,actor_id,evidence_id FROM requirement_transitions WHERE requirement_id=:r ORDER BY revision'),{'r':req}).all()
+        assert [(s,k,a) for s,k,a,_ in records]==[('delivered','agent',pm),('accepted','human',pm),('customer_confirmed','human',customer)]
+        assert all(str(e)==evidence['evidenceId'] for *_,e in records)

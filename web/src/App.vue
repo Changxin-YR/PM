@@ -28,7 +28,7 @@ const stageNames:Record<string,string>={drafting:'草稿',charter_review:'立项
 function clearSession(){ user.value=false;admin.value=false; rows.value=[];selected.value=null;dialog.value=false;showMaterials.value=false;materialProject.value=null;csrf.value='';sessionStorage.removeItem('pmo.csrf') }
 async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers)=>void){
   const r=await fetch('/api/v1/'+path,{...options,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),'X-CSRF-Token':csrf.value,...options.headers},cache:'no-store'})
-  if(!r.ok){if(r.status===401)clearSession();const body=await r.json().catch(()=>({}));throw Error(({VERSION_CONFLICT:'版本已变化，请重新读取后再保存。',PROJECT_CODE_CONFLICT:'项目编号已存在。',UNAUTHORIZED:'请重新登录或核对账号密码。',FORBIDDEN:'没有此操作的权限。',RATE_LIMITED:'登录尝试过多，请稍后重试。'} as Record<string,string>)[body.code]||`操作失败（${r.status}）`)}
+  if(!r.ok){if(r.status===401)clearSession();const body=await r.json().catch(()=>({}));throw Error(({POLICY_PENDING:'客户确认策略待业务签核。',INVALID_REQUIREMENT_TRANSITION:'当前状态不允许此操作，请重新查询。',PENDING_SCOPE_CHANGE:'需求存在未决范围变更。',INDEPENDENT_CUSTOMER_REQUIRED:'须由未参与本需求交付或内部验收的客户代表确认。',VERSION_CONFLICT:'版本已变化，请重新读取后再保存。',PROJECT_CODE_CONFLICT:'项目编号已存在。',UNAUTHORIZED:'请重新登录或核对账号密码。',FORBIDDEN:'没有此操作的权限。',RATE_LIMITED:'登录尝试过多，请稍后重试。'} as Record<string,string>)[body.code]||`操作失败（${r.status}）`)}
   const body=r.status===204?null:await r.json();receiveHeaders?.(r.headers);return body
 }
 function message(e:unknown){return e instanceof TypeError?'无法连接服务，请检查网络。':e instanceof Error?e.message:'操作失败。'}

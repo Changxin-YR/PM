@@ -25,6 +25,7 @@ def live(tmp_path_factory):
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     env={**os.environ,'DATABASE_URL':url,'PYTHONUTF8':'1','PMO_LOCAL_HTTP':'1','PMO_EVIDENCE_DIR':str(tmp_path_factory.mktemp('private_evidence'))}
     proc=None
+    env['PMO_SYNTHETIC_POLICY_SCHEMA']=schema
     try:
         for args in [('upgrade','head'),('downgrade','base'),('upgrade','head')]:
             subprocess.run([sys.executable,'-m','alembic',*args],env=env,check=True)

@@ -38,11 +38,20 @@ def test_browser_draft_workflow(live,actor):
             c.execute(db.project_members.insert().values(project_id=pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
         c.execute(db.stakeholders.insert().values(project_id=pid,created_by=pm,name='测试客户代表',type='customer',linked_person_id=client))
         c.execute(db.requirements.insert().values(project_id=pid,created_by=pm,desc='导出归档清单',priority='P0',acceptance_criteria='导出保留全部来源编号',status='baseline',baseline_version=0))
-        evidence_pid=c.scalar(db.projects.insert().values(code='E2E-FILE',name='完工凭据演练',org_id=org,stage='executing',pm_id=pm,created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
-        for person,role in ((pm,'pm'),(client,'reviewer')):
+        evidence_pid=c.scalar(db.projects.insert().values(code='E2E-FILE',name='完工凭据演练',org_id=org,stage='designing',pm_id=pm,created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
+        for person,role in ((pm,'pm'),(client,'reviewer'),(client,'client_representative')):
             c.execute(db.project_members.insert().values(project_id=evidence_pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
         c.execute(db.milestones.insert().values(project_id=evidence_pid,created_by=pm,name='试点验收',ordinal=1,is_key=True,planned_date='2020-03-09'))
+        c.execute(db.stakeholders.insert().values(project_id=evidence_pid,created_by=pm,name='测试客户代表',type='customer',linked_person_id=client))
+        req=c.scalar(db.requirements.insert().values(project_id=evidence_pid,created_by=pm,desc='完成文件交付',acceptance_criteria='文件中列明验收记录',priority='P0',status='baseline',baseline_version=0).returning(db.requirements.c.id))
+        accounts['PMO_TEST_REQUIREMENT_ID']=str(req)
         png=BytesIO(); Image.new('RGB',(6,6),(120,90,66)).save(png,'PNG'); accounts['PMO_TEST_PNG']=b64encode(png.getvalue()).decode('ascii')
+    for role,sign_as in [('BASELINE_PM','pm'),('BASELINE_CLIENT','client_representative')]:
+        with httpx.Client(base_url=f'http://127.0.0.1:{api_port}/api/v1/',trust_env=False) as signer:
+            signer.headers['X-CSRF-Token']=signer.post('auth/login',json={'username':accounts['PMO_TEST_'+role],'password':accounts['PMO_TEST_'+role+'_PASSWORD']}).json()['csrfToken']
+            path=f'projects/{evidence_pid}/requirement-baseline'; state=signer.get(path).json()['data']
+            signer.post(path+'/sign',headers={'If-Match':str(state['revision']),'Idempotency-Key':uuid4().hex},json={'contentHash':state['contentHash'],'role':sign_as,'reason':'Browser fixture baseline'}).raise_for_status()
+    with engine.begin() as c: c.execute(db.projects.update().where(db.projects.c.id==evidence_pid).values(stage='executing'))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     root=Path(__file__).resolve().parents[1]/'web'

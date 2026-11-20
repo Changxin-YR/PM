@@ -23,4 +23,5 @@ ROUTES = {
     'pmo_requirement_list': ('GET', '/projects/{projectId}/requirements'),
     'pmo_requirement_create': ('POST', '/projects/{projectId}/requirements'),
     'pmo_requirement_draft_update': ('PATCH', '/requirements/{requirementId}'),
+    'pmo_requirement_deliver': ('POST', '/requirements/{requirementId}/deliver'),
 }

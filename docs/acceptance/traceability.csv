@@ -4,7 +4,7 @@
 "ENT-Scorecard","§2.1","评分人独立打分、锚点、权重、判定建议","Q1,T04","NOT_TESTED","",""
 "ENT-Milestone","§2.1","至多八个、计划/预测/实际、完成证据","Q2,Q3","LOCAL_DRAFT_FORECAST_VERIFIED_COMPLETION","pmo/milestones.py;pmo/milestone_forecasts.py;pmo/evidence.py","tests/test_milestones.py;tests/test_forecasts.py;tests/test_evidence.py;tests/test_runtime.py;tests/browser_case.py"
 "ENT-CostEntry","§2.1","money/effort预算实际剩余预测双口径","Q2,Q4,T05","PARTIAL_LEDGER_AND_PLANS","pmo/costs.py;pmo/cost_math.py;pmo/postings.py;web/src/Costs.vue","tests/test_postings.py;tests/test_costs.py;tests/test_cost_math.py;tests/test_runtime.py;tests/browser_case.py"
-"ENT-Requirement","§2.1","P0/P1/P2需求、验收、客户确认","Q2,Q8,T04","PARTIAL_DRAFT_AND_JOINT_BASELINE","pmo/requirements.py;pmo/requirement_baselines.py","tests/test_requirements.py;tests/test_requirement_baselines.py;tests/test_runtime.py;tests/browser_case.py"
+"ENT-Requirement","§2.1","P0/P1/P2需求、验收、客户确认","Q2,Q8,T04","LOCAL_SIGNED_V1_DELIVERY_SYNTHETIC_CONFIRM","pmo/requirements.py;pmo/requirement_baselines.py;pmo/requirement_delivery.py","tests/test_requirements.py;tests/test_requirement_baselines.py;tests/test_runtime.py;tests/browser_case.py"
 "ENT-ChangeEntry","§2.1","基线变更前后版本、原因、审批","Q8,T05","NOT_TESTED","",""
 "ENT-Risk","§2.1","风险概率影响/阻塞、应对、移交","Q5","PARTIAL_REGISTER_ONLY","pmo/risks.py;web/src/Risks.vue","tests/test_risks.py;tests/test_runtime.py;tests/browser_case.py"
 "ENT-Review","§2.1","三道关口、排期、参与人、决议","Q1,Q5,T03","NOT_TESTED","",""

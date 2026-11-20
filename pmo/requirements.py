@@ -54,6 +54,7 @@ class View(Strict):
 
 
 class Page(Strict):
+    deliveryActions: list[str] | None = None
     items: list[View]
     total: int
     page: int
@@ -68,9 +69,10 @@ def view(row):
 
 
 def listing(auth,pid,page,size,status,keyword):
+    from .requirement_delivery import capabilities
     op='pmo_requirement_list'
     def query(c,a,_):
-        project_access(c,a,pid)
+        project=project_access(c,a,pid)
         r=db.requirements
         predicates=[r.c.project_id==pid]
         if status: predicates.append(r.c.status==status)
@@ -78,7 +80,7 @@ def listing(auth,pid,page,size,status,keyword):
         total=c.scalar(sa.select(sa.func.count()).select_from(r).where(*predicates))
         rows=c.execute(sa.select(r).where(*predicates).order_by(r.c.priority,r.c.created_at,r.c.id).limit(size).offset((page-1)*size)).mappings()
         items=[view(row) for row in rows]
-        return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total),meta=meta(op,[i.sourceRefs[0] for i in items]))
+        return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total,deliveryActions=capabilities(c,a,project)),meta=meta(op,[i.sourceRefs[0] for i in items]))
     return run(auth,op,query)
 
 
