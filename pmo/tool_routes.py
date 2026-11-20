@@ -1,5 +1,8 @@
 """Only contract operations backed by a live implementation belong here."""
 ROUTES = {
+    'pmo_cost_summary': ('GET','/projects/{projectId}/costs'),
+    'pmo_cost_budget_draft_save': ('PUT','/projects/{projectId}/cost-budgets'),
+    'pmo_cost_forecast_save': ('PUT','/projects/{projectId}/cost-forecasts'),
     'pmo_risk_list': ('GET','/projects/{projectId}/risks'),
     'pmo_risk_create': ('POST','/projects/{projectId}/risks'),
     'pmo_risk_update': ('PATCH','/risks/{riskId}'),
