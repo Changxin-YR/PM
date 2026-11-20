@@ -40,6 +40,8 @@ try {
   await drawer.getByRole('button',{name:'保存里程碑'}).click()
   await drawer.getByRole('button',{name:'刷新里程碑'}).click()
   await expect(drawer.getByRole('cell',{name:'2027-01-19'})).toBeVisible()
+  await drawer.getByRole('button',{name:'修改预测',exact:true}).click();await drawer.getByLabel('新预测日期').fill('2027-01-21');await drawer.getByLabel('预测调整原因').fill('外部验收窗口调整');await drawer.getByRole('button',{name:'保存预测',exact:true}).click()
+  await expect(drawer.getByRole('cell',{name:'2027-01-21'})).toBeVisible();await expect(drawer.getByRole('cell',{name:'2027-01-20'})).toBeVisible()
   await drawer.getByRole('tab',{name:'需求',exact:true}).click()
   await drawer.getByRole('button',{name:'新增需求'}).click()
   await drawer.getByLabel('需求描述').fill('导出交付验证记录')
@@ -120,6 +122,7 @@ try {
     await other.close()
   }
   await mkdir('test-results',{recursive:true})
+  await page.getByRole('button',{name:'预警中心'}).click();const alerts=page.getByRole('dialog',{name:'预警中心'});await expect(alerts.getByText('暂无授权项目预警')).toBeVisible();await page.keyboard.press('Escape');await expect(alerts).toBeHidden()
   await page.getByRole('button',{name:'立项前支出'}).click();const spending=page.getByRole('dialog',{name:'立项前支出'})
   await expect(spending.getByRole('cell',{name:'E2E-发票-001'})).toBeVisible();await expect(spending.getByRole('cell',{name:'100.00 元',exact:true})).toBeVisible();await expect(spending.getByRole('cell',{name:'尚未通过'})).toBeVisible();await page.keyboard.press('Escape');await expect(spending).toBeHidden()
   await page.getByRole('button',{name:'我的 Agent 令牌'}).click()

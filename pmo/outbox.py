@@ -65,8 +65,16 @@ def consume(db: Engine, lease: Lease) -> bool:
         row = current(c, lease)
         if row is None:
             return False
-        # Published project activity is not a notification or a business decision.
         pid = UUID(row['payload']['projectId'])
+        if row['event_type']=='rule.notify':
+            event=UUID(row['payload']['eventId']); person=UUID(row['payload']['recipientId'])
+            args=dict(id=event,pid=pid,person=person)
+            if not c.scalar(text('SELECT id FROM rule_events WHERE id=:id AND project_id=:pid FOR UPDATE'),args):
+                raise ValueError('Unknown rule event')
+            c.execute(text('''INSERT INTO notifications(project_id,rule_event_id,recipient_person_id,delivery_status,delivered_at,payload)
+                SELECT :pid,:id,:person,'delivered',now(),jsonb_build_object('ruleId',rule_id,'sourceRefs',source_refs)
+                FROM rule_events WHERE id=:id ON CONFLICT(rule_event_id,recipient_person_id) WHERE rule_event_id IS NOT NULL DO NOTHING'''),args)
+            c.execute(text('UPDATE rule_events SET notified_at=coalesce(notified_at,now()) WHERE id=:id'),args)
         c.execute(text('''INSERT INTO project_event_inbox(dedupe_key,event_id,project_id,event_type)
             VALUES(:key,:id,:pid,:kind) ON CONFLICT(dedupe_key) DO NOTHING'''),
             dict(key=row['dedupe_key'], id=lease.event_id, pid=pid, kind=row['event_type']))

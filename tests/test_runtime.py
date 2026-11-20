@@ -18,7 +18,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0010'
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0011'
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live
@@ -41,7 +41,7 @@ def test_concurrent_replay_scope_and_denial(live,actor):
         assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
 
 def test_mcp_stdio(live,actor):
-    cost_ops=('pmo_cost_summary','pmo_cost_budget_draft_save','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_preapproval_spending_list')
+    cost_ops=('pmo_cost_summary','pmo_cost_budget_draft_save','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_preapproval_spending_list','pmo_milestone_forecast','pmo_alert_list')
     engine,_,port,_=live; token,ident=actor(extra_actions=(*cost_ops,'pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update'))
     async def scenario():
         env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
@@ -79,6 +79,9 @@ def test_mcp_stdio(live,actor):
             m=await call('pmo_milestone_create',{'projectId':p['projectId'],'name':'试运行','plannedDate':'2026-12-15','idempotencyKey':uuid4().hex})
             m2=await call('pmo_milestone_draft_update',{'milestoneId':m['milestoneId'],'expectedRevision':1,'fieldsMilestone':{'name':'交付验证','isKey':True},'idempotencyKey':uuid4().hex})
             assert m2['revision']==2 and (await call('pmo_milestone_list',{'projectId':p['projectId']}))['items']==[m2]
+            f=await call('pmo_milestone_forecast',{'milestoneId':m['milestoneId'],'newDate':'2026-12-16','reason':'Supplier update','expectedRevision':2,'idempotencyKey':uuid4().hex})
+            assert f['revision']==3 and f['plannedDate']==m['plannedDate'] and f['forecastDate']=='2026-12-16'
+            assert (await call('pmo_alert_list',{'projectId':p['projectId']}))['items']==[]
             req=await call('pmo_requirement_create',{'projectId':p['projectId'],'desc':'导出审批明细清单','priority':'P1','acceptanceCriteria':'完整保留所有列名','idempotencyKey':uuid4().hex})
             revised=await call('pmo_requirement_draft_update',{'requirementId':req['requirementId'],'fieldsRequirement':{'priority':'P0'},'expectedRevision':1,'idempotencyKey':uuid4().hex})
             assert revised['priority']=='P0' and revised['revision']==2

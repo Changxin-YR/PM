@@ -9,6 +9,7 @@ from .contracts import Strict, Result
 from .identity import Failure, visible
 from .materials import project_access, replay, finish
 from .projects import run, meta, fingerprint
+from .risks import WRITABLE, can_manage
 
 Name = Annotated[str, Field(min_length=1, max_length=160, pattern=r'\S')]
 Ordinal = Annotated[StrictInt, Field(ge=1, le=8)]
@@ -57,6 +58,8 @@ class Page(Strict):
     pageSize: int = 8
     total: int
     items: list[View]
+    canDraft: bool | None=None
+    canForecast: bool | None=None
 
 
 def view(row):
@@ -72,11 +75,13 @@ def refs(items):
 def listing(auth, pid):
     op = 'pmo_milestone_list'
     def query(c, a, _):
-        project_access(c,a,pid)
+        project=project_access(c,a,pid)
         m=db.milestones
         rows=c.execute(sa.select(m).where(m.c.project_id==pid, ~m.c.is_cancelled).order_by(m.c.ordinal)).mappings()
         items=[view(r) for r in rows]
-        return Result[Page](data=Page(items=items,total=len(items)),meta=meta(op,refs(items)))
+        manage=can_manage(c,a,project) if a.kind=='human' else None
+        return Result[Page](data=Page(items=items,total=len(items),canDraft=manage and project.stage in ('drafting','designing'),
+            canForecast=manage and project.stage in WRITABLE),meta=meta(op,refs(items)))
     return run(auth,op,query)
 
 

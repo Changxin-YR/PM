@@ -12,6 +12,7 @@ import AgentTokens from './AgentTokens.vue'
 import Risks from './Risks.vue'
 import Costs from './Costs.vue'
 import PreapprovalSpending from './PreapprovalSpending.vue'
+import Alerts from './Alerts.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -50,6 +51,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="prev, pager, next" @current-change="load"/>
 <Appointments :projects="rows" :api="api" @changed="load"/>
 <PreapprovalSpending :api="api"/>
+<Alerts :api="api"/>
 <AuditLog v-if="admin" :api="api"/>
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>

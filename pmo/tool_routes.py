@@ -1,5 +1,7 @@
 """Only contract operations backed by a live implementation belong here."""
 ROUTES = {
+    'pmo_alert_list': ('GET','/projects/{projectId}/alerts'),
+    'pmo_milestone_forecast': ('PATCH','/milestones/{milestoneId}/forecast'),
     'pmo_preapproval_spending_list': ('GET','/analytics/preapproval-spending'),
     'pmo_cost_posting_propose': ('POST','/projects/{projectId}/cost-postings'),
     'pmo_cost_summary': ('GET','/projects/{projectId}/costs'),
