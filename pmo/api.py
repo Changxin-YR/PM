@@ -19,6 +19,7 @@ from .charter_routes import router as charter_router
 from .appointment_routes import router as appointment_router
 from .stakeholder_routes import router as stakeholder_router
 from .members import router as members_router
+from .audits import router as audit_router, is_admin
 
 class ErrorResponse(Strict):
     code: str
@@ -33,6 +34,7 @@ app.include_router(charter_router)
 app.include_router(appointment_router)
 app.include_router(stakeholder_router)
 app.include_router(members_router)
+app.include_router(audit_router)
 
 
 @app.middleware('http')
@@ -80,6 +82,7 @@ class CurrentUser(Strict):
     accountId:UUID
     personId:UUID
     orgId:UUID
+    isSystemAdmin:bool
 
 @app.post('/api/v1/auth/login',operation_id='auth_login')
 def login(request:Request,response:Response,command:Login)->LoginResult:
@@ -95,7 +98,7 @@ def login(request:Request,response:Response,command:Login)->LoginResult:
 
 @app.get('/api/v1/auth/me',operation_id='auth_me')
 def me(authorization:Auth)->CurrentUser:
-    return projects.run(authorization,'auth_me',lambda c,a,r:CurrentUser(accountId=a.account,personId=a.person,orgId=a.org) if a.kind=='human' else deny_agent())
+    return projects.run(authorization,'auth_me',lambda c,a,r:CurrentUser(accountId=a.account,personId=a.person,orgId=a.org,isSystemAdmin=is_admin(c,a)) if a.kind=='human' else deny_agent())
 
 def deny_agent(): raise Failure(403,'FORBIDDEN')
 

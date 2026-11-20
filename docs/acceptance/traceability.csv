@@ -44,7 +44,7 @@
 "T04","独立系统新增验收","Agent自批/客户确认/归档禁用","T04","NOT_TESTED","",""
 "T05","独立系统新增验收","幂等与revision冲突","T05","PARTIAL_PROJECT_DRAFT_ONLY","pmo/projects.py","tests/test_runtime.py"
 "T06","独立系统新增验收","Fact注入/来源不足不污染指标","T06","NOT_TESTED","",""
-"T07","独立系统新增验收","审计与事务一致","T07","NOT_TESTED","",""
+"T07","独立系统新增验收","审计与事务一致","T07","PARTIAL_DRAFT_AUDIT_AND_ROLLBACK","pmo/projects.py;pmo/audits.py","tests/test_admin_audit.py;tests/test_runtime.py;tests/test_error_contract.py;tests/browser_case.py"
 "T08","独立系统新增验收","Lesson用于下一次立项","T08","NOT_TESTED","",""
 "T09","独立系统新增验收","真实MCP Host工具/授权可用","T09","NOT_TESTED","",""
 "T10","独立系统新增验收","规则及备份恢复","T10","NOT_TESTED","",""
