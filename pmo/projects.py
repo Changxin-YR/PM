@@ -9,6 +9,7 @@ from .contracts import Meta, Page, ProjectDetail, ProjectView, Result, RULE_VERS
 from .identity import Failure, authenticate, visible
 from .db import engine
 from .charter_models import summary as charter_summary
+from .stakeholder_models import ContactSummary
 
 def view(row):
     return ProjectView(projectId=row.id, code=row.code, name=row.name, stage=row.stage, revision=row.revision, orgId=row.org_id, createdAt=row.created_at)
@@ -54,7 +55,12 @@ def detail(header,pid):
         charter=c.execute(sa.select(db.charters).where(db.charters.c.project_id==pid)).mappings().one_or_none()
         refs=[f'project:{pid}@{row.revision}']
         if charter: refs.append(f'charter:{charter.id}@{charter.revision}')
-        return Result[ProjectDetail](data=ProjectDetail(project=view(row),charterSummary=charter_summary(charter) if charter else None),meta=meta(op,refs))
+        s=db.stakeholders
+        contacts=[ContactSummary.from_row(item) for item in c.execute(sa.select(
+            s.c.id,s.c.project_id,s.c.name,s.c.type,s.c.contact_role,s.c.revision
+        ).where(s.c.project_id==pid).order_by(s.c.created_at.desc(),s.c.id).limit(100)).mappings()]
+        refs.extend(item.source_ref() for item in contacts)
+        return Result[ProjectDetail](data=ProjectDetail(project=view(row),charterSummary=charter_summary(charter) if charter else None,stakeholders=contacts),meta=meta(op,refs))
     return run(header,op,query)
 
 def create(header,command,key):

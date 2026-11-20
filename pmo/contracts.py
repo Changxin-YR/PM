@@ -1,12 +1,11 @@
 from datetime import datetime
 from typing import Generic, Literal, TypeVar
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
+from .dto import Strict as Strict
+from .stakeholder_models import ContactSummary
 
 RULE_VERSION = 'lite-v1.0-standalone.3'
-
-class Strict(BaseModel):
-    model_config = ConfigDict(extra='forbid')
 
 class CreateProject(Strict):
     code: str = Field(min_length=2,max_length=60,pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
@@ -55,6 +54,7 @@ class CharterSummary(Strict):
 class ProjectDetail(Strict):
     project: ProjectView
     charterSummary: CharterSummary | None = None
+    stakeholders: list[ContactSummary] = Field(max_length=100)
 
 class Meta(Strict):
     asOf: datetime

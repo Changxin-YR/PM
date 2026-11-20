@@ -46,3 +46,8 @@
 
 `scripts/dev.ps1 test` 12 passed / 11.88s；`scripts/dev.ps1 browser` 1 passed / 14.80s（三个独立 Edge 会话提名、发邀请、接受，刷新后台账可见）；`scripts/dev.ps1 check` 三套规格校验与 mypy 23 文件 exit 0；`npm.cmd --prefix web run build` exit 0（主包体积警告）。基线操作 19/95，加上两个补充操作；MCP 12/40。审计、越权、幂等及真实 MCP 有相应用例，并不表示 T02、Q1 或 M0 整体验收通过。
 
+## 2026-11-20 联系台账（起点 5d874d2）
+
+在 0005 的 stakeholders 表上实现项目范围的草稿登记、人工分页读取与受限项目摘要。POST 不接受身份、角色或核验字段，人工列表即使被误列入令牌范围也拒绝 Agent。项目详情至多列出最新 100 条摘要，不返回影响力、期望或身份关联。未实现客户核验或确认权。
+
+真实 PostgreSQL、HTTP、stdio 共 13 passed / 10.93s；Edge 1 passed / 17.05s；三套静态规格校验、mypy（27 文件）、Vue 类型检查与构建通过，主包体积警告仍在。测试检查了跨组织拒绝、幂等重放只写一次审计、成员表不变及 101 条记录下的摘要上限。当前 21/95 个基线 REST（另 2 个工程接口），13/40 个 MCP。M0、T04 尚未整体验收。

@@ -13,12 +13,14 @@ from .milestone_routes import router as milestone_router
 from .requirement_routes import router as requirement_router
 from .charter_routes import router as charter_router
 from .appointment_routes import router as appointment_router
+from .stakeholder_routes import router as stakeholder_router
 
 app=FastAPI(title='PMO Lite',version='0.1.0')
 app.include_router(milestone_router)
 app.include_router(requirement_router)
 app.include_router(charter_router)
 app.include_router(appointment_router)
+app.include_router(stakeholder_router)
 
 class Login(Strict):
     username:str=Field(min_length=1,max_length=120)

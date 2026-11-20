@@ -41,18 +41,21 @@ def test_concurrent_replay_scope_and_denial(live,actor):
         assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
 
 def test_mcp_stdio(live,actor):
-    engine,_,port,_=live; token,ident=actor(extra_actions=('pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose'))
+    engine,_,port,_=live; token,ident=actor(extra_actions=('pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create'))
     async def scenario():
         env={**{k:os.environ[k] for k in ('SYSTEMROOT','PATH','TEMP','TMP') if k in os.environ},'PMO_API_PORT':str(port),'PMO_AGENT_TOKEN':token,'PYTHONUTF8':'1'}
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
-            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose'}
+            assert set(tools)=={'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create'}
             async def call(op,args):
                 r=await session.call_tool(op,args); assert not r.isError,r.content
                 jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']
             p=await call('pmo_project_create',{'code':'MCP-1','name':'合成项目','idempotencyKey':uuid4().hex})
             assert (await call('pmo_project_get',{'projectId':p['projectId']}))['project']==p
+            contact=await call('pmo_stakeholder_create',{'projectId':p['projectId'],'name':'Customer','stakeholderType':'customer','expectation':'private note','idempotencyKey':uuid4().hex})
+            assert 'expectation' not in contact
+            assert (await call('pmo_project_get',{'projectId':p['projectId']}))['stakeholders']==[contact]
             assert (await call('pmo_project_list',{'filters':{'keyword':'合成'}}))['items']==[p]
             args={'projectId':p['projectId'],'fields':{'name':'改名'},'expectedRevision':1,'idempotencyKey':uuid4().hex}
             updated=await call('pmo_project_draft_update',args)
