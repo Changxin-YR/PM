@@ -26,6 +26,7 @@ from .costs import router as cost_router
 from .postings import router as posting_router
 from .spending import router as spending_router
 from .alerts import router as alerts_router
+from .requirement_baselines import router as baseline_router
 
 class ErrorResponse(Strict):
     code: str
@@ -47,6 +48,7 @@ app.include_router(cost_router)
 app.include_router(posting_router)
 app.include_router(spending_router)
 app.include_router(alerts_router)
+app.include_router(baseline_router)
 
 
 @app.middleware('http')

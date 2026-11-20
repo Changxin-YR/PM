@@ -39,6 +39,7 @@ def browser_actor(conn,identity):
     if not row: raise Failure(401,'UNAUTHORIZED')
     actor=Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
         'human_agent_token_create','human_agent_tokens_list','human_agent_token_revoke','admin_agent_tokens_list','admin_agent_token_revoke',
+        'human_requirement_baseline_get','human_requirement_baseline_sign',
         'human_cost_postings_list','human_verify_cost_posting','human_reverse_cost_posting','human_alerts_overview',
         'admin_audits_list','human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
         'human_accept_role_assignment','human_decline_role_assignment'}),(),True,'human')

@@ -21,7 +21,7 @@ def test_browser_draft_workflow(live,actor):
         username=c.scalar(db.user_accounts.update().where(db.user_accounts.c.id==uid).values(password_hash=PasswordHasher().hash(password)).returning(db.user_accounts.c.username))
         org=c.scalar(sa.select(db.persons.c.org_id).where(db.persons.c.user_id==uid))
         accounts={}
-        for role in ['issuer','nominee']:
+        for role in ['issuer','nominee','baseline_pm','baseline_client']:
             name=uuid4().hex; person=uuid4(); secret=secrets.token_urlsafe(32)
             user=c.scalar(db.user_accounts.insert().values(username=name,password_hash=PasswordHasher().hash(secret),is_active=True).returning(db.user_accounts.c.id))
             c.execute(db.persons.insert().values(id=person,created_by=person,org_id=org,user_id=user,name=role,is_active=True))
@@ -29,6 +29,12 @@ def test_browser_draft_workflow(live,actor):
             if role=='issuer':
                 c.execute(sa.text("INSERT INTO appointment_authorities VALUES(:org,:person,'pm','SYNTHETIC E2E',now()+interval '1 hour',NULL)"),dict(person=person,org=org))
             if role=='nominee': c.execute(db.user_roles.insert().values(user_id=user,role='finance_verifier'))
+        pm=accounts['PMO_TEST_BASELINE_PM_ID']; client=accounts['PMO_TEST_BASELINE_CLIENT_ID']
+        pid=c.scalar(db.projects.insert().values(code='E2E-BASE',name='基线签署演练',org_id=org,stage='designing',pm_id=pm,created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
+        for person,role in ((pm,'pm'),(client,'client_representative')):
+            c.execute(db.project_members.insert().values(project_id=pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
+        c.execute(db.stakeholders.insert().values(project_id=pid,created_by=pm,name='测试客户代表',type='customer',linked_person_id=client))
+        c.execute(db.requirements.insert().values(project_id=pid,created_by=pm,desc='导出归档清单',priority='P0',acceptance_criteria='导出保留全部来源编号',status='baseline',baseline_version=0))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     root=Path(__file__).resolve().parents[1]/'web'

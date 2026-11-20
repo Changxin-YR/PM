@@ -139,4 +139,15 @@ try {
   await expect(page.getByRole('button',{name:'新建项目'})).toBeInViewport()
   await page.getByRole('button',{name:'退出登录'}).click()
   await expect(page.getByRole('heading',{name:'登录工作台'})).toBeVisible()
+  const signers=[]
+  for(const [role,button] of [['BASELINE_PM','PM 确认基线'],['BASELINE_CLIENT','客户确认并冻结基线']]){
+    const signer=await browser.newPage();signers.push(signer);await signer.goto(process.env.PMO_BROWSER_URL)
+    await signer.getByLabel('账号',{exact:true}).fill(process.env['PMO_TEST_'+role]);await signer.getByLabel('密码',{exact:true}).fill(process.env['PMO_TEST_'+role+'_PASSWORD']);await signer.getByRole('button',{name:'登录',exact:true}).click()
+    await signer.getByRole('button',{name:'查看 基线签署演练 的项目资料'}).click();await signer.getByRole('tab',{name:'需求基线',exact:true}).click()
+    const baseline=signer.getByRole('tabpanel',{name:'需求基线',exact:true});await expect(baseline.getByRole('cell',{name:'导出保留全部来源编号'})).toBeVisible()
+    await expect(baseline.getByRole('button',{name:button})).toBeDisabled();await baseline.getByLabel('确认说明').fill('隔离演练核对全部条款');await baseline.getByRole('checkbox').check();await baseline.getByRole('button',{name:button}).click()
+    await expect(baseline.getByText(role==='BASELINE_PM'?'待客户确认':'已冻结',{exact:true})).toBeVisible()
+  }
+  await signers[0].getByRole('button',{name:'重读基线'}).click();await expect(signers[0].getByText('已冻结',{exact:true})).toBeVisible()
+  for(const signer of signers)await signer.close()
 } finally {await browser.close()}

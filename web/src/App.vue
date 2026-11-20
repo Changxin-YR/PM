@@ -3,6 +3,7 @@ import {computed,onMounted,ref} from 'vue'
 import {Layers3,LogOut,Plus,RefreshCw,Search,Pencil,FolderKanban} from 'lucide-vue-next'
 import Milestones from './Milestones.vue'
 import Requirements from './Requirements.vue'
+import RequirementBaseline from './RequirementBaseline.vue'
 import Stakeholders from './Stakeholders.vue'
 import Charter from './Charter.vue'
 import Appointments from './Appointments.vue'
@@ -58,6 +59,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
   <el-tabs v-if="materialProject" :key="materialProject.projectId">
     <el-tab-pane label="里程碑"><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="联系台账" lazy><Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
