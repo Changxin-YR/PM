@@ -49,11 +49,15 @@ class Sign(Strict):
     reason: str=Field(min_length=4,max_length=2000,pattern=r'\S')
 
 
-def active_member(c,p,person,role):
+def active_assignment(c,p,person,role):
     m,n,u=db.project_members,db.persons,db.user_accounts
-    return bool(c.scalar(sa.select(m.c.id).join(n,n.c.id==m.c.person_id).join(u,u.c.id==n.c.user_id).where(
+    return c.execute(sa.select(m.c.id,m.c.person_id,m.c.accepted_at).join(n,n.c.id==m.c.person_id).join(u,u.c.id==n.c.user_id).where(
         m.c.project_id==p.id,m.c.person_id==person,m.c.role==role,m.c.assignment_status=='accepted',m.c.accepted_at.is_not(None),
-        m.c.revoked_at.is_(None),n.c.org_id==p.org_id,n.c.is_active,u.c.is_active,sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(read=True,of=(m,n))))
+        m.c.revoked_at.is_(None),n.c.org_id==p.org_id,n.c.is_active,u.c.is_active,sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(read=True,of=(m,n))).mappings().one_or_none()
+
+
+def active_member(c,p,person,role):
+    return active_assignment(c,p,person,role) is not None
 
 
 def state(c,a,p):

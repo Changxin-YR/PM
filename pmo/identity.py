@@ -11,8 +11,9 @@ explicit_grants = sa.table('agent_project_grants', sa.column('credential_id', sa
                            sa.column('project_id', sa.Uuid), sa.column('granted_by', sa.Uuid))
 
 class Failure(Exception):
-    def __init__(self, status: int, code: str, actor: 'Actor | None'=None):
+    def __init__(self, status: int, code: str, actor: 'Actor | None'=None, *, project_id: UUID | None=None):
         self.status, self.code, self.actor = status, code, actor
+        self.project_id = project_id
 
 @dataclass(frozen=True)
 class Actor:
@@ -65,13 +66,19 @@ def authenticate(conn, header: str | Browser | None) -> Actor:
     if row is None: raise Failure(401,'UNAUTHORIZED')
     return Actor(row.id,row.person,row.delegated_by,row.org_id,frozenset(row.allowed_actions),tuple(map(UUID,row.allowed_project_ids)),row.allow_project_create)
 
-def visible(actor):
+def explicit_project_scope(actor):
+    return sa.exists(sa.select(explicit_grants.c.project_id).where(
+        explicit_grants.c.credential_id==actor.credential,explicit_grants.c.project_id==db.projects.c.id,
+        explicit_grants.c.granted_by==actor.account))
+
+
+def visible(actor, *, include_initiator=False):
     p,m=db.projects,db.project_members
     accepted=(m.c.project_id==p.c.id,m.c.person_id==actor.person,m.c.assignment_status=='accepted',m.c.accepted_at.is_not(None),m.c.revoked_at.is_(None))
     member=sa.exists(sa.select(m.c.id).where(*accepted,m.c.role!='initiator'))
-    own_draft=sa.and_(p.c.initiator_id==actor.person,p.c.stage=='drafting',sa.exists(sa.select(m.c.id).where(*accepted,m.c.role=='initiator')))
+    own=sa.and_(p.c.initiator_id==actor.person,sa.exists(sa.select(m.c.id).where(*accepted,m.c.role=='initiator')))
+    own_draft=sa.and_(own,p.c.stage=='drafting')
     if actor.kind=='agent':
-        explicit=sa.exists(sa.select(explicit_grants.c.project_id).where(
-            explicit_grants.c.credential_id==actor.credential,explicit_grants.c.project_id==p.c.id))
-        return sa.and_(p.c.org_id==actor.org,p.c.id.in_(actor.projects),sa.or_(own_draft,sa.and_(explicit,member)))
-    return sa.and_(p.c.org_id==actor.org,sa.or_(member,own_draft))
+        return sa.and_(p.c.org_id==actor.org,p.c.id.in_(actor.projects),
+                       sa.or_(own_draft,sa.and_(explicit_project_scope(actor),sa.or_(member,own) if include_initiator else member)))
+    return sa.and_(p.c.org_id==actor.org,sa.or_(member,own if include_initiator else own_draft))

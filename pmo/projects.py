@@ -33,14 +33,14 @@ def run(header,op,fn):
         actor=actor or e.actor
         if actor:
             with engine().begin() as c:
-                c.execute(db.audit_logs.insert().values(action=op,actor_type=actor.kind,actor_id=actor.credential,delegated_by=actor.account if actor.kind=='agent' else None,org_id=actor.org,result='denied',error_code=e.code,request_id=request_id,rule_version=RULE_VERSION))
+                c.execute(db.audit_logs.insert().values(action=op,actor_type=actor.kind,actor_id=actor.credential,delegated_by=actor.account if actor.kind=='agent' else None,org_id=actor.org,project_id=e.project_id,result='denied',error_code=e.code,request_id=request_id,rule_version=RULE_VERSION))
         raise
 
 def listing(header,page,size,stage,keyword):
     op='pmo_project_list'
     def query(c,a,_):
         p=db.projects
-        filters=[visible(a)]
+        filters=[visible(a,include_initiator=True)]
         if stage: filters.append(p.c.stage==stage)
         if keyword: filters.append(sa.or_(p.c.name.icontains(keyword,autoescape=True),p.c.code.icontains(keyword,autoescape=True)))
         total=c.scalar(sa.select(sa.func.count()).select_from(p).where(*filters))
@@ -52,8 +52,11 @@ def listing(header,page,size,stage,keyword):
 def detail(header,pid):
     op='pmo_project_get'
     def query(c,a,_):
-        row=c.execute(sa.select(db.projects).where(visible(a),db.projects.c.id==pid)).mappings().one_or_none()
+        row=c.execute(sa.select(db.projects,visible(a).label('materials_visible')).where(
+            visible(a,include_initiator=True),db.projects.c.id==pid)).mappings().one_or_none()
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
+        if not row.materials_visible:
+            return Result[ProjectDetail](data=ProjectDetail(project=view(row),stakeholders=[]),meta=meta(op,[f'project:{pid}@{row.revision}']))
         charter=c.execute(sa.select(db.charters).where(db.charters.c.project_id==pid)).mappings().one_or_none()
         refs=[f'project:{pid}@{row.revision}']
         if charter: refs.append(f'charter:{charter.id}@{charter.revision}')

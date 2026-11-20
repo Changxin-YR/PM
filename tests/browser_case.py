@@ -33,6 +33,13 @@ def test_browser_draft_workflow(live,actor):
                 c.execute(sa.text("INSERT INTO appointment_authorities VALUES(:org,:person,'pm','SYNTHETIC E2E',now()+interval '1 hour',NULL)"),dict(person=person,org=org))
             if role=='nominee': c.execute(db.user_roles.insert().values(user_id=user,role='finance_verifier'))
         pm=accounts['PMO_TEST_BASELINE_PM_ID']; client=accounts['PMO_TEST_BASELINE_CLIENT_ID']
+        review_pid=c.scalar(db.projects.insert().values(code='E2E-REVIEW',name='立项送审演练',org_id=org,stage='drafting',
+            pm_id=accounts['PMO_TEST_NOMINEE_ID'],sponsor_id=accounts['PMO_TEST_ISSUER_ID'],created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
+        for person,role in ((client,'reviewer'),(accounts['PMO_TEST_NOMINEE_ID'],'pm'),(accounts['PMO_TEST_ISSUER_ID'],'sponsor')):
+            c.execute(db.project_members.insert().values(project_id=review_pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))
+        c.execute(db.charters.insert().values(project_id=review_pid,created_by=pm,value_prop='降低重复录入',target_client='试点客户',
+            attractiveness='已有演练安排',expected_benefit='可追踪交付',rough_cost=100,rough_effort=10,rough_duration_days=15,
+            top_risks=[{'statement':'演练资料不全','response':'对照清单复核'}]))
         pid=c.scalar(db.projects.insert().values(code='E2E-BASE',name='基线签署演练',org_id=org,stage='designing',pm_id=pm,created_by=pm,initiator_id=pm,revision=1).returning(db.projects.c.id))
         for person,role in ((pm,'pm'),(client,'client_representative')):
             c.execute(db.project_members.insert().values(project_id=pid,person_id=person,assigned_by=pm,role=role,assignment_status='accepted',accepted_at=sa.func.now()))

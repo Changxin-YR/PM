@@ -86,9 +86,9 @@ def item(row,can=None):
         evidenceRef=f'evidence:{row.id}',linkedResourceType=row.resource_type,linkedResourceId=row.resource_id,description=row.description,canVerify=can)
 
 
-def lookup(c,a,eid,lock=False):
+def lookup(c,a,eid,lock=False,*,shared=False):
     q=stmt().join(db.projects,db.projects.c.id==e.c.project_id).where(e.c.id==eid,visible(a))
-    row=c.execute(q.with_for_update(of=e) if lock else q).mappings().one_or_none()
+    row=c.execute(q.with_for_update(of=e,read=shared) if lock else q).mappings().one_or_none()
     if row is None: raise Failure(404,'RESOURCE_NOT_FOUND')
     return row
 
@@ -204,10 +204,10 @@ def verify(evidenceId:UUID,command:Verify,authorization:Auth,key:Key,expected:Re
     return run(authorization,op,write)
 
 
-def verified_link(c,a,ref,pid,kind,resource_id):
+def verified_link(c,a,ref,pid,kind,resource_id,*,shared=False):
     try: eid=UUID(ref.removeprefix('evidence:'))
     except ValueError: raise Failure(422,'INVALID_EVIDENCE_REF') from None
-    row=lookup(c,a,eid,True)
+    row=lookup(c,a,eid,True,shared=shared)
     if row.project_id!=pid or row.resource_type!=kind or row.resource_id!=resource_id: raise Failure(422,'EVIDENCE_TARGET_MISMATCH')
     if row.quarantine_status!='verified' or not row.verified_at or not row.verified_by or row.verified_by==row.uploaded_by: raise Failure(422,'VERIFIED_EVIDENCE_REQUIRED')
     storage.checked_bytes(row.storage_key,row.sha256,row.size_bytes)

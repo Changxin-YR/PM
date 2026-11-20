@@ -1,0 +1,245 @@
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Literal
+from uuid import UUID
+
+import sqlalchemy as sa
+from pydantic import ValidationError
+
+from . import schema_v1 as db
+from .change_intents import snapshot
+from .charter_models import Fields
+from .charters import COLUMNS
+from .contracts import RULE_VERSION, Strict
+from .costs import latest_plan
+from .evidence import verified_link
+from .identity import Failure, explicit_grants, visible
+from .projects import fingerprint
+from .requirement_baselines import active_assignment, active_member, s as signatures
+from .scope_quality import metrics
+
+Gate = Literal['charter', 'feasibility', 'closing']
+ENTRY = {'charter': 'drafting', 'feasibility': 'designing', 'closing': 'delivering'}
+REVIEW = {gate: f'{gate}_review' for gate in ENTRY}
+
+
+class Gap(Strict):
+    code: str
+    message: str
+    sourceRefs: list[str]
+
+
+class Check(Strict):
+    projectId: UUID
+    gate: Gate
+    eligible: bool
+    missing: list[Gap]
+    ruleVersion: str = RULE_VERSION
+    snapshotHash: str
+
+
+def lock_project(c, a, pid, *, write=False):
+    p = db.projects
+    row = c.execute(sa.select(p, visible(a).label('materials_visible')).where(
+        p.c.id == pid, visible(a, include_initiator=True)).with_for_update(read=not write)).mappings().one_or_none()
+    if row is None:
+        raise Failure(404, 'RESOURCE_NOT_FOUND')
+    if a.kind == 'agent':
+        g = explicit_grants.c
+        grant = c.scalar(sa.select(g.project_id).where(g.credential_id == a.credential,
+                         g.project_id == pid, g.granted_by == a.account).with_for_update(read=True))
+        if not grant:
+            raise Failure(403, 'EXPLICIT_PROJECT_GRANT_REQUIRED', project_id=pid)
+    return row
+
+
+def submitter(c, a, p, gate):
+    if gate == 'charter' and a.person == p.initiator_id and active_member(c, p, a.person, 'initiator'):
+        return True
+    return p.pm_id == a.person and active_member(c, p, a.person, 'pm')
+
+
+def roster(c, p):
+    m, n, u = db.project_members, db.persons, db.user_accounts
+    excluded = [i for i in (p.initiator_id, p.pm_id, p.sponsor_id) if i is not None]
+    return list(c.execute(sa.select(m.c.person_id, m.c.id, m.c.accepted_at).join(n, n.c.id == m.c.person_id).join(u, u.c.id == n.c.user_id).where(
+        m.c.project_id == p.id, m.c.role == 'reviewer', m.c.assignment_status == 'accepted', m.c.accepted_at.is_not(None), m.c.revoked_at.is_(None),
+        m.c.person_id.not_in(excluded), n.c.org_id == p.org_id, n.c.is_active, u.c.is_active,
+        sa.or_(u.c.locked_until.is_(None), u.c.locked_until <= sa.func.now())).order_by(m.c.person_id).with_for_update(read=True, of=(m, n))).mappings())
+
+
+@dataclass
+class Materials:
+    content: dict
+    refs: list[str] = field(default_factory=list)
+    gaps: list[Gap] = field(default_factory=list)
+
+    def reject(self, code, message, refs=()):
+        self.gaps.append(Gap(code=code, message=message, sourceRefs=list(refs)[:100]))
+
+    def include(self, section, kind, rows):
+        self.content[section] = [snapshot(row) for row in rows]
+        refs = [f'{kind}:{row.id}@{row.revision}' for row in rows]
+        self.refs.extend(refs)
+        return refs
+
+
+def charter_material(c, p, out):
+    t = db.charters
+    row = c.execute(sa.select(t).where(t.c.project_id == p.id)).mappings().one_or_none()
+    refs = out.include('charter', 'charter', [row] if row else [])
+    if row is None:
+        out.reject('CHARTER_MISSING', '缺少立项卡。')
+    else:
+        data = {key: row[column] for key, column in COLUMNS.items()}
+        for key in ('roughCost', 'roughEffort'):
+            if data[key] is not None:
+                data[key] = format(data[key], '.2f')
+        for key, value in data.items():
+            try:
+                Fields.model_validate({key: value})
+            except ValidationError:
+                out.reject('CHARTER_FIELD_REQUIRED', f'立项卡字段缺失或无效：{key}。', refs)
+
+
+def rows_in(c, table, pid):
+    return list(c.execute(sa.select(table).where(table.c.project_id == pid).order_by(table.c.id)).mappings())
+
+
+def signed_baseline(c, pid):
+    customer = c.execute(sa.select(signatures).where(signatures.c.project_id == pid,
+        signatures.c.signer_role == 'client_representative')).mappings().one_or_none()
+    if not customer or fingerprint([str(pid), customer.snapshot]) != customer.content_hash:
+        return []
+    pm = c.execute(sa.select(signatures).where(signatures.c.project_id == pid,
+        signatures.c.signer_role == 'pm', signatures.c.content_hash == customer.content_hash,
+        signatures.c.signer_id != customer.signer_id, signatures.c.revision < customer.revision)
+        .order_by(signatures.c.revision.desc()).limit(1)).mappings().one_or_none()
+    return [pm, customer] if pm and pm.snapshot == customer.snapshot else []
+
+
+def planning_material(c, a, p, gate, out):
+    milestones = [m for m in rows_in(c, db.milestones, p.id) if not m.is_cancelled]
+    ms_refs = out.include('milestones', 'milestone', milestones)
+    if gate == 'feasibility' and not 3 <= len(milestones) <= 8:
+        out.reject('MILESTONE_COUNT', '需有 3 至 8 个有效里程碑。', ms_refs)
+    if gate == 'closing' and not milestones:
+        out.reject('COMPLETION_EVIDENCE_REQUIRED', '缺少可核验的有效里程碑。')
+    reqs = rows_in(c, db.requirements, p.id)
+    out.include('requirements', 'requirement', reqs)
+    quality, req_refs = metrics(c, p.id)
+    out.refs.extend(req_refs)
+    out.content['requirementMetrics'] = quality.model_dump(mode='json')
+    signed = signed_baseline(c, p.id)
+    out.content['baselineSignatures'] = [snapshot(i) for i in signed]
+    out.refs.extend(f'requirement-baseline:{p.id}@{i.revision}' for i in signed)
+    if not signed or quality.gaps or not quality.activeCount or any(not r.planned_confirm_at or not r.baseline_version for r in reqs if r.status != 'cancelled'):
+        out.reject('SIGNED_REQUIREMENTS_REQUIRED', '需至少一条有效的已共同签署需求，且确认日期及基线版本完整。', req_refs)
+    if quality.frozenCount:
+        out.reject('PENDING_SCOPE_CHANGE', '存在待审范围变更。', req_refs)
+    plan = c.execute(latest_plan(p.id)).mappings().one_or_none()
+    plan_ref = [f'cost-plan:{p.id}@{plan.revision}'] if plan else []
+    out.refs.extend(plan_ref)
+    out.content['costPlan'] = snapshot(plan) if plan else None
+    risks = rows_in(c, db.risks, p.id)
+    risk_refs = out.include('risks', 'risk', risks)
+    if gate == 'feasibility':
+        for kind in ('money', 'effort'):
+            if not plan or plan[kind + '_budget'] is None:
+                out.reject(f'{kind.upper()}_BUDGET_REQUIRED', '需填写金额和人天预算草稿。', plan_ref)
+        if not risks or any(not r.response.strip() for r in risks):
+            out.reject('RISK_REGISTER_REQUIRED', '需登记项目风险并填写应对措施。', risk_refs)
+        return
+    if quality.activeP0 != quality.confirmedP0 or not quality.activeWeight or 10 * quality.confirmedWeight < 9 * quality.activeWeight:
+        out.reject('CUSTOMER_ACCEPTANCE_REQUIRED', '有效 P0 需全部确认，且加权满足率至少为 90%。', req_refs)
+    for r in reqs:
+        if r.status == 'customer_confirmed':
+            evidence(c, a, out, r, 'requirement')
+    for m in milestones:
+        if m.actual_date is None:
+            out.reject('MILESTONE_NOT_COMPLETED', '仍有未完成的里程碑。', [f'milestone:{m.id}@{m.revision}'])
+        else:
+            evidence(c, a, out, m, 'milestone')
+    if any(r.is_blocking and (r.status != 'closed' or r.closed_at is None) for r in risks):
+        out.reject('BLOCKING_RISK_UNRESOLVED', '阻塞风险尚未关闭或未有可核验的接收确认。', risk_refs)
+    closing_costs(c, p, out, plan)
+
+
+def evidence(c, a, out, row, kind):
+    try:
+        proof = verified_link(c, a, row.evidence_ref or '', row.project_id, kind, row.id, shared=True)
+    except Failure:
+        out.reject('COMPLETION_EVIDENCE_REQUIRED', '完成或客户确认缺少有效凭据。', [f'{kind}:{row.id}@{row.revision}'])
+        return
+    if kind == 'requirement':
+        signoff = c.execute(sa.text('''SELECT * FROM requirement_transitions WHERE requirement_id=:id AND revision=:rev
+            AND baseline_version=:version AND status='customer_confirmed' AND actor_type='human' AND evidence_id=:proof'''),
+            dict(id=row.id, rev=row.revision, version=row.baseline_version, proof=proof.id)).mappings().one_or_none()
+        if signoff is None:
+            out.reject('CUSTOMER_CONFIRMATION_RECEIPT_REQUIRED', '缺少绑定当前需求版本及证据的人工客户确认。',
+                [f'requirement:{row.id}@{row.revision}'])
+        else:
+            out.content.setdefault('confirmationReceipts', []).append(snapshot(signoff))
+    out.refs.append(f'evidence:{proof.id}')
+    out.content.setdefault('evidence', []).append({
+        'evidenceId': str(proof.id), 'sha256': proof.sha256, 'revision': proof.revision,
+        'verifiedBy': str(proof.verified_by), 'verifiedAt': proof.verified_at.isoformat(),
+    })
+
+
+def closing_costs(c, p, out, plan):
+    budgets = [r for r in rows_in(c, db.cost_entries, p.id) if r.is_current_baseline]
+    budget_refs = out.include('budgets', 'cost-entry', budgets)
+    postings = rows_in(c, db.cost_postings, p.id)
+    now = c.scalar(sa.select(sa.func.statement_timestamp()))
+    verified = [r for r in postings if r.status == 'verified' and r.verified_at and r.occurred_at and r.occurred_at <= now]
+    out.content['costPostings'] = [snapshot(r) for r in postings]
+    out.content['occurredVerifiedPostingIds'] = [str(r.id) for r in verified]
+    post_refs = [f'cost-posting:{r.id}' for r in postings]
+    out.refs.extend(post_refs)
+    if len(verified) != len(postings):
+        out.reject('UNVERIFIED_OR_FUTURE_POSTINGS', '仍有未核验或尚未发生的凭证。', post_refs)
+    # Individual verification neither attests ledger completeness nor reconciles the project totals.
+    # There is no governed reconciliation receipt yet. Do not interpret notes or zero totals as one.
+    out.reject('COST_RECONCILIATION_REQUIRED', '缺少正式对账记录。逐笔核验不等同于项目已对账。', post_refs)
+    for kind in ('money', 'effort'):
+        lines = [r for r in budgets if r.type == kind]
+        total = sum((r.budget for r in lines), Decimal(0))
+        actual = sum((r.amount_signed for r in verified if r.type == kind), Decimal(0))
+        remaining = plan[kind + '_remaining'] if plan else None
+        if remaining is None:
+            remaining = sum((r.forecast_remaining for r in lines), Decimal(0))
+        if not lines or not total:
+            out.reject(f'{kind.upper()}_CLOSING_BUDGET_UNVERIFIED', '缺少有效预算或可核验的零预算声明。', budget_refs)
+        elif actual < 0 or abs(actual - total) * 5 > total:
+            out.reject(f'{kind.upper()}_CLOSING_VARIANCE', '结项最终偏差绝对值需不超过 20%。', [*budget_refs, *post_refs])
+        if remaining != 0:
+            out.reject(f'{kind.upper()}_FORECAST_NOT_ZERO', '结项剩余预测未归零。', budget_refs)
+
+
+def evaluate(c, a, p, gate: Gate):
+    out = Materials({'gate': gate, 'ruleVersion': RULE_VERSION, 'project': {k: v for k, v in snapshot(p).items()
+        if k in ('id', 'org_id', 'code', 'name', 'description', 'initiator_id', 'pm_id', 'sponsor_id', 'stage', 'revision')}})
+    if p.stage != ENTRY[gate]:
+        out.reject('GATE_STAGE_MISMATCH', '项目当前阶段不能进入此关口。')
+        return Check(projectId=p.id, gate=gate, eligible=False, missing=out.gaps, snapshotHash=fingerprint(out.content)), out
+    for role in ('pm', 'sponsor'):
+        person = p[role + '_id']
+        assignment = active_assignment(c, p, person, role) if person else None
+        out.content[role + 'Assignment'] = snapshot(assignment) if assignment else None
+        if assignment:
+            out.refs.append(f'project-member:{assignment.id}')
+        else:
+            out.reject(role.upper() + '_ASSIGNMENT_REQUIRED', '须有本人接受且仍有效的项目经理及 Sponsor 任命。')
+    members = roster(c, p)
+    out.content['reviewers'] = [snapshot(m) for m in members]
+    out.refs.extend(f'project-member:{m.id}' for m in members)
+    if not members:
+        out.reject('INDEPENDENT_REVIEWER_REQUIRED', '缺少有效的独立评审人。')
+    if gate == 'charter':
+        charter_material(c, p, out)
+    else:
+        planning_material(c, a, p, gate, out)
+    if len(out.gaps) > 100:
+        out.gaps[99:] = [Gap(code='ADDITIONAL_GAPS', message=f'另有 {len(out.gaps)-99} 项缺口。', sourceRefs=[])]
+    return Check(projectId=p.id, gate=gate, eligible=not out.gaps, missing=out.gaps, snapshotHash=fingerprint(out.content)), out

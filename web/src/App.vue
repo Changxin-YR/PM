@@ -16,6 +16,7 @@ import Risks from './Risks.vue'
 import Costs from './Costs.vue'
 import PreapprovalSpending from './PreapprovalSpending.vue'
 import Alerts from './Alerts.vue'
+import Reviews from './Reviews.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -25,6 +26,10 @@ const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿
 const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false)
 function materials(row:Project){materialProject.value=row;showMaterials.value=true}
+function stageRead(projectId:string,stage:string,revision:number){
+  if(materialProject.value?.projectId===projectId)materialProject.value={...materialProject.value,stage,revision}
+  rows.value=rows.value.map(row=>row.projectId===projectId?{...row,stage,revision}:row)
+}
 const stageNames:Record<string,string>={drafting:'草稿',charter_review:'立项评审',rejected:'已拒绝',designing:'方案细化',feasibility_review:'落地评审',executing:'执行中',on_hold:'已暂停',delivering:'交付验收',closing_review:'结项评审',closed:'已结项',retrospective:'复盘',terminated:'已终止',archived:'已归档'}
 function clearSession(){ user.value=false;admin.value=false; rows.value=[];selected.value=null;dialog.value=false;showMaterials.value=false;materialProject.value=null;csrf.value='';sessionStorage.removeItem('pmo.csrf') }
 async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers)=>void){
@@ -69,6 +74,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane label="风险" lazy><Risks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane label="成本" lazy><Costs :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
   </el-tabs>
 </el-drawer>
 <el-dialog v-model="dialog" :title="title" width="min(440px,94vw)" :close-on-click-modal="false"><form @submit.prevent="save"><label>项目编号<input v-model="code" :disabled="!!selected" maxlength="60" required></label><label>项目名称<input v-model="name" maxlength="160" required></label><label v-if="!selected">说明<textarea v-model="description" maxlength="2000" rows="3"></textarea></label><el-alert v-if="formError" :title="formError" type="error" :closable="false"/><div class="actions"><el-button v-if="selected && formError" @click="reread">重新读取版本</el-button><el-button @click="dialog=false">取消</el-button><el-button type="primary" native-type="submit" :loading="busy">保存</el-button></div></form></el-dialog></main>
