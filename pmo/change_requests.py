@@ -7,7 +7,8 @@ from pydantic import Field, ValidationError
 
 from . import charter_models, milestones, requirements, schema_v1 as db
 from .access import Auth, Key, Revision
-from .change_history import Entry, Page
+from .change_history import Entry, Page, with_decision
+from .change_intents import authority, capture
 from .contracts import Result, Strict
 from .costs import Amount
 from .identity import Failure, visible
@@ -35,11 +36,14 @@ class Budget(Strict):
 
 class Ledger(Page):
     canPropose: bool
+    decidableIds: list[UUID]
+    policyPending: bool
 
 
 def entry(i):
     return Entry(changeId=i.id,projectId=i.project_id,targetType=i.target_type,targetId=i.target_id,before=i.before,after=i.after,status=i.status,
-        reason=i.reason,baseRevision=i.base_revision,revision=i.revision,requestedBy=i.requested_by,approvedBy=i.approved_by,createdAt=i.created_at,effectiveAt=i.effective_at)
+        reason=i.reason,baseRevision=i.base_revision,revision=i.revision,requestedBy=i.requested_by,approvedBy=i.approved_by,createdAt=i.created_at,effectiveAt=i.effective_at,
+        decidedBy=i.get('approver_id'),decisionReason=i.get('rationale'),decidedAt=i.get('decided_at'))
 
 
 @router.get('/projects/{projectId}/changes',operation_id='human_changes_list',response_model_exclude_none=True)
@@ -48,12 +52,15 @@ def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int
     def read(c,a,_):
         p=project_access(c,a,projectId); t=db.change_entries
         targets=[sa.and_(t.c.target_type==kind,sa.exists(sa.select(1).select_from(table).where(table.c.id==t.c.target_id,table.c.project_id==projectId))) for kind,table in TARGETS.items()]
-        matched=sa.select(t).where(t.c.project_id==projectId,sa.or_(*targets)).cte('matched')
+        matched=with_decision(t).where(t.c.project_id==projectId,sa.or_(*targets)).cte('matched')
         total=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
         rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset((page-1)*pageSize).limit(pageSize).subquery()
         records=c.execute(sa.select(total.c.total,rows).select_from(total.outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         items=[entry(r) for r in records if r.id]; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items])
-        return Result[Ledger](data=Ledger(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=info.asOf,canPropose=p.stage in OPEN and can_deliver(c,a,p)),meta=info)
+        from .requirement_delivery import synthetic_confirmation
+        scopes={kind for kind in {i.targetType for i in items if i.status=='pending' and i.requestedBy!=a.person} if authority(c,a,p,kind)}
+        return Result[Ledger](data=Ledger(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=info.asOf,canPropose=p.stage in OPEN and can_deliver(c,a,p),
+            decidableIds=[i.changeId for i in items if i.targetType in scopes and i.status=='pending' and i.requestedBy!=a.person and p.stage in OPEN],policyPending=not synthetic_confirmation(c)),meta=info)
     return run(authorization,op,read)
 
 
@@ -102,6 +109,6 @@ def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:
                 ch.c.status.in_(('draft','pending','approved'))).limit(1)): raise Failure(409,'CHANGE_ALREADY_PENDING')
         i=c.execute(ch.insert().values(project_id=projectId,target_id=row.id,target_type=command.targetType,before=before,after=after,
             base_revision=row.revision,reason=command.reason.strip(),status='pending',requested_by=a.person,created_by=a.person).returning(ch)).mappings().one()
-        result=entry(i)
+        capture(c,a,i,row); result=entry(i)
         return finish(c,a,op,key,rid,projectId,sig,Result[Entry](data=result,meta=meta(op,[f'change:{i.id}@{i.revision}'])))
     return run(authorization,op,write)

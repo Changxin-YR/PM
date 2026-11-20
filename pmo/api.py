@@ -31,6 +31,7 @@ from .evidence import router as evidence_router
 from .requirement_delivery import router as delivery_router
 from .change_history import router as change_history_router
 from .change_requests import router as change_request_router
+from .change_decisions import router as change_decision_router
 
 class ErrorResponse(Strict):
     code: str
@@ -57,6 +58,7 @@ app.include_router(evidence_router)
 app.include_router(delivery_router)
 app.include_router(change_history_router)
 app.include_router(change_request_router)
+app.include_router(change_decision_router)
 
 
 @app.middleware('http')

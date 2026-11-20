@@ -57,7 +57,7 @@ async def invoke(name,arguments):
             # REST editors need these fields; the V1 MCP output contract is closed.
             if name in {'pmo_requirement_change_history','pmo_change_propose'}:
                 for record in result['data']['items'] if name=='pmo_requirement_change_history' else [result['data']]:
-                    for field in ('reason','requestedBy','baseRevision','revision','effectiveAt'): record.pop(field,None)
+                    for field in ('reason','requestedBy','baseRevision','revision','effectiveAt','decidedBy','decisionReason','decidedAt'): record.pop(field,None)
             if name in {'pmo_requirement_list','pmo_requirement_create','pmo_requirement_draft_update','pmo_requirement_deliver'}:
                 records=result['data']['items'] if name=='pmo_requirement_list' else [result['data']]
                 for record in records:

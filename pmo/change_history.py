@@ -11,6 +11,11 @@ from .identity import Failure, visible
 from .projects import meta, run
 
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
+decisions=sa.table('change_decision_records',sa.column('change_id',sa.Uuid),sa.column('approver_id',sa.Uuid),sa.column('rationale'),sa.column('decided_at',sa.DateTime(timezone=True)))
+
+
+def with_decision(t):
+    return sa.select(t,decisions.c.approver_id,decisions.c.rationale,decisions.c.decided_at).select_from(t.outerjoin(decisions,decisions.c.change_id==t.c.id))
 
 
 class Entry(Strict):
@@ -28,6 +33,9 @@ class Entry(Strict):
     approvedBy: UUID | None = None
     createdAt: datetime
     effectiveAt: datetime | None = None
+    decidedBy: UUID | None = None
+    decisionReason: str | None = None
+    decidedAt: datetime | None = None
 
 
 class Page(Strict):
@@ -44,7 +52,7 @@ def history(requirementId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSiz
     def read(c,a,_):
         p,r,t=db.projects,db.requirements,db.change_entries
         target=sa.select(r.c.id,r.c.project_id).join(p,p.c.id==r.c.project_id).where(r.c.id==requirementId,visible(a)).cte('target')
-        matched=sa.select(t).join(target,sa.and_(t.c.target_id==target.c.id,t.c.project_id==target.c.project_id)).where(t.c.target_type=='requirement').cte('matched')
+        matched=with_decision(t).join(target,sa.and_(t.c.target_id==target.c.id,t.c.project_id==target.c.project_id)).where(t.c.target_type=='requirement').cte('matched')
         counts=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
         rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset((page-1)*pageSize).limit(pageSize).subquery()
         records=c.execute(sa.select(counts.c.total,rows,sa.func.statement_timestamp().label('at')).select_from(
@@ -52,7 +60,7 @@ def history(requirementId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSiz
         if not records: raise Failure(404,'RESOURCE_NOT_FOUND')
         items=[Entry(changeId=i.id,projectId=i.project_id,targetType=i.target_type,targetId=i.target_id,before=i.before,after=i.after,
             status=i.status,reason=i.reason,baseRevision=i.base_revision,revision=i.revision,requestedBy=i.requested_by,approvedBy=i.approved_by,
-            createdAt=i.created_at,effectiveAt=i.effective_at) for i in records if i.id is not None]
+            createdAt=i.created_at,effectiveAt=i.effective_at,decidedBy=i.approver_id,decisionReason=i.rationale,decidedAt=i.decided_at) for i in records if i.id is not None]
         at=records[0].at; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items]); info.asOf=at
         return Result[Page](data=Page(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=at),meta=info)
     return run(authorization,op,read)

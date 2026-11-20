@@ -50,6 +50,21 @@ def synthetic_confirmation(c):
     return bool(re.fullmatch('pmo_test_[0-9a-f]{32}',schema) and c.scalar(sa.text('SELECT current_schema()'))==schema)
 
 
+def baseline_evidence_time(c,pid,old):
+    if old.baseline_version==1:
+        signed=c.scalar(sa.select(signatures.c.snapshot).where(signatures.c.project_id==pid,
+            signatures.c.signer_role=='client_representative').order_by(signatures.c.revision.desc()).limit(1))
+        if any(i['requirementId']==str(old.id) and i['desc']==old['desc'] and i['priority']==old.priority and i['acceptanceCriteria']==old.acceptance_criteria
+                and i.get('plannedConfirmAt')==(old.planned_confirm_at.isoformat() if old.planned_confirm_at else None) for i in signed or []): return None
+    elif old.baseline_version>1:
+        receipt=c.execute(sa.text('''SELECT d.new_state,d.decided_at FROM change_entries ch JOIN change_decision_records d ON ch.id=d.change_id
+            WHERE ch.project_id=:pid AND ch.target_id=:id AND ch.target_type='requirement' AND d.outcome='applied'
+            ORDER BY ch.effective_at DESC,ch.id DESC LIMIT 1'''),dict(pid=pid,id=old.id)).mappings().one_or_none()
+        if receipt and all(receipt.new_state[k]==old[k] for k in ('baseline_version','desc','priority','acceptance_criteria')) and receipt.new_state['planned_confirm_at']==(
+                old.planned_confirm_at.isoformat() if old.planned_confirm_at else None): return receipt.decided_at
+    raise Failure(422,'SIGNED_BASELINE_REQUIRED')
+
+
 def advance(auth,op,req,command,key,revision):
     prior_status,next_status=STEPS[op]; sig=fingerprint([str(req),revision,command.evidenceRef])
     def write(c,a,rid):
@@ -66,12 +81,7 @@ def advance(auth,op,req,command,key,revision):
         old=c.execute(sa.select(r).where(r.c.id==req).with_for_update()).mappings().one()
         if old.revision!=revision: raise Failure(409,'VERSION_CONFLICT')
         if project.stage not in STAGES or old.status!=prior_status: raise Failure(422,'INVALID_REQUIREMENT_TRANSITION')
-        # V1 is the only signed baseline currently supported; never infer a freeze from the status label.
-        signed=c.scalar(sa.select(signatures.c.snapshot).where(signatures.c.project_id==project.id,
-            signatures.c.signer_role=='client_representative').order_by(signatures.c.revision.desc()).limit(1))
-        if old.baseline_version!=1 or not any(i['requirementId']==str(req) and i['desc']==old['desc'] and i['priority']==old.priority
-            and i['acceptanceCriteria']==old.acceptance_criteria and i.get('plannedConfirmAt')==(old.planned_confirm_at.isoformat() if old.planned_confirm_at else None) for i in signed or []):
-            raise Failure(422,'SIGNED_BASELINE_REQUIRED')
+        effective=baseline_evidence_time(c,project.id,old)
         if c.scalar(sa.select(ch.c.id).where(ch.c.project_id==project.id,ch.c.target_type=='requirement',ch.c.target_id==req,
                 ch.c.status.not_in(('applied','rejected','withdrawn'))).limit(1)):
             raise Failure(422,'PENDING_SCOPE_CHANGE')
@@ -80,6 +90,7 @@ def advance(auth,op,req,command,key,revision):
             if c.scalar(sa.text('SELECT EXISTS(SELECT FROM requirement_transitions WHERE requirement_id=:req AND baseline_version=:v AND actor_id=:actor)'),
                         dict(req=req,v=old.baseline_version,actor=a.person)): raise Failure(403,'INDEPENDENT_CUSTOMER_REQUIRED')
         proof=verified_link(c,a,command.evidenceRef,project.id,'requirement',req)
+        if effective and proof.created_at<effective: raise Failure(422,'CURRENT_BASELINE_EVIDENCE_REQUIRED')
         fields=dict(status=next_status,evidence_ref=f'evidence:{proof.id}',revision=revision+1,updated_at=sa.func.now())
         if next_status=='accepted': fields.update(accepted_by=a.person,accepted_at=sa.func.now())
         row=c.execute(r.update().where(r.c.id==req).values(**fields).returning(r)).mappings().one()

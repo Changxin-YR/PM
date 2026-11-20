@@ -150,12 +150,20 @@ async def upload(projectId:UUID,request:Request,authorization:Auth,key:Key,expec
 
 @router.get('/projects/{projectId}/evidence',operation_id='human_evidence_list',response_model_exclude_none=True)
 def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),
-            requirementId:UUID|None=None,verifiedOnly:bool=False)->Result[Page]:
+            requirementId:UUID|None=None,verifiedOnly:bool=False,currentBaselineOnly:bool=False)->Result[Page]:
     op='human_evidence_list'
     def read(c,a,_):
         project_access(c,a,projectId); reviewer=member(c,a,projectId,'reviewer')
         query=stmt().where(e.c.project_id==projectId)
         if requirementId is not None: query=query.where(links.c.resource_type=='requirement',links.c.resource_id==requirementId)
+        if currentBaselineOnly:
+            from .requirement_delivery import baseline_evidence_time
+            if requirementId is None: raise Failure(422,'REQUIREMENT_REQUIRED')
+            r=db.requirements
+            requirement=c.execute(sa.select(r).where(r.c.id==requirementId,r.c.project_id==projectId)).mappings().one_or_none()
+            if not requirement: raise Failure(404,'RESOURCE_NOT_FOUND')
+            since=baseline_evidence_time(c,projectId,requirement)
+            if since: query=query.where(e.c.created_at>=since)
         if verifiedOnly: query=query.where(e.c.quarantine_status=='verified')
         total=c.scalar(sa.select(sa.func.count()).select_from(query.subquery()))
         count=c.scalar(sa.select(sa.func.count()).select_from(e).where(e.c.project_id==projectId))

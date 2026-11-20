@@ -1,0 +1,11 @@
+<script setup lang="ts">
+import {ref} from 'vue'
+import {ClipboardCheck} from 'lucide-vue-next'
+const props=defineProps<{api:(path:string,options?:RequestInit)=>Promise<any>;row:{changeId:string;revision:number;baseRevision:number;before:Record<string,unknown>;after:Record<string,unknown>;reason:string};pending:boolean}>()
+const emit=defineEmits<{saved:[]}>(),open=ref(false),reason=ref(''),verdict=ref(''),error=ref(''),busy=ref(false)
+let last='',key='',revision=0
+function begin(){reason.value='';verdict.value='';error.value='';open.value=true;revision=props.row.revision;key=''}
+async function submit(){if(!['approve','reject'].includes(verdict.value)||reason.value.trim().length<3)return;busy.value=true;error.value='';try{const body=JSON.stringify({rationale:reason.value.trim()}),sig=verdict.value+body;if(!key||sig!==last){key=crypto.randomUUID();last=sig}await props.api(`changes/${props.row.changeId}/${verdict.value}`,{method:'POST',body,headers:{'If-Match':String(revision),'Idempotency-Key':key}});open.value=false;emit('saved')}catch(e){error.value=String(e)}finally{busy.value=false}}
+</script>
+<template><span v-if="pending">策略待签核</span><el-button v-else text title="审核变更" aria-label="审核变更" @click="begin"><ClipboardCheck :size="16"/></el-button><el-dialog append-to-body v-model="open" title="审核变更" width="min(460px,94vw)" :close-on-click-modal="false"><form @submit.prevent="submit"><p>{{row.reason}} · 基准版本 {{row.baseRevision}}</p><dl><dt>修改前</dt><dd><pre>{{JSON.stringify(row.before,null,2)}}</pre></dd><dt>修改后</dt><dd><pre>{{JSON.stringify(row.after,null,2)}}</pre></dd></dl><label>裁决<select aria-label="裁决" v-model="verdict" required><option value="" disabled>请选择</option><option value="approve">批准并应用</option><option value="reject">拒绝</option></select></label><label>裁决理由<textarea v-model="reason" minlength="3" maxlength="2000" required/></label><el-alert v-if="error" :title="error" type="error" :closable="false"/><div class="actions"><el-button :disabled="busy" @click="open=false">取消</el-button><el-button type="primary" native-type="submit" :disabled="!verdict||reason.trim().length<3" :loading="busy">确认裁决</el-button></div></form></el-dialog></template>
+<style scoped>form{display:grid;gap:.6rem}dd,pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}</style>

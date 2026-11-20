@@ -6,7 +6,7 @@ const emit=defineEmits<{saved:[]}>()
 const steps:Record<string,[string,string]>={baseline:['deliver','标记交付'],delivered:['accept','内部验收'],accepted:['customer-confirm','客户确认']}
 const open=ref(false),busy=ref(false),error=ref(''),selected=ref(''),page=ref(1),total=ref(0),files=ref<{originalName:string;evidenceRef:string;evidenceId:string}[]>([])
 let key='',last='',revision=0,action=''
-async function load(n:number){busy.value=true;error.value='';selected.value='';files.value=[];try{const q=new URLSearchParams({page:String(n),requirementId:props.row.requirementId,verifiedOnly:'true'});const r=await props.api(`projects/${props.projectId}/evidence?${q}`);files.value=r.data.items;page.value=n;total.value=r.data.total}catch(e){error.value=String(e)}finally{busy.value=false}}
+async function load(n:number){busy.value=true;error.value='';selected.value='';files.value=[];try{const q=new URLSearchParams({page:String(n),requirementId:props.row.requirementId,verifiedOnly:'true',currentBaselineOnly:'true'});const r=await props.api(`projects/${props.projectId}/evidence?${q}`);files.value=r.data.items;page.value=n;total.value=r.data.total}catch(e){error.value=String(e)}finally{busy.value=false}}
 async function begin(){key='';revision=props.row.revision;action=steps[props.row.status][0];open.value=true;await load(1)}
 async function submit(){busy.value=true;error.value='';try{if(!key||last!==selected.value){key=crypto.randomUUID();last=selected.value}await props.api(`requirements/${props.row.requirementId}/${action}`,{method:'POST',headers:{'If-Match':String(revision),'Idempotency-Key':key},body:JSON.stringify({evidenceRef:selected.value})});open.value=false;emit('saved')}catch(e){error.value=String(e)}finally{busy.value=false}}
 </script>

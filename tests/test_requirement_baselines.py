@@ -129,3 +129,22 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
         records=c.execute(sa.text('SELECT status,actor_type,actor_id,evidence_id FROM requirement_transitions WHERE requirement_id=:r ORDER BY revision'),{'r':req}).all()
         assert [(s,k,a) for s,k,a,_ in records]==[('delivered','agent',pm),('accepted','human',pm),('customer_confirmed','human',customer)]
         assert all(str(e)==evidence['evidenceId'] for *_,e in records)
+    decision=f"changes/{latest['changeId']}/approve"; verdict={'rationale':'独立核对需求版本和差异'}
+    assert client.post(decision,headers=h(),json=verdict).status_code==403
+    assert api.post('/api/v1/'+decision,headers={**h(),'Authorization':'Bearer '+token},json=verdict).status_code==403
+    with engine.begin() as c:
+        c.execute(db.project_members.insert().values(project_id=pid,person_id=pm,assigned_by=pm,role='reviewer',assignment_status='accepted',accepted_at=sa.func.now()))
+        for person in (customer,pm): c.execute(sa.text("INSERT INTO change_approval_grants VALUES(:p,:u,'requirement','isolated fixture',now()+interval '1 hour',NULL)"),dict(p=pid,u=person))
+    assert manager.post(decision,headers=h(),json=verdict).json()['code']=='INDEPENDENT_APPROVER_REQUIRED'
+    key=h(); applied=client.post(decision,headers=key,json=verdict); assert applied.status_code==200,applied.text
+    assert applied.json()==client.post(decision,headers=key,json=verdict).json() and applied.json()['data']['approvedBy']==str(customer)
+    changed=manager.get(f'projects/{pid}/requirements').json()['data']['items'][0]; assert (changed['priority'],changed['status'],changed['baselineVersion'])==('P1','baseline',2)
+    assert step(manager,'deliver',changed['revision']).json()['code']=='CURRENT_BASELINE_EVIDENCE_REQUIRED'
+    assert manager.get(files,params={'requirementId':req,'verifiedOnly':'true','currentBaselineOnly':'true'}).json()['data']['total']==0
+    newproof=manager.post(files,headers=h(2),files={'file':('v2.png',buf.getvalue(),'image/png')},data={'linkedResourceType':'requirement','linkedResourceId':req}).json()['data']
+    assert client.post('evidence/'+newproof['evidenceId']+'/verify',headers=h(),json={'sha256':newproof['sha256'],'reason':'Checked revised scope'}).status_code==200
+    proof={'evidenceRef':newproof['evidenceRef']}; assert step(manager,'deliver',changed['revision']).json()['data']['status']=='delivered'
+    assert client.post(decision,headers=h(3),json=verdict).json()['code']=='CHANGE_NOT_PENDING'
+    with engine.connect() as c:
+        snap=c.execute(sa.text('SELECT old_state,new_state,rationale FROM change_decision_records WHERE change_id=:id'),{'id':latest['changeId']}).mappings().one()
+        assert snap.old_state['status']=='customer_confirmed' and snap.new_state['accepted_by'] is None and snap.rationale==verdict['rationale']
