@@ -35,3 +35,5 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。具有 delegator 资格的人工用户通过「我的 Agent 令牌」选择项目、动作和最长 24 小时有效期，确认签发。仅将一次性交付的密钥通过受保护的环境变量 `PMO_AGENT_TOKEN` 传给 MCP 子进程；使用非默认 API 端口时设置 `PMO_API_PORT`。本人可撤销自己的令牌；管理员可从「组织令牌」撤销本组织的令牌，不可查看原密钥。详见 ADR 0004。不通过直接改库为真实用户授权。
 
 本地已有开发库可用 `.\scripts\dev.ps1 migrate` 升级，不重建卷。`.\scripts\dev.ps1 outbox` 处理一批到期项目事件并记录本地消费回执；`.\scripts\dev.ps1 dead-letters` 查询死信标识和错误码，不输出业务载荷。租约 30 秒，失败指数退避，最多 5 次尝试。没有安装后台计划任务；本地事件回执不代表已向用户发送通知或完成任何审批。
+
+数据库与私有附件需作为一个恢复点备份。开发命令、隔离演练和每日保留要求见 [联合备份与恢复手册](docs/ops/backup-and-recovery.md)。
