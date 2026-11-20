@@ -48,7 +48,7 @@
 "T08","独立系统新增验收","Lesson用于下一次立项","T08","NOT_TESTED","",""
 "T09","独立系统新增验收","真实MCP Host工具/授权可用","T09","NOT_TESTED","",""
 "T10","独立系统新增验收","规则及备份恢复","T10","NOT_TESTED","",""
-"SEC-01","独立系统实现补充","项目级RBAC与代理授权","T02,T04","NOT_TESTED","",""
+"SEC-01","独立系统实现补充","项目级RBAC与代理授权","T02,T04","PARTIAL_DRAFT_MEMBERS_AND_AGENT_BOUNDARY","pmo/identity.py;pmo/members.py;pmo/projects.py","tests/test_appointments.py;tests/test_scope_migration.py;tests/test_runtime.py;tests/browser_case.py"
 "SEC-02","独立系统实现补充","事务幂等与乐观锁","T05,T07","PARTIAL_PROJECT_DRAFT_ONLY","pmo/projects.py","tests/test_runtime.py"
 "SEC-03","独立系统实现补充","凭证访问与Fact来源校验","T02,T06","NOT_TESTED","",""
 "OPS-01","独立系统实现补充","Compose/备份恢复/日志","T10","NOT_TESTED","",""

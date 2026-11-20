@@ -63,6 +63,9 @@ try {
   await expect(drawer.getByRole('cell',{name:'合作方',exact:true})).toBeVisible()
   await drawer.getByRole('button',{name:'刷新联系人'}).click()
   await expect(drawer.getByRole('cell',{name:'收到每周交付清单'})).toBeVisible()
+  await drawer.getByRole('tab',{name:'项目成员'}).click()
+  await expect(drawer.getByRole('cell',{name:'草稿发起人'})).toBeVisible()
+  await expect(drawer.getByRole('cell',{name:'项目经理'})).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(drawer).toBeHidden()
   await page.getByRole('button',{name:'人员任命'}).click()
@@ -77,7 +80,12 @@ try {
     await other.getByRole('button',{name:'登录',exact:true}).click();await other.getByRole('button',{name:'人员任命'}).click()
     const inbox=other.getByRole('dialog');await inbox.getByRole('button',{name:action,exact:true}).click()
     await expect(inbox.getByRole('status')).toContainText(user==='ISSUER'?'邀请已发出':'已接受任命')
-    if(user==='NOMINEE'){await other.reload();await expect(other.getByRole('button',{name:'查看 试点范围复核 的项目资料'})).toBeVisible()}
+    if(user==='NOMINEE'){
+      await other.reload();await other.getByRole('button',{name:'查看 试点范围复核 的项目资料'}).click()
+      await other.getByRole('tab',{name:'项目成员'}).click()
+      await expect(other.getByRole('cell',{name:'项目经理'})).toBeVisible()
+      await expect(other.getByRole('cell',{name:'草稿发起人'})).toBeVisible()
+    }
     await other.close()
   }
   await mkdir('test-results',{recursive:true})

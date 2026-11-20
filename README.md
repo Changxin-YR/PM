@@ -28,6 +28,8 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 
 工作台的「人员任命」支持发起人选择草稿并按同组织人员 ID 提名 PM 或 Sponsor。提名不会授予项目权限；有独立组织授权的人员在「待我发出的邀请」处理，被提名人从「我的邀请」接受或拒绝。实际业务任命权仍需签核，不为初始管理员自动开通。
 
+项目资料的「项目成员」只展示有效成员角色。发起人自动登记为本草稿的 initiator，不能因此成为 PM 或 Sponsor，也不获得跨阶段的代理授权。
+
 MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。使用 `PMO_AGENT_TOKEN` 和可选的 `PMO_API_PORT`。已实现工具见 `pmo/tool_routes.py`。测试夹具签发限时合成令牌并真实调用，尚无面向用户的令牌管理页。不应通过直接改库为真实用户授权。
 
 本地已有开发库可用 `.\scripts\dev.ps1 migrate` 升级，不重建卷。`.\scripts\dev.ps1 outbox` 处理一批到期项目事件并记录本地消费回执；`.\scripts\dev.ps1 dead-letters` 查询死信标识和错误码，不输出业务载荷。租约 30 秒，失败指数退避，最多 5 次尝试。没有安装后台计划任务；本地事件回执不代表已向用户发送通知或完成任何审批。

@@ -10,6 +10,7 @@ from .identity import Failure, authenticate, visible
 from .db import engine
 from .charter_models import summary as charter_summary
 from .stakeholder_models import ContactSummary
+from .tool_routes import ROUTES
 
 def view(row):
     return ProjectView(projectId=row.id, code=row.code, name=row.name, stage=row.stage, revision=row.revision, orgId=row.org_id, createdAt=row.created_at)
@@ -26,7 +27,7 @@ def run(header,op,fn):
     try:
         with engine().begin() as c:
             actor=authenticate(c,header)
-            if op not in actor.actions: raise Failure(403,'FORBIDDEN')
+            if op not in actor.actions or (actor.kind=='agent' and op not in ROUTES): raise Failure(403,'FORBIDDEN')
             return fn(c,actor,request_id)
     except Failure as e:
         if actor:

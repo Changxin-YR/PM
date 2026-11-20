@@ -13,7 +13,7 @@ from pmo import schema_v1 as db
 @pytest.mark.parametrize('decision', ['accept','decline'])
 def test_separate_nominate_issue_and_decide(live,actor,decision):
     engine,api,port,_=live
-    ops=('pmo_role_assignment_propose','human_accept_role_assignment','human_issue_role_invitation')
+    ops=('pmo_role_assignment_propose','human_accept_role_assignment','human_issue_role_invitation','human_members_list')
     token,cred=actor(extra_actions=ops)
     headers={'Authorization':'Bearer '+token,'Idempotency-Key':uuid4().hex}
     project=api.post('/api/v1/projects',headers=headers,json={'code':'HIRE','name':'Appointments'}).json()['data']
@@ -66,6 +66,13 @@ def test_separate_nominate_issue_and_decide(live,actor,decision):
         assert recipient.post(invite+decision,headers=finalkey).json()==response.json()
         assert recipient.get('me/role-invitations').json()['data']==[]
         assert recipient.get(path).status_code==(200 if decision=='accept' else 404)
+        assert api.get('/api/v1/'+path+'/members',headers=headers).status_code==403
+        assert stranger.get(path+'/members').status_code==404
+        members=recipient.get(path+'/members')
+        if decision=='accept':
+            roles={r['role']:r['personId'] for r in members.json()['data']['items']}
+            assert set(roles)=={'initiator','pm'} and roles['pm']==str(nominee)
+        else: assert members.status_code==404
         with engine.connect() as c:
             assert c.scalar(sa.select(db.projects.c.pm_id).where(db.projects.c.id==pid))==(nominee if decision=='accept' else None)
-            assert c.scalar(sa.select(sa.func.count()).select_from(db.project_members).where(db.project_members.c.project_id==pid))==(1 if decision=='accept' else 0)
+            assert c.scalar(sa.select(sa.func.count()).select_from(db.project_members).where(db.project_members.c.project_id==pid))==(2 if decision=='accept' else 1)

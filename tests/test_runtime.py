@@ -18,7 +18,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0006'
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0007'
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live
@@ -36,8 +36,8 @@ def test_concurrent_replay_scope_and_denial(live,actor):
     assert api.get('/api/v1/projects/'+pid,headers=h2).status_code==404
     assert api.post('/api/v1/projects',headers=h2,json=body).status_code==403
     with engine.connect() as c:
-        for table in [db.project_members,db.audit_logs]:
-            assert c.scalar(sa.select(sa.func.count()).select_from(table).where(table.c.project_id==pid))==(0 if table is db.project_members else 1)
+        assert c.execute(sa.select(db.project_members.c.role).where(db.project_members.c.project_id==pid)).scalars().all()==['initiator']
+        assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.project_id==pid))==1
         assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(db.audit_logs.c.actor_id==ident,db.audit_logs.c.result=='denied'))==1
 
 def test_mcp_stdio(live,actor):

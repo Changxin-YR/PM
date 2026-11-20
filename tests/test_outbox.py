@@ -43,6 +43,8 @@ def queue_db():
 
 def test_nonempty_upgrade_and_restart_after_consume(queue_db):
     db, env, eid, _, migrate = queue_db
+    with db.connect() as c:
+        assert c.execute(sa.text('SELECT role,assignment_status FROM project_members')).one()==('initiator','accepted')
     with ThreadPoolExecutor(2) as pool:
         leases = list(pool.map(outbox.claim,[db,db]))
     lease, = [item for item in leases if item]
