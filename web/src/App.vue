@@ -9,6 +9,7 @@ import Appointments from './Appointments.vue'
 import Members from './Members.vue'
 import AuditLog from './AuditLog.vue'
 import AgentTokens from './AgentTokens.vue'
+import Risks from './Risks.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -55,6 +56,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="联系台账" lazy><Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane label="风险" lazy><Risks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
   </el-tabs>
 </el-drawer>
 <el-dialog v-model="dialog" :title="title" width="min(440px,94vw)" :close-on-click-modal="false"><form @submit.prevent="save"><label>项目编号<input v-model="code" :disabled="!!selected" maxlength="60" required></label><label>项目名称<input v-model="name" maxlength="160" required></label><label v-if="!selected">说明<textarea v-model="description" maxlength="2000" rows="3"></textarea></label><el-alert v-if="formError" :title="formError" type="error" :closable="false"/><div class="actions"><el-button v-if="selected && formError" @click="reread">重新读取版本</el-button><el-button @click="dialog=false">取消</el-button><el-button type="primary" native-type="submit" :loading="busy">保存</el-button></div></form></el-dialog></main>

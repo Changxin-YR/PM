@@ -1,5 +1,8 @@
 """Only contract operations backed by a live implementation belong here."""
 ROUTES = {
+    'pmo_risk_list': ('GET','/projects/{projectId}/risks'),
+    'pmo_risk_create': ('POST','/projects/{projectId}/risks'),
+    'pmo_risk_update': ('PATCH','/risks/{riskId}'),
     'pmo_stakeholder_create': ('POST', '/projects/{projectId}/stakeholders'),
     'pmo_role_assignment_propose': ('POST', '/projects/{projectId}/role-invitations'),
     'pmo_charter_save': ('PUT', '/projects/{projectId}/charter'),

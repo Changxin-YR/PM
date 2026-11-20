@@ -21,6 +21,7 @@ from .stakeholder_routes import router as stakeholder_router
 from .members import router as members_router
 from .audits import router as audit_router, is_admin
 from .agent_tokens import router as agent_token_router
+from .risks import router as risk_router
 
 class ErrorResponse(Strict):
     code: str
@@ -37,6 +38,7 @@ app.include_router(stakeholder_router)
 app.include_router(members_router)
 app.include_router(audit_router)
 app.include_router(agent_token_router)
+app.include_router(risk_router)
 
 
 @app.middleware('http')

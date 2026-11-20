@@ -60,6 +60,10 @@ async def invoke(name,arguments):
                 for record in records:
                     record.pop('acceptanceCriteria',None)
                     record.pop('plannedConfirmAt',None)
+            if name in {'pmo_risk_list','pmo_risk_create','pmo_risk_update'}:
+                records=result['data']['items'] if name=='pmo_risk_list' else [result['data']]
+                for record in records:
+                    for field in ('prob','impact','response','blockedSince'): record.pop(field,None)
             jsonschema.Draft202012Validator(tools[name].outputSchema).validate(result)
             return result
     except (httpx.HTTPError,ValueError,jsonschema.ValidationError):
