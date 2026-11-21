@@ -53,6 +53,7 @@ def browser_actor(conn,identity):
         'human_agent_token_create','human_agent_tokens_list','human_agent_token_revoke','admin_agent_tokens_list','admin_agent_token_revoke',
         'human_requirement_baseline_get','human_requirement_baseline_sign','human_requirement_accept','human_customer_confirm','human_changes_list','human_change_approve','human_change_reject','human_requirement_metrics',
         'human_requirement_addition_propose',
+        'human_requirement_disputes_list','human_requirement_dispute_open','human_requirement_dispute_withdraw',
         'human_evidence_upload','human_evidence_list','human_evidence_get','human_evidence_verify','human_milestone_complete',
         'human_cost_postings_list','human_verify_cost_posting','human_reverse_cost_posting','human_alerts_overview',
         'admin_audits_list','human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',

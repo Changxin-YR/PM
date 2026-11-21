@@ -11,6 +11,7 @@ from .contracts import RULE_VERSION, Result, Strict
 from .projects import fingerprint, meta, run
 from .requirement_additions import addition, applied_addition, initial_signature, origin
 from .requirement_baselines import project
+from .requirement_disputes import effective, source
 
 router=APIRouter(prefix='/api/v1',tags=['Quality'])
 WEIGHTS={'P0':3,'P1':2,'P2':1}
@@ -56,6 +57,7 @@ class Schedule:
     planned: date | None
     confirmed: bool
     frozen: bool
+    disputed: bool
 
 
 def metrics(c,pid,*,schedule: list[Schedule] | None=None):
@@ -82,6 +84,9 @@ def metrics(c,pid,*,schedule: list[Schedule] | None=None):
         pending.add(str(i.target_id)); refs.append(f'change:{i.id}@{i.revision}')
     signoffs={(str(i.requirement_id),i.baseline_version,i.revision) for i in c.execute(sa.text('''SELECT rt.requirement_id,rt.baseline_version,rt.revision FROM requirement_transitions rt
         JOIN requirements r ON r.id=rt.requirement_id WHERE r.project_id=:p AND rt.status='customer_confirmed' AND rt.actor_type='human' '''),{'p':pid})}
+    objections = effective(c, pid)
+    disputed = {str(row.requirement_id) for row in objections if row.withdrawn_at is None}
+    refs.extend(source(row) for row in objections)
     current={str(i.id):i for i in c.execute(sa.select(r).where(r.c.project_id==pid)).mappings()}; active=weight=confirmed=p0=confirmed_p0=frozen=0
     if signed is None: gaps.add('INITIAL_BASELINE_MISSING')
     if any(i.baseline_version and k not in expected for k,i in current.items()): gaps.add('BASELINE_CHAIN_INVALID')
@@ -94,10 +99,11 @@ def metrics(c,pid,*,schedule: list[Schedule] | None=None):
         counted=False
         if row is not None and valid and row.status=='customer_confirmed':
             if (k,version,row.revision) not in signoffs: gaps.add('CONFIRMATION_RECEIPT_MISSING')
-            elif k not in pending:
+            elif k not in pending and k not in disputed:
                 confirmed+=w; confirmed_p0+=priority=='P0'; counted=True
         if schedule is not None:
-            schedule.append(Schedule(k,row.revision if row else None,priority,date.fromisoformat(day) if day else None,counted,k in pending))
+            schedule.append(Schedule(k,row.revision if row else None,priority,date.fromisoformat(day) if day else None,
+                                     counted,k in pending,k in disputed))
         if row: refs.append(f'requirement:{k}@{row.revision}')
     available=not gaps
     if not active: gaps.add('NO_ACTIVE_REQUIREMENTS')

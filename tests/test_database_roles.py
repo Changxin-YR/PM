@@ -123,6 +123,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE facts SET quote=quote', 'UPDATE fact_history SET reason=reason', 'DELETE FROM fact_source_receipts',
                 'UPDATE report_analysis_runs SET report_hash=report_hash', 'DELETE FROM report_analysis_runs',
                 'UPDATE reports SET weekly_basis=NULL',
+                'UPDATE requirement_disputes SET reason=reason', 'DELETE FROM requirement_disputes',
                 'UPDATE organization_user_invitations SET code_hash=code_hash', 'UPDATE account_status_changes SET reason=reason',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
@@ -134,6 +135,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM project_rule_scan_state',
                                'SELECT * FROM facts', 'SELECT * FROM fact_history',
                                'SELECT * FROM report_analysis_runs',
+                               'SELECT * FROM requirement_disputes',
                                'SELECT * FROM organization_user_invitations', 'SELECT * FROM account_status_changes',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 

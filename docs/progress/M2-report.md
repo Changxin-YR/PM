@@ -100,3 +100,16 @@
 | `./scripts/dev.ps1 check` | 0 | PASS：冻结规格静态三检与 mypy，`.local/zero-budget-check.log`。 |
 
 共享开发库未迁移。零预算路径通过不代表 DEC-09/16/26 已签核。
+
+## 2026-11-21 正式客户争议（0028）
+
+源条款：§5.3–5.4、§5.6 LR-07、Q2/Q5/T07，见 [ADR 0017](../adr/0017-customer-requirement-disputes.md)。实现：`pmo/requirement_disputes.py`、`pmo/scope_quality.py`、`pmo/health_calculation.py`、`pmo/gates.py`、`web/src/RequirementDisputes.vue`。基准 SHA `761ab55322fb8507fd67f8b0bc21a897c13a9449`，受影响测试和恢复的源码树 `5716e89118361a6ac603ae1bf971c30a7c09f640`，不含随后进度文本。Windows / PostgreSQL 16 隔离 schema 与独立恢复库 / 回环 HTTP / Edge；合成身份及陈述，模型关闭。
+
+| 命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_requirement_disputes.py tests/test_scope_quality.py tests/test_requirement_additions.py tests/test_health.py tests/test_database_roles.py --tb=short` | 0 | PASS：14 项 / 53.83 秒，`.local/disputes-0028-targeted.log`。P1 正式争议触发红灯、有争议的确认不计权重；客户版本绑定，PM/Reviewer/Agent/跨项目拒绝，重复键只写一次，故障原子回滚，结项提交后旧快照拒绝、撤回重送后通过。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_customer_dispute_has_independent_and_persistent_history --tb=short` | 0 | PASS：Edge 1 项 / 28.04 秒，`.local/disputes-0028-edge-first.log`、`web/e2e/requirement-disputes.mjs`。移动客户与桌面 PM 独立会话、原文和撤回后刷新回读。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_recovery.py tests/test_database_roles.py --tb=short` | 0 | PASS：3 项 / 37.59 秒，`.local/disputes-0028-recovery.log`。0016 带数据升级到 0028、降级保护、真实导出恢复原件及争议历史、运行角色隔离。 |
+| `./scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格静态三检、mypy、Vue 类型；`.local/disputes-0028-check.log`。 |
+
+目录检验由冻结 YAML 和运行代码的 `app.openapi()` 方法、路径、操作 ID 求差集，并核对注册映射：PASS，95/95 基线 REST、34 项工程接口、40/40 注册，未声称实际逐工具调用或 Host 验收。真实客户写入及 DEC-07/09 仍未放行；共享开发库未迁移。

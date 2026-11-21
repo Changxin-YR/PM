@@ -162,7 +162,7 @@ def _quality(c, pid, today):
     colors, details = [], []
     for row in schedule:
         lag = max(0, (monday(today) - monday(row.planned)).days // 7) if row.planned else 0
-        color = ('green' if row.confirmed else 'red' if row.priority == 'P0' or lag >= 2
+        color = ('green' if row.confirmed else 'red' if row.disputed or row.priority == 'P0' or lag >= 2
                  else 'yellow' if lag == 1 else 'green')
         colors.append(color)
         details.append({**asdict(row), 'planned': iso(row.planned), 'lagWeeks': lag, 'color': color})

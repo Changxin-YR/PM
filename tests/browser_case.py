@@ -100,6 +100,14 @@ def browser_sessions(users, *roles):
     return {role: {'cookie': users[role].cookies['pmo_session'], 'csrf': users[role].headers['X-CSRF-Token']} for role in roles}
 
 
+def test_browser_customer_dispute_has_independent_and_persistent_history(live, team):
+    _, _, users, _ = team
+    execution_fixture(live, team)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'requirement-disputes', {'PMO_TEST_SESSIONS': json.dumps(
+            browser_sessions(users, 'pm', 'client_representative'))})
+
+
 def test_browser_health_snapshots_and_independent_appeal(live, team):
     from datetime import datetime
     from pmo.health_calculation import TZ, week_key

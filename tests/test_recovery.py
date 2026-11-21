@@ -17,6 +17,7 @@ import sqlalchemy as sa
 
 from pmo import evidence_storage, recovery, schema_v1 as db
 from pmo.health_calculation import TZ, week_key
+from pmo.requirement_disputes import t as disputes
 from pmo.session_schema import sessions
 from test_database_roles import serve
 from test_evidence import binary
@@ -55,13 +56,13 @@ def recovery_db(tmp_path, monkeypatch):
 def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monkeypatch):
     admin, source, engine, originals, tools, control = recovery_db
     png = binary('png')
-    owner, verifier = uuid4(), uuid4()
+    owner, verifier, customer = uuid4(), uuid4(), uuid4()
     password = uuid4().hex
     preupgrade_session, preupgrade_csrf = uuid4().hex, uuid4().hex
     with engine.begin() as conn:
         org = conn.scalar(db.organizations.insert().values(name='Recovery fixture', status='active').returning(db.organizations.c.id))
         digest = PasswordHasher(time_cost=1, memory_cost=8192).hash(password)
-        for person, username in ((owner, 'fixture-pm'), (verifier, 'fixture-reviewer')):
+        for person, username in ((owner, 'fixture-pm'), (verifier, 'fixture-reviewer'), (customer, 'fixture-customer')):
             account = conn.scalar(db.user_accounts.insert().values(username=username, password_hash=digest, is_active=True)
                                   .returning(db.user_accounts.c.id))
             conn.execute(db.persons.insert().values(id=person, created_by=person, name=username, org_id=org,
@@ -74,6 +75,12 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                              revision=1, initiator_id=owner, created_by=owner, pm_id=owner).returning(db.projects.c.id))
         member(conn, project, owner, owner, 'pm')
         member(conn, project, verifier, owner, 'reviewer')
+        customer_assignment = member(conn, project, customer, owner, 'client_representative')
+        contact = conn.scalar(db.stakeholders.insert().values(project_id=project, created_by=owner, name='Fixture client',
+                              type='customer', linked_person_id=customer).returning(db.stakeholders.c.id))
+        requirement = conn.scalar(db.requirements.insert().values(project_id=project, created_by=owner,
+            desc='Existing export scope', priority='P1', acceptance_criteria='Export contains verified totals',
+            status='baseline', baseline_version=1, planned_confirm_at=date(2026, 11, 20)).returning(db.requirements.c.id))
         milestone = conn.scalar(db.milestones.insert().values(project_id=project, created_by=owner, name='Deliver', ordinal=1,
                                 planned_date=date(2026, 10, 1), is_key=True).returning(db.milestones.c.id))
         legacy_report = conn.scalar(db.reports.insert().values(project_id=project, created_by=owner, author_id=owner,
@@ -109,11 +116,20 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     with engine.begin() as c:
         c.execute(db.projects.update().where(db.projects.c.id == project).values(stage='executing'))
         original_id = c.scalar(sa.select(db.evidence_files.c.id).where(db.evidence_files.c.storage_key == original))
+        # Storage drill fixture only; authenticated dispute writes are exercised in the random-schema HTTP suite.
+        dispute = c.scalar(disputes.insert().values(project_id=project, requirement_id=requirement, baseline_version=1,
+            requirement_revision=1, customer_id=customer, assignment_id=customer_assignment, stakeholder_id=contact,
+            reason='Original synthetic objection', open_request_id=uuid4()).returning(disputes.c.id))
+        c.execute(disputes.update().where(disputes.c.id == dispute).values(revision=2, withdrawn_at=sa.func.clock_timestamp(),
+            withdrawal_reason='Explicit synthetic withdrawal', withdrawal_request_id=uuid4()))
     with serve(source, tmp_path, evidence_dir=originals, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as pm:
         pm.cookies.set('pmo_session', preupgrade_session, domain='127.0.0.1', path='/api/v1')
         pm.headers['X-CSRF-Token'] = preupgrade_csrf
         identity = pm.get('auth/me')
         assert identity.status_code==200 and identity.json()['personId']==str(owner)
+        dispute_path = f'requirements/{requirement}/disputes'
+        saved_dispute, = data(pm.get(dispute_path))['items']
+        assert saved_dispute['disputeId'] == str(dispute) and saved_dispute['revision'] == 2
         with httpx.Client(base_url=pm.base_url, trust_env=False) as reviewer:
             reviewer.headers['X-CSRF-Token'] = data_login(reviewer, 'fixture-reviewer', password)
             proof = data(reviewer.post(f'evidence/{original_id}/verify', headers=headers(1),
@@ -167,7 +183,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
     failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0026'], capture_output=True, text=True,
         env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
-    assert failed.returncode != 0 and 'Refusing to discard weekly report source receipts' in failed.stderr
+    assert failed.returncode != 0 and 'Refusing to discard requirement dispute history' in failed.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -225,6 +241,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
             assert data(pm.get(report_path(report)+'/facts'))['items'] == [fact]
             assert history(pm, published)['items']==[analysis]
+            assert data(pm.get(dispute_path))['items'] == [saved_dispute]
             assert data(pm.get(report_path(weekly_published)))==weekly_published
             assert inv_state(pm, invite_receipt)=='accepted'
             restored_user, = [row for row in data(pm.get('admin/users'))['items'] if row['userId']==enrollment['userId']]

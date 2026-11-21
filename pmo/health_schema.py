@@ -25,6 +25,7 @@ SCAN_SOURCE_WRITES = frozenset({
     'pmo_review_submit', 'human_review_decide', 'human_review_withdraw', 'human_execute_transition',
     'human_decide_approval', 'pmo_milestone_forecast', 'human_milestone_complete', 'pmo_cost_forecast_save',
     'human_verify_cost_posting', 'human_customer_confirm', 'human_requirement_baseline_sign',
+    'human_requirement_dispute_open', 'human_requirement_dispute_withdraw',
     'pmo_change_propose', 'human_requirement_addition_propose', 'human_change_approve', 'human_change_reject', 'human_evidence_verify',
     'pmo_report_submit', 'human_report_submit_existing', 'human_report_confirm',
     'human_retrospective_save', 'human_confirm_lesson', 'human_health_zero_budget', 'human_review_health_appeal',

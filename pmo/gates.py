@@ -16,6 +16,8 @@ from .evidence import verified_link
 from .identity import Failure, explicit_grants, visible
 from .projects import fingerprint
 from .requirement_baselines import active_assignment, active_member, s as signatures
+from .requirement_disputes import effective as effective_disputes
+from .requirement_disputes import source as dispute_source
 from .scope_quality import metrics
 
 Gate = Literal['charter', 'feasibility', 'closing']
@@ -150,6 +152,12 @@ def planning_material(c, a, p, gate, out):
         if not risks or any(not r.response.strip() for r in risks):
             out.reject('RISK_REGISTER_REQUIRED', '需登记项目风险并填写应对措施。', risk_refs)
         return
+    disputes = effective_disputes(c, p.id)
+    if disputes:
+        out.include('requirementDisputes', 'requirement-dispute', disputes)
+        open_refs = [dispute_source(row) for row in disputes if row.withdrawn_at is None]
+        if open_refs:
+            out.reject('CUSTOMER_DISPUTE_OPEN', '仍有针对当前有效需求的正式客户争议。', open_refs)
     if quality.activeP0 != quality.confirmedP0 or not quality.activeWeight or 10 * quality.confirmedWeight < 9 * quality.activeWeight:
         from .requirement_exceptions import gate_check
         exception = gate_check(c, a, p)

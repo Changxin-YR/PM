@@ -96,6 +96,9 @@ def advance(auth,op,req,command,key,revision):
             if not synthetic_confirmation(c): raise Failure(403,'POLICY_PENDING')
             if c.scalar(sa.text('SELECT EXISTS(SELECT FROM requirement_transitions WHERE requirement_id=:req AND baseline_version=:v AND actor_id=:actor)'),
                         dict(req=req,v=old.baseline_version,actor=a.person)): raise Failure(403,'INDEPENDENT_CUSTOMER_REQUIRED')
+            from .requirement_disputes import open_query
+            if c.scalar(open_query(old).limit(1)):
+                raise Failure(422, 'CUSTOMER_DISPUTE_OPEN', project_id=project.id)
         proof=verified_link(c,a,command.evidenceRef,project.id,'requirement',req)
         if effective and proof.created_at<effective: raise Failure(422,'CURRENT_BASELINE_EVIDENCE_REQUIRED')
         fields=dict(status=next_status,evidence_ref=f'evidence:{proof.id}',revision=revision+1,updated_at=sa.func.now())

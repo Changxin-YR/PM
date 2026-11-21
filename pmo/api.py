@@ -29,6 +29,7 @@ from .alerts import router as alerts_router
 from .requirement_baselines import router as baseline_router
 from .evidence import router as evidence_router
 from .requirement_delivery import router as delivery_router
+from .requirement_disputes import router as dispute_router
 from .change_history import router as change_history_router
 from .change_requests import router as change_request_router
 from .change_decisions import router as change_decision_router
@@ -71,6 +72,7 @@ app.include_router(alerts_router)
 app.include_router(baseline_router)
 app.include_router(evidence_router)
 app.include_router(delivery_router)
+app.include_router(dispute_router)
 app.include_router(change_history_router)
 app.include_router(change_request_router)
 app.include_router(change_decision_router)
