@@ -1,7 +1,7 @@
 """Project-serialized incremental and daily rule scans. No model or HTTP required."""
 import argparse
 import json
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from time import sleep
 from uuid import UUID
 
@@ -12,7 +12,7 @@ from . import schema_v1 as db
 from .contracts import RULE_VERSION
 from .db import engine
 from .health_calculation import ACTIVE, Observation, observe
-from .health_schema import events, scan_state
+from .health_schema import FEASIBILITY_OVERDUE, events, scan_state
 from .milestone_forecasts import reconcile
 from .projects import fingerprint
 from .reports import TZ
@@ -58,9 +58,30 @@ def _task(c, p, eid, owner, title, at):
             assignee_id=owner, created_by=p.created_by, due_at=at + timedelta(days=7), status='todo'))
 
 
-def _resolve_inactive(c, pid, rule, opened):
-    c.execute(events.update().where(events.c.project_id == pid, events.c.rule_id == rule,
+def _resolve_inactive(c, pid, rule, opened, *criteria):
+    c.execute(events.update().where(events.c.project_id == pid, events.c.rule_id == rule, *criteria,
         events.c.status == 'open', ~events.c.id.in_(opened)).values(status='resolved', updated_at=sa.func.now()))
+
+
+def _feasibility_deadlines(c, p, at, pm):
+    opened = []
+    if p.stage in ACTIVE:
+        # Cancelling a task does not fulfil a condition in the approved decision.
+        rows = c.execute(sa.text('''SELECT t.id,t.revision,t.title,t.due_at,r.id AS review_id,r.revision AS review_revision
+            FROM review_strengthening_tasks b JOIN tasks t ON t.id=b.task_id
+            JOIN reviews r ON r.id=b.review_id AND r.project_id=t.project_id AND t.source_id=r.id
+            WHERE t.project_id=:pid AND t.source_type='review' AND b.item_key LIKE 'condition:%'
+              AND r.type='feasibility' AND r.status='decided' AND r.verdict='conditional_pass'
+              AND t.due_at<:at AND t.status!='done' ORDER BY t.id'''), {'pid': p.id, 'at': at}).mappings()
+        for row in rows:
+            due = row.due_at.astimezone(UTC).isoformat()
+            refs = [f'task:{row.id}@{row.revision}', f'review:{row.review_id}@{row.review_revision}']
+            opened.append(_event(c, p, 'LR-02', row.due_at.astimezone(TZ).date().isoformat(),
+                [FEASIBILITY_OVERDUE, str(row.id), due], refs,
+                {'kind': FEASIBILITY_OVERDUE, 'dueAt': due, 'taskTitle': row.title,
+                 'reason': '落地有条件通过的补强任务已逾期。'}, pm))
+    _resolve_inactive(c, p.id, 'LR-02', opened, events.c.input_snapshot['kind'].astext == FEASIBILITY_OVERDUE)
+    return opened
 
 
 def _retrospective(c, p, at, sponsor):
@@ -123,7 +144,7 @@ def _governance_events(c, p, at, health: Observation | None):
     opened: dict[str, list[UUID]] = {'LR-04': [], 'LR-06': [], 'LR-08': []}
     pm = p.pm_id if p.pm_id and active_member(c, p, p.pm_id, 'pm') else None
     sponsor = p.sponsor_id if p.sponsor_id and active_member(c, p, p.sponsor_id, 'sponsor') else None
-    visible_ids: list[UUID] = []
+    visible_ids: list[UUID] = _feasibility_deadlines(c, p, at, pm)
     if health is not None:
         for milestone in health.milestones:
             eid = reconcile(c, p, milestone)

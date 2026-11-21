@@ -138,3 +138,16 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_spending.py tests/test_postings.py --tb=short --junitxml=.local/preapproval-conditional.xml` | 0 | PASS：2 项 / 11.95 秒。正式条件通过后按发生时间截取；历史金额与人天、之后支出、候选、未授权人员和 SDK 枚举同一个列表；凭证独立核验、并发、冲销回归。 |
 
 修复前 `.local/preapproval-conditional-first.xml` 记录 FAIL（退出 1）：正式条件通过后发生的已核验流水被错误纳入。未更改立项门槛或支出记录。
+
+## 落地条件任务逾期提醒
+
+源条款：§4.3、§5.6 LR-02。`pmo/rule_scan.py` 仅检查正式落地条件通过中绑定的任务；评审来源的手工任务或否决整改不混入。期限严格越界后通知在任 PM，按任务与期限去重；改期后关闭旧提醒，完成后关闭当前提醒，取消任务不等于履行已批准条件。`pmo/alerts.py` 和 `web/src/Alerts.vue` 提供人类详情，Agent 仍使用封闭的预警 DTO。提醒不修改三线与阶段。无新迁移。
+
+基准 SHA `ae2272b1dba895064089682183c8b5d3252b773f`，被测本切片源码树 `9db58af0fcecac0967869ed27f329cfebe90f4f9`，不含后补文档。Windows、PostgreSQL 16 随机 schema、合成独立账户/任务、真实 HTTP/stdio、模型关闭。在真实项目服务记录正式通过后，只在隔离测试中向扫描器传入合成截止时点。
+
+| 命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_feasibility_reminders.py tests/test_health.py tests/test_tasks.py tests/test_database_roles.py --tb=short --junitxml=.local/feasibility-reminders-retest.xml` | 0 | PASS：17 项 / 49.46 秒。正好到期不催办，逾期仅匹配正式条件，三线完全一致，改期/取消/完工、Outbox 双跑、当前 PM 站内回执和 MCP 输出范围实测。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：三套冻结规格检查、mypy 81 文件（`.local/feasibility-reminders-check.log`）、Vue 类型。 |
+
+首次同一套件 FAIL（退出 1，16 项 PASS、1 项 FAIL，`.local/feasibility-reminders.xml`）：测试把未确认 P0 造成的既有红线误认为提醒逻辑造成，修正为到期前后全部三线结果一致；不放宽规则。

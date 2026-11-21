@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from . import schema_v1 as db
 from .access import Auth
 from .contracts import Result, Strict
-from .health_schema import events
+from .health_schema import FEASIBILITY_OVERDUE, events
 from .identity import visible
 from .materials import project_access
 from .projects import meta, run
@@ -30,6 +30,8 @@ class Alert(Strict):
     forecastDate: str | None=None
     reason: str | None=None
     businessPeriod: str | None=None
+    dueAt: datetime | None=None
+    taskTitle: str | None=None
 
 
 class Page(Strict):
@@ -64,9 +66,11 @@ def listing(auth,pid,page,size,rule=None,month=None):
             detail=dict(projectCode=row.code,notifiedAt=row.notified_at,milestoneName=info.get('milestoneName',row.name),
                 reason=info.get('reason') or row.reason,businessPeriod=row.business_period,
                 plannedDate=str(row.planned_date) if row.planned_date else info.get('plannedDate'),
-                forecastDate=str(row.new_date) if row.new_date else info.get('forecastDate')) if a.kind=='human' else {}
+                forecastDate=str(row.new_date) if row.new_date else info.get('forecastDate'),
+                dueAt=info.get('dueAt'),taskTitle=info.get('taskTitle')) if a.kind=='human' else {}
             items.append(Alert(alertId=row.id,projectId=row.project_id,ruleId=row.rule_id,severity={
-                'LR-03':'yellow','LR-04':'red','LR-06':'untrusted','LR-08':'yellow'}.get(row.rule_id,'hard'),
+                'LR-03':'yellow','LR-04':'red','LR-06':'untrusted','LR-08':'yellow'}.get(row.rule_id,
+                    'yellow' if row.rule_id=='LR-02' and info.get('kind')==FEASIBILITY_OVERDUE else 'hard'),
                 status=row.status,asOf=row.updated_at,sourceRefs=row.source_refs if a.kind=='human' else row.source_refs[:100],**detail))
         return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total),meta=meta(op,[f'rule-event:{i.alertId}' for i in items]))
     return run(auth,op,read)
