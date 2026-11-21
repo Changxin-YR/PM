@@ -3,7 +3,7 @@ import {computed,ref,watch} from 'vue'
 import {Pencil,Plus,RefreshCw,Save} from 'lucide-vue-next'
 
 const sourceLabels={review:'评审',rule_event:'规则事件',remediation:'风险整改'}
-const displaySources={...sourceLabels,fact_clarification:'Fact 澄清'}
+const displaySources={...sourceLabels,fact_clarification:'Fact 澄清',report_analysis:'报告人工复核'}
 const endpoints={review:'reviews',rule_event:'alerts',remediation:'risks'}
 const statusLabels={todo:'待办',in_progress:'进行中',blocked:'阻塞',done:'已完成',cancelled:'已取消'}
 const statusTone={todo:'info',in_progress:'primary',blocked:'danger',done:'success',cancelled:'info'} as const

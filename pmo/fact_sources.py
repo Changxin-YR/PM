@@ -25,13 +25,12 @@ Trust = Literal['high', 'medium', 'low']
 Status = Literal['candidate', 'verified', 'disputed', 'rejected']
 
 
-class Candidate(Strict):
+class CandidateFields(Strict):
     subject: Short
     predicate: Annotated[StrictStr, Field(min_length=1, max_length=120, pattern=r'\S'), AfterValidator(_plain)]
     typedValue: Value
     asOf: AwareDatetime
     quote: Quote
-    sourceRef: Annotated[Short, Field(min_length=3)]
 
     @field_validator('asOf', mode='before')
     @classmethod
@@ -39,6 +38,10 @@ class Candidate(Strict):
         if not isinstance(value, (str, datetime)) or (isinstance(value, str) and value[10:11].upper() != 'T'):
             raise ValueError('Expected an ISO timestamp with timezone')
         return value
+
+
+class Candidate(CandidateFields):
+    sourceRef: Annotated[Short, Field(min_length=3)]
 
 
 class Location(NamedTuple):

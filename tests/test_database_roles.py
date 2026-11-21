@@ -48,12 +48,13 @@ def split_roles():
 
 
 @contextmanager
-def serve(url, tmp_path, *, evidence_dir=None):
+def serve(url, tmp_path, *, evidence_dir=None, extra_env=None):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     env = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False),
-           'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(evidence_dir or (tmp_path / 'private'))}
+           'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(evidence_dir or (tmp_path / 'private')),
+           'PMO_REPORT_ANALYSIS': '0', **(extra_env or {})}
     proc = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'pmo.api:app', '--host', '127.0.0.1',
                              '--port', str(port), '--no-access-log'], env=env)
     try:
@@ -120,6 +121,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE requirement_exception_events SET fingerprint=fingerprint', 'TRUNCATE requirement_exception_events',
                 'UPDATE health_snapshots SET input_hash=input_hash', 'DELETE FROM health_appeals',
                 'UPDATE facts SET quote=quote', 'UPDATE fact_history SET reason=reason', 'DELETE FROM fact_source_receipts',
+                'UPDATE report_analysis_runs SET report_hash=report_hash', 'DELETE FROM report_analysis_runs',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
             ])
@@ -129,9 +131,10 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM requirement_exception_events', 'SELECT * FROM health_snapshots',
                                'SELECT * FROM project_rule_scan_state',
                                'SELECT * FROM facts', 'SELECT * FROM fact_history',
+                               'SELECT * FROM report_analysis_runs',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 
-        with serve(urls['api'], tmp_path) as api:
+        with serve(urls['api'], tmp_path, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as api:
             logged = api.post('auth/login', json=dict(username='fixture-admin', password=password))
             assert logged.status_code == 200, logged.text
             api.headers['X-CSRF-Token'] = logged.json()['csrfToken']
@@ -192,6 +195,14 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             assert data(medium(api, fact))['validationStatus'] == 'verified'
             assert data(api.get(fact_path(fact) + '/history'))['total'] == 2
             assert data(api.get(report_path(report) + '/facts'))['items'][0]['quote'] == '2.50'
+            analysis = data(api.post(report_path(report)+'/analyze', headers=key(report['revision']), json={}))
+            assert analysis['status']=='queued'
+            rerun = subprocess.run([sys.executable,'-m','pmo.report_analysis_worker'], check=True,
+                capture_output=True,text=True,env={**scan_env,'PMO_REPORT_ANALYSIS':'0'})
+            assert 'processed: 1' in rerun.stdout
+            completed, = data(api.get(report_path(report)+'/analysis-runs'))['items']
+            assert completed['runId']==analysis['runId'] and completed['errorCode']=='MODEL_DISABLED'
+            assert completed['status']=='manual' and completed['fallbackTaskId']
             assert api.post('auth/logout').status_code == 204
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:

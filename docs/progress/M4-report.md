@@ -34,3 +34,18 @@
 失败记录：初次回归 `.local/fact-0024-targeted.log`（11 通过、3 失败，退出 1），修复 Meta 不含 revision 的异常与 UUID 测试序列化；初次静态加固脚本拒绝不认识的 `type` 数组，改用等价封闭 `oneOf`；首次 Vue 类型检查报告隐式分页参数，明示数值类型后按上表验证。未删失败断言。
 
 `app.openapi()`/`ROUTES`/工具注册对表 PASS：90/95 基线 + 25 工程接口，40/40 注册且真实 stdio 枚举。剩 1 项报告分析和 4 项组织管理；不将注册等同所有调用或目标 Host 实验。四模式和全套 T06 仍待验收，人工事实工作区不受模型开关影响。
+
+## 2026-11-21 0025 报告分析
+
+源条款：§6、§8.5–8.6、T06；[ADR 0013](../adr/0013-report-analysis-jobs.md)。基准 SHA `daa28949db1045a4db63478a80bb03a2b1926767`，被测源码树 `315123539507ec073988ac671030b072ba979562`（不含本批证据文档）。实现：`pmo/report_analysis.py`、`pmo/report_analysis_worker.py`、`pmo/model_gateway.py`、`migrations/versions/0025_report_analysis_runs.py`、`web/src/ReportAnalysis.vue`。环境：Windows、PostgreSQL 16.14 随机 schema/专用数据库、真实 HTTP/Edge，模型关闭或回环 HTTP **合成网关**。未启用外部模型或上传实际报告。
+
+| 实际命令 | 结果 | 证据 |
+|---|---|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_report_analysis.py tests/test_database_roles.py tests/test_recovery.py --tb=short` | PASS，退出 0，10 项 / 75.36 秒 | `.local/analysis-0025-integration.log`。主体级重放、并发领取、旧租约、Outbox 故障回滚、新版本/退出/角色撤销、恶意提示与封闭 Schema、出处、超时。受限 API 账号可领取任务并转人工，Outbox 无权读分析收据；0016 旧报告、会话与原件带数据升级，真实联合恢复后回读已定位建议与附件；拒绝会丢分析历史的降级。 |
+| `scripts/dev.ps1 test` | PASS，退出 0，107 项 / 181.60 秒 | `.local/analysis-0025-full.log`。既有评分、裁决、关闭模型完整生命周期与真实 stdio 回归。仍有 Alembic 配置弃用警告。 |
+| `scripts/dev.ps1 browser` | PASS，退出 0，真实 Edge 9 项 / 153.05 秒 | `.local/analysis-0025-edge.log`。新增 `web/e2e/analysis.mjs`：手机视口关闭模型转人工，桌面视口模拟建议、刷新重读、人工明确提报。 |
+| `scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | PASS，分别退出 0 | `.local/analysis-0025-final-check.log`、`.local/analysis-0025-build.log`。规格三检、mypy、Vue 类型和 Vite 构建通过；Vite 仍有主包体积警告。 |
+
+失败修复：`.local/analysis-0025-regression-first.log`（1 通过、13 错误，退出 1）定位历史迁移共享的会话元数据导致重复列；保留原元数据，后续回归 `.local/analysis-0025-regression.log` 14 PASS。`.local/analysis-0025-worker-first.log`（6 通过、1 失败，退出 1）修正测试中 `1.40` 原件却使用 `2.50` 候选的输入，保留原话拒绝。`.local/analysis-0025-edge-targeted.log`（1 通过、1 失败，退出 1）补齐模拟模式的测试启动器导入，再按上表通过。`npm --prefix web run typecheck` 非仓库命令，正式 `build` 已执行类型检查。
+
+目录对表 PASS：OpenAPI 按 operationId、HTTP 方法、路径为 **91/95 基线、26 工程接口**，缺项 `admin_members_list`、`admin_users_list`、`admin_user_invite`、`admin_user_update_status`；`ROUTES` 与 `mcp_server.tools` 均 40。真实模型及各目标 Host `BLOCKED_EXTERNAL`。周报自动初稿、完整四模式、T06 整体和生产批准未通过验收。

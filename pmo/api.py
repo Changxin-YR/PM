@@ -43,6 +43,7 @@ from .reports import router as report_router
 from .tasks import router as task_router
 from .health import router as health_router
 from .facts import router as fact_router
+from .report_analysis import router as report_analysis_router
 
 class ErrorResponse(Strict):
     code: str
@@ -81,6 +82,7 @@ app.include_router(report_router)
 app.include_router(task_router)
 app.include_router(health_router)
 app.include_router(fact_router)
+app.include_router(report_analysis_router)
 
 
 @app.middleware('http')

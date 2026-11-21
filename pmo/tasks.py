@@ -15,6 +15,7 @@ from .contracts import Result, Strict
 from .identity import Actor, Failure, explicit_grants, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
+from .report_analysis import OPEN_TASK, TASK_SOURCE
 
 LIST = 'pmo_task_list'
 CREATE = 'human_task_create'
@@ -24,7 +25,8 @@ Source = Literal['review', 'rule_event', 'remediation']
 Status = Literal['todo', 'in_progress', 'blocked', 'done', 'cancelled']
 SOURCES = {'review': db.reviews, 'rule_event': db.rule_events, 'remediation': db.risks}
 SYSTEM_SOURCES = ('fact_clarification',)
-VISIBLE_SOURCES = (*SOURCES, *SYSTEM_SOURCES)
+AGENT_SOURCES = (*SOURCES, *SYSTEM_SOURCES)
+VISIBLE_SOURCES = (*AGENT_SOURCES, TASK_SOURCE)
 t = db.tasks
 router = APIRouter(prefix='/api/v1', tags=['Strengthening tasks'])
 
@@ -84,7 +86,7 @@ class Task(Strict):
     assigneeId: UUID | None = None
     dueAt: datetime | None = None
     # Only browser sessions receive provenance, completion time and UI permissions.
-    sourceType: Source | Literal['fact_clarification'] | None = None
+    sourceType: Source | Literal['fact_clarification', 'report_analysis'] | None = None
     sourceId: UUID | None = None
     completedAt: datetime | None = None
     canUpdate: bool | None = None
@@ -106,7 +108,8 @@ def _project(c: Connection, a: Actor, project_id: UUID | None = None, *, task_id
     if task_id is None:
         stmt = stmt.where(p.c.id == project_id)
     else:
-        stmt = stmt.join(t, t.c.project_id == p.c.id).where(t.c.id == task_id, t.c.source_type.in_(VISIBLE_SOURCES))
+        stmt = stmt.join(t, t.c.project_id == p.c.id).where(t.c.id == task_id,
+            t.c.source_type.in_(VISIBLE_SOURCES if a.kind == 'human' else AGENT_SOURCES))
     row = c.execute(stmt.with_for_update(of=p, read=not write)).mappings().one_or_none()
     if row is None:
         raise Failure(404, 'RESOURCE_NOT_FOUND')
@@ -168,7 +171,7 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         pm = _pm(p, a, roles)
         project_wide = pm or bool(roles & {'reviewer', 'client_representative'}) or (
             'sponsor' in roles and p.sponsor_id == a.person)
-        cond = [t.c.project_id == p.id, t.c.source_type.in_(VISIBLE_SOURCES)]
+        cond = [t.c.project_id == p.id, t.c.source_type.in_(VISIBLE_SOURCES if a.kind == 'human' else AGENT_SOURCES)]
         if not project_wide:
             cond.append(t.c.assignee_id == a.person)
         total = c.execute(sa.select(sa.func.count()).select_from(t).where(*cond)).scalar_one()
@@ -259,6 +262,10 @@ def update(taskId: UUID, command: Update, authorization: Auth, key: Key, expecte
         if row.revision != revision:
             raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
         fields = command.fieldsTask
+        if row.source_type == TASK_SOURCE and fields.status in OPEN_TASK and row.status not in OPEN_TASK and c.scalar(
+                sa.select(t.c.id).where(t.c.project_id == p.id, t.c.source_type == TASK_SOURCE,
+                t.c.source_id == row.source_id, t.c.id != row.id, t.c.status.in_(OPEN_TASK)).limit(1)):
+            raise Failure(409, 'MANUAL_TASK_ALREADY_OPEN', project_id=p.id)
         values: dict[str, Any] = dict(revision=revision + 1, updated_at=sa.func.clock_timestamp())
         if fields.status is not None:
             values['status'] = fields.status

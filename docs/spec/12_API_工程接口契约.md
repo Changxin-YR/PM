@@ -132,6 +132,8 @@
 | `POST /api/v1/admin/agents/tokens/{tokenId}/revoke` | 管理员吊销受控 Token |
 | `GET /api/v1/admin/members` | 管理员查看组织成员 |
 
+报告分析：`POST /api/v1/reports/{reportId}/analyze` 仅由本报告作者或现任 PM 持浏览器会话、CSRF、`If-Match` 与幂等键发起。返回 200 和分析收据（`runId`, `reportId`, `reportRevision`, `contentHash`, `status`, `attempts` 等），不代表模型工作已经结束。工程接口 `GET /api/v1/reports/{reportId}/analysis-runs` 按同一身份范围分页读取状态和建议。建议附服务端定位的 `sourceRef`、`quotePath`、`quoteOffset`；没有信任等级、决定或发布能力，仍需走 Fact 的候选与人工核验。详见 [ADR 0013](../adr/0013-report-analysis-jobs.md)。
+
 **固定契约**：`GET /projects/{id}/gates/check?gate=...` 为关口预检查，原文中出现的 `/transitions/preview` 和 `/gates/{type}/check` 不再作为第二套接口；客户确认统一 `/requirements/{id}/customer-confirm`，项目成员添加通过受控角色邀请，不新增裸写 `/projects/{id}/members`。
 
 **前后端一致**：`12_OpenAPI_路由请求基线.yaml` 是唯一机器路由输入基线；跨文件检查用于发现接口遗漏，但不证明操作已经部署。M0 要生成 FastAPI 原生 `/openapi.json` 并对照每个 `operationId`、HTTP 方法、入参、权限、输出 Schema。

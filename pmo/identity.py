@@ -4,7 +4,7 @@ from hashlib import sha256
 from uuid import UUID
 import sqlalchemy as sa
 from . import schema_v1 as db
-from .session_schema import sessions
+from .session_schema import SESSION_ID, sessions
 from .tool_routes import ROUTES
 
 explicit_grants = sa.table('agent_project_grants', sa.column('credential_id', sa.Uuid),
@@ -25,6 +25,7 @@ class Actor:
     projects: tuple[UUID,...]
     create: bool
     kind: str = 'agent'
+    session_id: UUID | None = None
 
 @dataclass(frozen=True)
 class Browser:
@@ -32,13 +33,21 @@ class Browser:
     csrf: str
     writing: bool
 
-def browser_actor(conn,identity):
+def active_browser_session(conn, criterion):
     s,p,u,o=sessions,db.persons,db.user_accounts,db.organizations
-    digest=sha256(identity.cookie.encode()).hexdigest()
     # Serialize the account's browser writes without blocking audit foreign-key checks
     # in an Agent transaction already holding its project lock.
-    row=conn.execute(sa.select(u.c.id,p.c.id.label('person'),p.c.org_id,s.c.csrf_hash).select_from(s.join(u,u.c.id==s.c.account_id).join(p,p.c.user_id==u.c.id).join(o,o.c.id==p.c.org_id)).where(
-        s.c.token_hash==digest,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.now(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u, key_share=True)).mappings().one_or_none()
+    row=conn.execute(sa.select(u.c.id,p.c.id.label('person'),p.c.org_id,s.c.csrf_hash,SESSION_ID.label('session_id')).select_from(s.join(u,u.c.id==s.c.account_id).join(p,p.c.user_id==u.c.id).join(o,o.c.id==p.c.org_id)).where(
+        criterion,s.c.revoked_at.is_(None),s.c.expires_at>sa.func.clock_timestamp(),p.c.is_active,u.c.is_active,o.c.status=='active',sa.or_(u.c.locked_until.is_(None),u.c.locked_until<=sa.func.now())).with_for_update(of=u, key_share=True)).mappings().one_or_none()
+    # The first SELECT may have waited for a logout holding the same account lock.
+    if row is not None and conn.scalar(sa.select(SESSION_ID).where(SESSION_ID==row.session_id,
+            s.c.revoked_at.is_(None),s.c.expires_at>sa.func.clock_timestamp())):
+        return row
+    return None
+
+
+def browser_actor(conn,identity):
+    row=active_browser_session(conn,sessions.c.token_hash==sha256(identity.cookie.encode()).hexdigest())
     if not row: raise Failure(401,'UNAUTHORIZED')
     actor=Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
         'human_agent_token_create','human_agent_tokens_list','human_agent_token_revoke','admin_agent_tokens_list','admin_agent_token_revoke',
@@ -54,10 +63,11 @@ def browser_actor(conn,identity):
         'human_task_create','human_report_draft_create','human_report_draft_update','human_report_submit_existing','human_report_confirm',
         'human_health_history','human_health_refresh','human_health_zero_budget','human_appeal_health','human_review_health_appeal',
         'human_report_fact_list','human_fact_verify','human_fact_clarify','human_fact_history',
+        'human_report_analyze','human_report_analysis_list',
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
         'human_termination_confirmation_inbox','human_termination_confirm',
-        'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson'}),(),True,'human')
+        'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson'}),(),True,'human',row.session_id)
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
         raise Failure(403,'CSRF_INVALID',actor)
     return actor

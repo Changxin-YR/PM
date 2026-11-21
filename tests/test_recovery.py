@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -17,9 +17,11 @@ import sqlalchemy as sa
 
 from pmo import evidence_storage, recovery, schema_v1 as db
 from pmo.health_calculation import TZ, week_key
+from pmo.session_schema import sessions
 from test_database_roles import serve
 from test_evidence import binary
 from test_facts import fact_path, post, report_path, worksheet
+from test_report_analysis import answer, gateway, history, request
 from test_reports import body, data, headers, sections
 from test_reviews import data_login, member
 
@@ -54,6 +56,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     png = binary('png')
     owner, verifier = uuid4(), uuid4()
     password = uuid4().hex
+    preupgrade_session, preupgrade_csrf = uuid4().hex, uuid4().hex
     with engine.begin() as conn:
         org = conn.scalar(db.organizations.insert().values(name='Recovery fixture', status='active').returning(db.organizations.c.id))
         digest = PasswordHasher(time_cost=1, memory_cost=8192).hash(password)
@@ -62,6 +65,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                                   .returning(db.user_accounts.c.id))
             conn.execute(db.persons.insert().values(id=person, created_by=person, name=username, org_id=org,
                                                    is_active=True, user_id=account))
+            if person == owner:
+                conn.execute(sessions.insert().values(account_id=account, token_hash=sha256(preupgrade_session.encode()).hexdigest(),
+                    csrf_hash=sha256(preupgrade_csrf.encode()).hexdigest(), expires_at=datetime.now(UTC)+timedelta(hours=1)))
         project = conn.scalar(db.projects.insert().values(org_id=org, code='DRILL', name='Recovery fixture', stage='drafting',
                              revision=1, initiator_id=owner, created_by=owner, pm_id=owner).returning(db.projects.c.id))
         member(conn, project, owner, owner, 'pm')
@@ -101,14 +107,17 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     with engine.begin() as c:
         c.execute(db.projects.update().where(db.projects.c.id == project).values(stage='executing'))
         original_id = c.scalar(sa.select(db.evidence_files.c.id).where(db.evidence_files.c.storage_key == original))
-    with serve(source, tmp_path, evidence_dir=originals) as pm:
-        pm.headers['X-CSRF-Token'] = data_login(pm, 'fixture-pm', password)
+    with serve(source, tmp_path, evidence_dir=originals, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as pm:
+        pm.cookies.set('pmo_session', preupgrade_session, domain='127.0.0.1', path='/api/v1')
+        pm.headers['X-CSRF-Token'] = preupgrade_csrf
+        identity = pm.get('auth/me')
+        assert identity.status_code==200 and identity.json()['personId']==str(owner)
         with httpx.Client(base_url=pm.base_url, trust_env=False) as reviewer:
             reviewer.headers['X-CSRF-Token'] = data_login(reviewer, 'fixture-reviewer', password)
             proof = data(reviewer.post(f'evidence/{original_id}/verify', headers=headers(1),
                 json={'reason':'Compared the synthetic source bytes', 'sha256':sha256(png).hexdigest()}))
         report = data(pm.post(path + '/reports', headers=headers(), json=body(period=week_key(datetime.now(TZ).date()),
-            narrative='Synthetic source trail retained after recovery', structuredFields=sections(milestone_progress=[{
+            narrative='Work took 2.50 days. Synthetic source trail retained after recovery.', structuredFields=sections(milestone_progress=[{
                 'milestoneId':str(milestone), 'claim':'progress', 'evidenceRefs':[proof['evidenceRef']]}]))))
         published = data(pm.post(f"reports/{report['reportId']}/confirm", headers=headers(report['revision'])))
         candidate = data(post(pm, published))
@@ -126,11 +135,20 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         assert weekly['receipts'][0]['hash'] == published['contentHash']
         assert weekly['claims'][0]['evidence'][0]['sha256'] == sha256(png).hexdigest()
         assert not weekly['missingEvidence'] and snapshot['snapshotId'] != str(old_snapshot)
+        assert data(request(pm, published))['status']=='queued'
+        with gateway(answer()) as (url, calls):
+            done = subprocess.run([sys.executable,'-m','pmo.report_analysis_worker'], check=True, capture_output=True, text=True,
+                env={**os.environ,'DATABASE_URL':source.render_as_string(hide_password=False),
+                     'PMO_REPORT_ANALYSIS':'1','PMO_REPORT_MODEL_URL':url,'PMO_REPORT_MODEL_TOKEN':''})
+            assert 'processed: 1' in done.stdout and len(calls)==1
+        analysis, = history(pm, published)['items']
+        assert analysis['status']=='ready' and analysis['requestedBy']==str(owner)
+        assert analysis['candidates'][0]['sourceRef']==f"report:{published['reportId']}@{published['revision']}"
     with engine.connect() as c:
         fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
-    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0023'], capture_output=True, text=True,
+    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0024'], capture_output=True, text=True,
         env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
-    assert failed.returncode != 0 and 'Refusing to discard Fact source and verification history' in failed.stderr
+    assert failed.returncode != 0 and 'Refusing to discard report analysis runs' in failed.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -187,6 +205,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert readback['historical'] and readback['snapshotId'] == snapshot['snapshotId']
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
             assert data(pm.get(report_path(report)+'/facts'))['items'] == [fact]
+            assert history(pm, published)['items']==[analysis]
             assert data(pm.get(fact_path(fact)+'/history'))['items'][0]['actorId'] == str(verifier)
             assert data(pm.get(f'reports/{legacy_report}/facts'))['items'] == []
             assert pm.get(f"evidence/{att['evidenceId']}?download=true").content == sheet

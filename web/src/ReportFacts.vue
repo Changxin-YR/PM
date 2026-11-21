@@ -2,6 +2,7 @@
 import {ref,watch} from 'vue'
 import {Check,ChevronDown,ChevronUp,GitMerge,History,Plus,RefreshCw,X} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
+import ReportAnalysis from './ReportAnalysis.vue'
 
 type Status='candidate'|'verified'|'disputed'|'rejected'
 type Trust='low'|'medium'|'high'
@@ -18,6 +19,7 @@ const page=ref<Page>(), expanded=ref(false), reading=ref(false), working=ref(fal
 const error=ref(''), notice=ref(''), mode=ref<Mode>(), selected=ref<Fact>(), trust=ref<Trust>('medium')
 const subject=ref(''), predicate=ref(''), value=ref(''), kind=ref('text'), quote=ref(''), at=ref(''), reason=ref('')
 const evidence=ref<string[]>([]), historyFor=ref(''), log=ref<Log>(), logLoading=ref(false)
+let pickedAt:{local:string;iso:string}|undefined
 const statusLabels:Record<Status,string>={candidate:'候选',verified:'已核验',disputed:'待澄清',rejected:'已驳回'}
 const trustLabels:Record<Trust,string>={low:'低',medium:'中',high:'高'}
 const actionLabels:Record<string,string>={proposed:'提报',verified:'核验',disputed:'发现冲突',resolved:'完成澄清',superseded:'驳回'}
@@ -49,7 +51,13 @@ async function read(n=page.value?.page??1){
 function toggle(){expanded.value=!expanded.value;if(expanded.value)void read(1)}
 function start(next:Mode,item?:Fact){
   mode.value=next;selected.value=item;trust.value='medium';subject.value='';predicate.value='';value.value=''
-  kind.value='text';quote.value='';at.value=initialTime();reason.value='';evidence.value=[];error.value='';notice.value='';attempt=null
+  kind.value='text';quote.value='';at.value=initialTime();reason.value='';evidence.value=[];error.value='';notice.value='';attempt=null;pickedAt=undefined
+}
+function choose(item:Pick<Fact,'subject'|'predicate'|'typedValue'|'quote'|'asOf'>){
+  start('propose')
+  subject.value=item.subject;predicate.value=item.predicate;value.value=String(item.typedValue);quote.value=item.quote
+  at.value=new Date(new Date(item.asOf).getTime()+8*3600000).toISOString().slice(0,16)
+  pickedAt={local:at.value,iso:item.asOf}
 }
 async function showLog(factId:string,n=1){
   const id=++logSeq,scope=epoch
@@ -68,7 +76,7 @@ async function submit(){
   let path=`reports/${props.reportId}/facts/proposals`,rev=page.value.reportRevision,payload:object
   if(operation==='propose'){
     payload={subject:subject.value,predicate:predicate.value,typedValue:kind.value==='bool'?value.value==='true':value.value,
-      asOf:new Date(`${at.value}+08:00`).toISOString(),quote:quote.value,sourceRef:`report:${props.reportId}@${rev}`}
+      asOf:pickedAt?.local===at.value?pickedAt.iso:new Date(`${at.value}+08:00`).toISOString(),quote:quote.value,sourceRef:`report:${props.reportId}@${rev}`}
   }else{
     if(!target)return
     path=`facts/${target.factId}/${operation}`;rev=target.revision
@@ -107,6 +115,8 @@ watch(()=>[props.reportId,props.revision],()=>{
     <div v-if="expanded" v-loading="reading" class="fact-content">
       <el-alert v-if="error" :title="error" type="error" :closable="false"/>
       <p v-if="notice" role="status" class="fact-notice">{{notice}}</p>
+      <ReportAnalysis v-if="page?.canPropose" :report-id="reportId" :revision="page.reportRevision" :api="api"
+        :can-select="!working&&!reading&&!mode" @choose="choose"/>
       <form v-if="mode" class="fact-form" :aria-label="mode==='propose'?'Fact 候选':mode==='verify'?'Fact 核验':'Fact 澄清'" @submit.prevent="submit">
         <div v-if="mode==='propose'" class="fact-inputs">
           <label>主题<input v-model="subject" required maxlength="256" :disabled="working"></label>

@@ -6,12 +6,14 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
+import sys
 from base64 import b64encode
 from io import BytesIO
 from PIL import Image
 import time
 from uuid import uuid4
 import httpx
+import pytest
 import sqlalchemy as sa
 from argon2 import PasswordHasher
 from pmo import schema_v1 as db
@@ -126,6 +128,36 @@ def test_browser_report_fact_conflict_resolution(live, team):
     submit(users['pm'], project + '/reports', amount='3.80', period='2025-W02')
     with vite(live[2]) as (root, url):
         run_browser(root, url, 'facts', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm','reviewer'))})
+
+
+@pytest.mark.parametrize('model_on', [False, True], ids=['off', 'simulated'])
+def test_browser_report_analysis(live, team, model_on, tmp_path):
+    from test_database_roles import serve
+    from test_facts import submit
+    from test_report_analysis import answer, gateway, NARRATIVE
+    from test_reports import data
+
+    engine, _, port, env = live
+    _, _, users, _ = team
+    project, _, _ = execution_fixture(live, team)
+    report = submit(users['pm'], project + '/reports', narrative=NARRATIVE)
+    params = {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
+              'PMO_TEST_MODEL':str(int(model_on))}
+    if model_on:
+        with gateway(answer()) as (model_url, calls), serve(engine.url, tmp_path,
+                extra_env={'PMO_REPORT_ANALYSIS':'1'}) as api, vite(api.base_url.port) as (root, url):
+            process = subprocess.Popen([sys.executable, '-m', 'pmo.report_analysis_worker', '--watch'],
+                env={**env,'PMO_REPORT_ANALYSIS':'1','PMO_REPORT_MODEL_URL':model_url,'PMO_REPORT_MODEL_TOKEN':''})
+            try:
+                run_browser(root, url, 'analysis', params)
+            finally:
+                process.terminate(); process.wait(timeout=10)
+            assert len(calls)==1
+    else:
+        with vite(port) as (root, url):
+            run_browser(root, url, 'analysis', params)
+        task, = data(users['pm'].get(project + '/tasks'))['items']
+        assert task['sourceType']=='report_analysis' and task['sourceId']==report['reportId']
 
 
 def test_browser_delivery_through_archive(live, team):
