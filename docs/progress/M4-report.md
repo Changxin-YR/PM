@@ -78,3 +78,14 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格、mypy 与 Vue 类型，`.local/assistant-check.log`。 |
 
 初次定向 FAIL（3 项 PASS、1 项 FAIL，`.local/assistant-affected-first.log`）：用例未先办理进入复盘，产品正确拒绝写入。修正用例按真实审批流程推进后复验。运行目录 95/95 基线 REST + 38 工程接口，40 项 MCP 工具不变。四模式在合成工作台可用；过程模式的外部模型仅在授权下配置，其余模式当前采用确定性建议/有来源的模板输出，未验真实模型、真实试点或签核。
+
+## 0028 冻结参考向量首批
+
+依据：§4、§5、§20.4 与规格包 `04_PMO_V1_规则测试向量.json`。基准 SHA `e52fd065a441367f32824b62361f3bc95c2f9c13`，验证源码树 `5e140f7ed6a9ff5b7f728482123a63c7d07bc3db`（含测试、生成器及逐项 CSV，不含本段）；Windows、实际 PostgreSQL 16 随机 schema、真实回环 HTTP，合成身份与禁用模型。运行产品 `review_scores`、`cost_math`、`health_calculation`、`reports` 和 REST，不执行规格包中的参考实现。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reference_vectors.py --tb=short --junitxml=.local/reference-vectors.xml` | 0 | PASS：44 项 / 27.69 秒；8 条评分、16 条成本、6 条健康、2 条需求、4 条周报、8 条状态。`PMO_TEST_DATABASE_URL` 依 `dev.ps1 test` 从本机开发配置组装；共享开发 schema 未迁移。 |
+| `.venv/Scripts/python.exe scripts/reference_vector_evidence.py .local/reference-vectors.xml docs/acceptance/reference-vectors-0028.csv` | 0 | [102 条逐项结果](../acceptance/reference-vectors-0028.csv)：PASS 44、FAIL 0、NOT_RUN 58；未匹配测试结果的冻结输入不计为通过。 |
+
+此前同一 pytest 命令两次退出 1：首次将 `.local/dev.env` 的口令误作 URL，22 项未完成 fixture 初始化；按开发脚本组装 URL 后，6 项凭证用例误取写入回执中的 `revision`（`.local/reference-vectors-dto-fail.xml`），改为人类账簿读取实际明细版本后核验，未改产品契约或放宽断言。
