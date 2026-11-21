@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 import jsonschema
+import pytest
 import sqlalchemy as sa
 import yaml
 from alembic.config import Config
@@ -13,8 +14,12 @@ from alembic.script import ScriptDirectory
 from mcp import ClientSession,StdioServerParameters
 from mcp.client.stdio import stdio_client
 from pmo import schema_v1 as db
+from pmo.gates import ENTRY, REVIEW
 from pmo.mcp_server import tools
+from pmo.project_lifecycle import APPROVED, DIRECT
+from pmo.reviews import decision_stage, withdrawal_stage
 from pmo.tool_routes import ROUTES
+from scripts.schema_erd import render as render_erd
 
 
 def test_runtime_has_all_baseline_methods_paths_and_tool_mappings(live):
@@ -29,6 +34,51 @@ def test_runtime_has_all_baseline_methods_paths_and_tool_mappings(live):
     actual = operations(api.get('/openapi.json').json()['paths'])
     assert len(expected)==95 and {op:actual.get(op) for op in expected}==expected
     assert len(tools)==40 and set(tools)==set(ROUTES) and set(tools)<=actual.keys()
+
+def test_postgres_erd_matches_migrated_relationships(live):
+    with live[0].connect() as conn:
+        conn.exec_driver_sql('SET TRANSACTION READ ONLY')
+        assert render_erd(conn) == Path('docs/erd.md').read_text(encoding='utf-8')
+
+
+def test_runtime_stage_catalog_matches_frozen_graph(live):
+    rules = yaml.safe_load(next(Path('docs/spec').glob('02_*.yaml')).read_text(encoding='utf-8'))
+    states = rules['states']
+    expected = {(origin, target) for origin, targets in rules['allowed_transitions'].items() for target in targets}
+    assert len(states) == 13 and len(expected) == 23
+
+    gates = {(start, REVIEW[gate]) for gate, start in ENTRY.items()}
+    gates |= {(REVIEW[gate], decision_stage(gate, verdict)) for gate in ENTRY for verdict in rules['review_verdicts']}
+    gates |= {(REVIEW[gate], withdrawal_stage(gate)) for gate in ENTRY}
+    lifecycle = DIRECT | APPROVED | {('rejected', 'drafting')}
+    assert gates.isdisjoint(lifecycle) and gates | lifecycle == expected
+
+    # Copy only the real PostgreSQL column/check constraints, not application rows, FKs or audit triggers.
+    # Exercise all known state pairs for each receipt path on this disposable relation.
+    with live[0].begin() as conn:
+        conn.exec_driver_sql('CREATE TEMP TABLE pmo_edge_probe (LIKE project_stage_transitions INCLUDING CONSTRAINTS) ON COMMIT DROP')
+        insert = sa.text('''INSERT INTO pmo_edge_probe
+            (project_id, from_revision, to_revision, from_stage, to_stage, review_id, approval_request_id, actor_id,
+             actor_type, request_id, transitioned_at)
+            VALUES (:id, 1, 2, :origin, :target, :review, :approval, :id, 'human', :id, now())''')
+        ref = uuid4()
+        for review, approval, permitted in ((ref, None, gates), (None, ref, lifecycle)):
+            observed = set()
+            for origin in states:
+                for target in states:
+                    with conn.begin_nested() as savepoint:
+                        try:
+                            conn.execute(insert, dict(id=ref, origin=origin, target=target, review=review, approval=approval))
+                            observed.add((origin, target))
+                        except sa.exc.IntegrityError as e:
+                            assert e.orig.sqlstate == '23514'  # CHECK violation, not an unrelated failure.
+                        finally:
+                            savepoint.rollback()
+            assert observed == permitted
+        for review, approval in ((None, None), (ref, ref)):
+            with pytest.raises(sa.exc.IntegrityError, match='ck_project_stage_edges'), conn.begin_nested():
+                conn.execute(insert, dict(id=ref, origin='drafting', target='charter_review', review=review, approval=approval))
+
 
 def test_postgres_contract_and_downgrade_guard(live,actor):
     actor()

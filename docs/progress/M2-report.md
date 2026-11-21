@@ -163,3 +163,13 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格、Python 87 文件（`.local/lifecycle-0030-check.log`）、Vue 类型。 |
 
 修复后首轮 `.local/lifecycle-0030-affected.log` 退出 1（29 PASS、1 FAIL）：执行中的结项预检按设计首先返回阶段不符。在重新完成交付后原断言继续检查客户争议仍阻断结项；未放宽关口或删除断言。
+
+## 独立终止裁决与暂停项目复盘
+
+依据：§4.1、§20.4–20.5、LR-01、A09/A14。基准 SHA `1e8e6e60623bd6c206acba282da597350749366b`；综合实测源码树 `8957c1e2dc493e0aba383432660c11b9c19e827c`，仅增加终止归档断言后的树为 `9a9b7a5eaa842cffdf3e97ed4718d7b8f71f9aaa`。实现 `pmo/project_lifecycle.py::propose`：同一轮次保留 Sponsor 自提申请，但不让一条 Sponsor 无法自批的申请挡住独立 PM 作同一申请；本人的重复申请仍冲突。审批权、终止同意及政策未签核限制均未改变。Windows、PostgreSQL 16.14 随机 schema、回环 HTTP/stdio、合成独立账户，模型关闭，无业务签核。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py -k termination_pending_from_sponsor --tb=short --junitxml=.local/lifecycle-authority-first.xml` | 1 | FAIL：执行中和暂停中，独立 PM 的申请均被错误返回 `TRANSITION_REQUEST_PENDING`。`.local/lifecycle-authority-first.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py tests/test_mcp_transition.py --tb=short --junitxml=.local/lifecycle-authority-affected.xml` | 0 | PASS：9 项 / 27.70 秒，`.local/lifecycle-authority-affected.log`。回读独立终止、重复与跨项目拒绝、Agent 不能批准、暂停恢复、落地返工和交付返工的权限与落库记录。 |
+| `.venv/Scripts/python.exe -m pytest -q 'tests/test_lifecycle.py::test_termination_pending_from_sponsor_does_not_block_independent_pm_request[on_hold]' --tb=short --junitxml=.local/rc0030-terminated-archive.xml` | 0 | PASS：1 项 / 12.54 秒，`.local/rc0030-terminated-archive.log`。`on_hold→terminated→retrospective→archived` 保留终止类型和四问，缺答复或确认 Lesson 时拒绝；有权独立人归档，阶段历史无 `closed`。 |

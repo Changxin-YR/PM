@@ -335,10 +335,14 @@ def propose(projectId: UUID, command: Propose, authorization: Auth, key: Key, ex
         if len(why) < 3:
             raise Failure(422, 'TRANSITION_REASON_REQUIRED', project_id=p.id)
         contents, refs = basis(c, a, p, edge)
-        exists = c.scalar(sa.select(approval.c.id).join(intents, intents.c.approval_id == approval.c.id).where(
-            approval.c.project_id == p.id, approval.c.status == 'pending', approval.c.expected_revision == p.revision,
-            approval.c.snapshot_hash == fingerprint(contents), intents.c.to_stage == command.toStage).limit(1))
-        if exists:
+        duplicate = sa.select(approval.c.id).join(intents, intents.c.approval_id == approval.c.id).where(
+            approval.c.project_id == p.id, approval.c.action == ACTION, approval.c.status == 'pending',
+            approval.c.expected_revision == p.revision, approval.c.snapshot_hash == fingerprint(contents),
+            intents.c.from_stage == edge[0], intents.c.to_stage == edge[1])
+        if edge[1] == 'terminated' and a.person == p.pm_id and p.sponsor_id not in (None, a.person):
+            # The Sponsor cannot approve their own intent. Preserve it without blocking the PM's independent request.
+            duplicate = duplicate.where(approval.c.requested_by != p.sponsor_id)
+        if c.scalar(duplicate.limit(1)):
             raise Failure(409, 'TRANSITION_REQUEST_PENDING', project_id=p.id)
         req, i = persist(c, a, p, edge, why, contents, refs)
         item = TransitionRequest(requestId=req.id, projectId=p.id, fromStage=i.from_stage, toStage=i.to_stage,

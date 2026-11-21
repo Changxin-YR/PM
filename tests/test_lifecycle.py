@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 from uuid import UUID, uuid4
 
+import pytest
 import sqlalchemy as sa
 
 from pmo import schema_v1 as db
@@ -347,3 +348,87 @@ def test_pause_resume_checks_sponsor_deadline_and_stale_revision(live, team):
     resume = data(propose(pm, project, 'executing'))
     resumed = data(judgment(sponsor, resume))
     assert datetime.fromisoformat(resumed['holdUntil']) == expiry and stage(pm, project)['stage'] == 'executing'
+
+
+@pytest.mark.parametrize('origin', ['executing', 'on_hold'])
+def test_termination_pending_from_sponsor_does_not_block_independent_pm_request(live, team, origin):
+    engine, api, _, _ = live
+    pid, _, users, _ = team
+    pm, sponsor, reviewer, outsider = (users[r] for r in ('pm', 'sponsor', 'reviewer', 'outsider'))
+    project, _, _ = begin_execution(live, team)
+    if origin == 'on_hold':
+        pause = data(propose(pm, project, 'on_hold'))
+        data(judgment(sponsor, pause, holdUntil=(datetime.now(UTC) + timedelta(hours=1)).isoformat()))
+
+    self_request = data(propose(sponsor, project, 'terminated'))
+    assert self_request['fromStage'] == origin and self_request['status'] == 'pending'
+    assert judgment(sponsor, self_request).json()['code'] == 'INDEPENDENT_APPROVER_REQUIRED'
+    assert judgment(pm, self_request).status_code == 403
+    assert propose(sponsor, project, 'terminated').json()['code'] == 'TRANSITION_REQUEST_PENDING'
+    independent = data(propose(pm, project, 'terminated'))
+    assert independent['requestId'] != self_request['requestId']
+    assert propose(pm, project, 'terminated').json()['code'] == 'TRANSITION_REQUEST_PENDING'
+    assert judgment(outsider, independent).status_code == 404
+    assert judgment(reviewer, independent).status_code == 403
+    # The same scoped token as the requesting PM may propose; it still cannot decide or execute by REST.
+    token = issue(pm, pid, ('pmo_transition_request',))
+    auth = {'Authorization': 'Bearer ' + token, **headers(independent['revision'])}
+    assert api.post(f"/api/v1/approvals/{independent['requestId']}/decide", headers=auth,
+        json={'decision': 'approve', 'rationale': 'Agent cannot decide termination.'}).status_code == 403
+    assert execute(pm, project, independent).status_code == 403
+    assert stage(pm, project)['stage'] == origin
+
+    approved = data(judgment(sponsor, independent))
+    assert approved['status'] == 'applied' and approved['decisionId'] and stage(pm, project)['stage'] == 'terminated'
+    assert judgment(sponsor, independent).json()['code'] == 'VERSION_CONFLICT'
+    old = next(row for row in data(sponsor.get('approvals', params={'projectId': pid}))['items']
+               if row['requestId'] == self_request['requestId'])
+    assert old['stale'] and not old['canDecide'] and old.get('decisionId') is None
+    with engine.connect() as c:
+        assert c.scalar(sa.text("SELECT count(*) FROM project_stage_transitions WHERE project_id=:id AND to_stage='terminated'"),
+                        {'id': pid}) == 1
+    if origin == 'on_hold':
+        data(execute(pm, project, data(propose(pm, project, 'retrospective'))))
+        path = project + '/retrospective'
+        draft = data(pm.get(path))
+        assert (draft['kind'], draft['fromStage']) == ('terminated', 'terminated')
+        assert propose(pm, project, 'archived').json()['code'] == 'RETROSPECTIVE_ANSWERS_REQUIRED'
+        answers = ['Stopped after the external sponsor withdrew the original delivery objective.', *ANSWERS[1:]]
+        data(pm.put(path, headers=headers(draft['revision']), json={'answers': answers}))
+        assert propose(pm, project, 'archived').json()['code'] == 'CONFIRMED_LESSON_REQUIRED'
+        lesson = data(pm.post(project + '/lessons', headers=headers(), json={'category': 'governance',
+            'what': 'The revised goal no longer justified the project.', 'rootCause': 'Original funding was withdrawn.',
+            'advice': 'Reconfirm scope and funding before resuming paused work.'}))
+        data(reviewer.post(f"lessons/{lesson['lessonId']}/confirm", headers=headers(lesson['revision']), json={}))
+        archive = data(propose(pm, project, 'archived'))
+        assert judgment(sponsor, archive).status_code == 403
+        assert data(judgment(reviewer, archive))['status'] == 'applied'
+        recorded = data(pm.get(path))
+        assert (recorded['stage'], recorded['kind'], recorded['answers'], recorded['canSave']) == ('archived', 'terminated', answers, False)
+        with engine.connect() as c:
+            visited = c.execute(sa.text('SELECT to_stage FROM project_stage_transitions WHERE project_id=:id ORDER BY to_revision'),
+                                {'id': pid}).scalars().all()
+            assert visited[-3:] == ['terminated', 'retrospective', 'archived'] and 'closed' not in visited
+
+
+def test_failed_feasibility_and_delivery_rework_return_only_to_allowed_stage(live, team):
+    _, _, users, _ = team
+    pm, reviewer, sponsor = (users[r] for r in ('pm', 'reviewer', 'sponsor'))
+    project, first = start_feasibility(live, team)
+    score(reviewer, first, [2, 3, 3, 3, 3])
+    assert decide(pm, first, verdict='reject').status_code == 403
+    assert data(decide(reviewer, first, verdict='reject'))['decision']['stage'] == 'designing'
+    assert stage(pm, project)['stage'] == 'designing'
+    assert propose(pm, project, 'executing').json()['code'] == 'TRANSITION_NOT_ALLOWED'
+    updated = gate(pm, project, 'feasibility')
+    assert updated != first
+    score(reviewer, updated, [3] * 5)
+    data(decide(reviewer, updated))
+    complete_milestones(pm, reviewer, project)
+    data(execute(pm, project, data(propose(pm, project, 'delivering'))))
+    assert propose(sponsor, project, 'executing').status_code == 403
+    rework = data(propose(pm, project, 'executing'))
+    assert execute(reviewer, project, rework).json()['code'] == 'TRANSITION_NOT_AUTHORIZED'
+    assert judgment(sponsor, rework).status_code == 403  # This is a direct PM-controlled step, not a Sponsor approval.
+    assert data(execute(pm, project, rework))['fromStage'] == 'delivering'
+    assert stage(pm, project)['stage'] == 'executing'

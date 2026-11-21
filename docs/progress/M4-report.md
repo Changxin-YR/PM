@@ -163,3 +163,16 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：三套规格静态检查、Python 87 文件及 Vue 类型，`.local/assistant-model-check-final.log`。运行 `app.openapi()` 按方法、路径、operationId 比对：基线 95/95、工程 42；40 MCP 不变。 |
 
 隔离 Compose `pmo104-rc-0c3c7df1` 用 `docker @stack build` 构建候选镜像（PASS，`.local/rc0029-compose-build.log`，保留 Web 体积告警）；与同一已备份停写的隔离库升级配套。`0028→0029` 后保留 15 项目、30 条消费回执、33 条旧审计；就绪/存活均 200，匿名预览 401，两个模型关闭。最初从 Nginx 入口探测内部 OpenAPI 未找到；改从 API 容器内复核，未向代理增加公开路由（PASS，`.local/rc0029-compose-verify.log`）。真实模型版本及批准外发、目标 Host、两试点和签核各自仍 BLOCKED_EXTERNAL。
+
+## 0030 综合复验与物理关系图
+
+依据：§3、§4.1、§20.3–20.6、T07/T10。基准 SHA `1e8e6e60623bd6c206acba282da597350749366b`，综合实测源码树 `8957c1e2dc493e0aba383432660c11b9c19e827c`；后续仅追加终止归档断言，见 [M2](M2-report.md#独立终止裁决与暂停项目复盘)。Windows、Edge、回环 HTTP/stdio、PostgreSQL 16.14 隔离合成 schema/Compose。关系图由 `scripts/schema_erd.py` 只读生成：78 张业务及技术表、202 个物理外键；421 个冻结字段均在实际库中。`decisions.review_id` 对非关口裁决允许为空，见 [ADR 0011](../adr/0011-closing-evidence-and-lifecycle.md)。字段类型、索引和约束语义不能据字段存在直接判定一致。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_runtime.py -k 'postgres_erd or stage_catalog or postgres_contract' --tb=short --junitxml=.local/schema-0030-runtime.xml` | 0 | PASS：3 项 / 13.70 秒，`.local/schema-0030-runtime.log`；实际 FK 对表，23 条服务状态边与冻结 YAML 一致；用实库 CHECK 验证带评审和审批回执的合法/非法状态组合。 |
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0030-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0030-backend.xml` | 0 | PASS：269 项 / 399.32 秒，`.local/rc0030-backend.log`；逐项 MCP JSON 与 `docs/acceptance/mcp-stdio-0029.json` 字节一致。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0030-edge.xml` | 0 | PASS：19 项 / 205.16 秒，`.local/rc0030-edge.log`；包含结项撤回后的执行返工及完整无模型闭环。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit`；`docker @stack build` | 0 | PASS：规格、类型、候选镜像；`.local/rc0030-check.log`、`.local/rc0030-compose-build.log`，保留 Web 包体积告警。 |
+
+隔离 Compose `pmo104-rc-0c3c7df1` 停写备份后以 `docker @stack up --no-deps --abort-on-container-exit --exit-code-from migrate migrate` 迁移，再 `up -d --wait` 启动候选服务，退出 0（`.local/rc0030-compose-verify.log`）。升级 `0029→0030` 保留 15 项目、30 消费回执、33 审计；存活/就绪 200、两模型开关关闭。该合成运行库不含附件原件；带附件升级和恢复单独见 [M2](M2-report.md#0030-结项撤回按冻结状态表回到执行)。共享库未迁移。以上不改变 T09、真实模型、试点、签核或生产状态。
