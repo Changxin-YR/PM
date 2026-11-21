@@ -408,6 +408,8 @@ def test_conditional_closing_freezes_revalidates_and_records_exact_scope(live, t
     assert decide(reviewer, review, verdict='conditional_pass').json()['code'] == 'REVIEW_SNAPSHOT_STALE'
     assert stage(pm, project)['stage'] == 'closing_review'
     data(pm.post(review + '/withdraw', headers=headers(frozen['review']['revision']), json={'reason': 'Replace revoked material.'}))
+    assert stage(pm, project)['stage'] == 'executing'
+    data(execute(pm, project, data(propose(pm, project, 'delivering'))))
     state, command = prepare()
     signed = data(customer.post(path, headers=headers(state['revision']), json=command))
     review = gate(pm, project, 'closing')

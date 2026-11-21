@@ -165,6 +165,31 @@ try {
     await launch(pm)
   } else if(process.env.PMO_TEST_PHASE==='delivery') {
     await directStage(pm,'有效里程碑均已完工，并已核验交付凭证。','delivering','交付验收')
+  } else if(process.env.PMO_TEST_PHASE==='withdrawal') {
+    const original=process.env.PMO_TEST_REVIEW_ID
+    const reason='补核原交付材料后，重新提交结项评审。'
+    async function openOriginal() {
+      const panel=await open(pm,'关口送审')
+      const row=panel.getByRole('row').filter({has:pm.getByRole('cell',exact(original))})
+      await button(row,'打开评审工作台').click()
+      return dialog(pm,'关口人工工作台')
+    }
+    const workbench=await openOriginal()
+    await button(workbench,'撤回评审').click()
+    await workbench.getByLabel('撤回原因',{exact:true}).fill(reason)
+    const withdrawn=await write(pm,'POST','/reviews/[^/]+/withdraw',button(workbench,'确认撤回'))
+    expect(withdrawn).toMatchObject({review:{reviewId:original,verdict:'withdrawn'},withdrawalReason:reason})
+    await pm.reload()
+    const history=await open(pm,'阶段流转')
+    await expect(history.getByText('当前阶段：执行中',{exact:true})).toBeVisible()
+    const reopened=await openOriginal()
+    await expect(reopened.getByText(reason,{exact:true})).toBeVisible()
+    await closeDialog(reopened)
+    await directStage(pm,'已重新核对里程碑完成凭证。','delivering','交付验收')
+    const ready=await open(pm,'关口送审')
+    await button(ready,'提交结项评审').click()
+    const receipt=await write(pm,'POST','/projects/[^/]+/reviews',button(dialog(pm,'确认送审'),'确认送审'))
+    expect(receipt.reviewId).not.toBe(original)
   } else if(process.env.PMO_TEST_PHASE==='exception') {
     const command=JSON.parse(process.env.PMO_TEST_REQUIREMENT_EXCEPTION)
     const customer=await actor('client_representative'), reviewer=await actor('reviewer')

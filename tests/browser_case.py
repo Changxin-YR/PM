@@ -315,6 +315,22 @@ def test_browser_drafting_through_archive_without_model(live, team):
                      'closing_review', 'closed', 'retrospective', 'archived']
 
 
+def test_browser_closing_withdrawal_rework_and_fresh_submission(live, team):
+    from test_lifecycle import gate
+    from test_requirement_exceptions import deliver_with_exception_material
+    from test_reviews import bench
+
+    _, _, users, _ = team
+    pm = users['pm']
+    project, _ = deliver_with_exception_material(live, team, confirm=True)
+    closing = gate(pm, project, 'closing')
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
+            'PMO_TEST_PHASE':'withdrawal', 'PMO_TEST_REVIEW_ID':closing.split('/')[-1]})
+    assert stage(pm, project)['stage'] == 'closing_review'
+    assert bench(pm, closing)['review']['verdict'] == 'withdrawn'
+
+
 def test_browser_customer_exception_and_conditional_decision(live, team):
     from test_requirement_exceptions import deliver_with_exception_material
 

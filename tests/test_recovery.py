@@ -19,6 +19,7 @@ from pmo import evidence_storage, recovery, schema_v1 as db
 from pmo.audit_store import audit
 from pmo.health_calculation import TZ, week_key
 from pmo.requirement_disputes import t as disputes
+from pmo.reviews import snapshots as review_snapshots, transitions
 from pmo.session_schema import sessions
 from test_database_roles import serve
 from test_evidence import binary
@@ -114,8 +115,32 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     original = upload()
     with engine.connect() as c:
         assert c.scalar(sa.text('SELECT version_num FROM alembic_version')) == '0016'
-    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True,
-                   env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
+    cli = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
+    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', '0029'], check=True, env=cli)
+    with engine.begin() as c:
+        # A separate legacy project emulates an old closing withdrawal, not a new approval.
+        legacy_project = c.scalar(db.projects.insert().values(org_id=org, code='OLD-WITHDRAW', name='Legacy withdrawal',
+            stage='delivering', revision=3, initiator_id=owner, created_by=owner).returning(db.projects.c.id))
+        review = c.scalar(db.reviews.insert().values(project_id=legacy_project, created_by=owner, type='closing', status='decided',
+            round=1, revision=2, attendees=[], snapshot_hash='b'*64, verdict='withdrawn', minutes='Synthetic old withdrawal')
+            .returning(db.reviews.c.id))
+        c.execute(review_snapshots.insert().values(review_id=review, rule_version='legacy-synthetic', snapshot_hash='b'*64,
+            materials={'reviewers': [{'person_id': str(verifier)}]}, source_refs=[]))
+        historical = dict(project_id=legacy_project, review_id=review, actor_type='human', actor_id=owner)
+        c.execute(transitions.insert().values(**historical, from_revision=1, to_revision=2,
+            from_stage='delivering', to_stage='closing_review', request_id=uuid4()))
+        legacy_withdrawal = uuid4()
+        c.execute(transitions.insert().values(**historical, from_revision=2, to_revision=3,
+            from_stage='closing_review', to_stage='delivering', request_id=legacy_withdrawal))
+    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True, env=cli)
+    with pytest.raises(sa.exc.IntegrityError, match='ck_project_stage_closing_rework'), engine.begin() as c:
+        # A fresh review ID avoids the existing one-exit-per-review index masking the new check.
+        fresh = c.scalar(db.reviews.insert().values(project_id=legacy_project, created_by=owner, type='closing', status='pending',
+            round=2, attendees=[], snapshot_hash='c'*64).returning(db.reviews.c.id))
+        c.execute(review_snapshots.insert().values(review_id=fresh, rule_version='legacy-synthetic', snapshot_hash='c'*64,
+            materials={'reviewers': [{'person_id': str(verifier)}]}, source_refs=[]))
+        c.execute(transitions.insert().values(**{**historical, 'review_id': fresh}, from_revision=3, to_revision=4,
+            from_stage='closing_review', to_stage='delivering', request_id=uuid4()))
     path = f'projects/{project}'
     sheet = worksheet()
     with engine.begin() as c:
@@ -129,7 +154,6 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             reason='Original synthetic objection', open_request_id=uuid4()).returning(disputes.c.id))
         c.execute(disputes.update().where(disputes.c.id == dispute).values(revision=2, withdrawn_at=sa.func.clock_timestamp(),
             withdrawal_reason='Explicit synthetic withdrawal', withdrawal_request_id=uuid4()))
-    cli = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
     guarded = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0026'], capture_output=True, text=True, env=cli)
     assert guarded.returncode != 0 and 'Refusing to discard requirement dispute history' in guarded.stderr
     with serve(source, tmp_path, evidence_dir=originals, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as pm:
@@ -242,6 +266,10 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert {(r[0],r[3],str(r[4])) for r in rows} == {(original,'milestone',str(milestone)), (external,'project',str(project)),
                 (fact_attachment,'report',report['reportId'])}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
+            assert restored.execute('''SELECT project_id, review_id, from_stage, to_stage, from_revision, to_revision
+                FROM project_stage_transitions WHERE request_id=%s''', (legacy_withdrawal,)).fetchone() == (
+                legacy_project, review, 'closing_review', 'delivering', 2, 3)
+            assert restored.execute("SELECT convalidated FROM pg_constraint WHERE conname='ck_project_stage_closing_rework'").fetchone() == (False,)
             assert restored.execute('''SELECT narrative, content_hash, submitted_by, confirmed_by, confirmed_at
                 FROM public.reports WHERE id=%s''', (legacy_report,)).fetchone() == ('Preserve legacy report text', None, None, None, None)
             assert restored.execute('SELECT results FROM health_snapshots WHERE id=%s', (old_snapshot,)).fetchone() == ({'health':'green'},)

@@ -25,6 +25,7 @@ type Workbench={
   assessment?:{classification:keyof typeof classifications;total?:string;means:Record<string,string>;weakDimensions:string[]}
   confirmations:{role:Role;confirmedAt:string;confirmedBy:string;current:boolean}[]
   decision?:{decisionId:string;option:string;rationale:string;decidedAt:string;decidedBy:string;stage:string}
+  withdrawalReason?:string
   requirementException?:RequirementException
   tasks:{taskId:string;title:string;assigneeId?:string;dueAt?:string;sourceType:string;sourceId:string;status:string;revision:number}[]
   canScore:boolean;canAppeal:boolean;canDecide:boolean;canWithdraw:boolean;canConfirmSponsor:boolean;canConfirmInitiator:boolean
@@ -270,6 +271,7 @@ async function submit(previous?:Attempt){
             <p class="meta"><time :datetime="view.decision.decidedAt">{{localTime(view.decision.decidedAt)}}</time> · 裁决人 {{view.decision.decidedBy}}</p>
             <p>流转阶段：{{stages[view.decision.stage]??view.decision.stage}}</p>
           </template>
+          <p v-else-if="view.withdrawalReason" class="reason">{{view.withdrawalReason}}</p>
         </section>
         <section v-if="view.appeal" class="group" aria-label="复审申请记录">
           <h4>复审申请记录</h4><p class="reason">{{view.appeal.reason}}</p>

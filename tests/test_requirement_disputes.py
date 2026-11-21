@@ -119,10 +119,18 @@ def test_dispute_changes_frozen_closing_basis_and_is_atomic(live, team):
     opened = data(customer.post(path, headers=key, json=command))
     assert data(pm.get(project + '/requirement-metrics'))['confirmedWeight'] == 0
     code(decide(reviewer, closing), 409, 'REVIEW_SNAPSHOT_STALE')
-    data(pm.post(closing + '/withdraw', headers=headers(bench(pm, closing)['review']['revision']),
-                 json={'reason': 'Customer raised a formal objection to the submitted material.'}))
+    code(propose(pm, project, 'delivering'), 422, 'TRANSITION_NOT_ALLOWED')
+    withdraw_key = headers(bench(pm, closing)['review']['revision'])
+    reason = {'reason': 'Customer raised a formal objection to the submitted material.'}
+    code(reviewer.post(closing + '/withdraw', headers=withdraw_key, json=reason), 403, 'FORBIDDEN')
+    saved = pm.post(closing + '/withdraw', headers=withdraw_key, json=reason)
+    assert data(saved)['withdrawalReason'] == reason['reason']
+    assert pm.post(closing + '/withdraw', headers=withdraw_key, json=reason).json() == saved.json()
+    assert stage(pm, project)['stage'] == 'executing'
+    code(pm.post(project + '/reviews', headers=headers(stage(pm, project)['revision']),
+                 json={'reviewType': 'closing'}), 422, 'GATE_STAGE_MISMATCH')
+    data(execute(pm, project, data(propose(pm, project, 'delivering'))))
     assert any(i['code'] == 'CUSTOMER_DISPUTE_OPEN' for i in data(pm.get(project + '/closing/check'))['missing'])
-    assert stage(pm, project)['stage'] == 'delivering'
     withdrawn = data(customer.post(path + f"/{opened['disputeId']}/withdraw", headers=headers(),
                      json={'reason': 'Customer has rechecked the source and explicitly withdrew the objection.'}))
     assert withdrawn['revision'] == 2

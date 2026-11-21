@@ -151,3 +151,15 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：三套冻结规格检查、mypy 81 文件（`.local/feasibility-reminders-check.log`）、Vue 类型。 |
 
 首次同一套件 FAIL（退出 1，16 项 PASS、1 项 FAIL，`.local/feasibility-reminders.xml`）：测试把未确认 P0 造成的既有红线误认为提醒逻辑造成，修正为到期前后全部三线结果一致；不放宽规则。
+## 0030 结项撤回按冻结状态表回到执行
+
+依据：§4.1、§4.5、§20.4–20.5、LR-01/07。基准 `5d196790dcb063a45fd7c38a2479ff3d84aef051`，被测源码树 `765a9f99738838659a7931f82b85ead27792094a`（不含补录文档）。实现：`pmo/reviews.py::withdrawal_stage`、`pmo/review_outcomes.py::write_action`、`0030_closing_withdrawal_edge.py`、`web/src/ReviewWorkbench.vue`。Windows、真实回环 HTTP、PostgreSQL 16.14 隔离 schema/专库、Edge、合成角色，无模型或签核。历史 `closing_review→delivering` 保持只读，不补造裁决或重写阶段记录。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_requirement_disputes.py::test_dispute_changes_frozen_closing_basis_and_is_atomic --tb=short --junitxml=.local/lifecycle-edge-first.xml` | 1 | FAIL：旧版返回 `delivering`，冻结基线要求 `executing`，`.local/lifecycle-edge-first.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_requirement_disputes.py tests/test_requirement_exceptions.py tests/test_reviews.py tests/test_lifecycle.py tests/test_database_roles.py tests/test_recovery.py tests/test_operational_checks.py --tb=short --junitxml=.local/lifecycle-0030-affected-final.xml` | 0 | PASS：30 项 / 82.25 秒，`.local/lifecycle-0030-affected-final.log`。独立角色、过期材料、重复撤回、不能直回交付/直接重送；回到交付后仍受争议/LR-07 阻断，解决后新轮次可裁决。`0016→0029→0030` 带历史行升级，PostgreSQL 拦新非法行，真实 `pg_dump/pg_restore` 联合回读同一旧记录及原件。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_closing_withdrawal_rework_and_fresh_submission tests/browser_case.py::test_browser_drafting_through_archive_without_model tests/browser_case.py::test_browser_customer_exception_and_conditional_decision --tb=short --junitxml=.local/lifecycle-0030-edge.xml` | 0 | PASS：3 项 / 64.56 秒，`.local/lifecycle-0030-edge.log`。撤回后刷新状态/理由、重新交付后新申请；原正常和条件结项仍可用。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格、Python 87 文件（`.local/lifecycle-0030-check.log`）、Vue 类型。 |
+
+修复后首轮 `.local/lifecycle-0030-affected.log` 退出 1（29 PASS、1 FAIL）：执行中的结项预检按设计首先返回阶段不符。在重新完成交付后原断言继续检查客户争议仍阻断结项；未放宽关口或删除断言。

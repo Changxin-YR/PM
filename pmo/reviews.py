@@ -113,7 +113,7 @@ def transition_project(c, a, p, review, destination, rid, *, verdict=None, inten
     elif p.stage == REVIEW[gate] and review.status == 'pending' and a.kind == 'human':
         from .review_outcomes import reviewer_assignment
         if verdict == 'withdrawn':
-            allowed = destination == ENTRY[gate] and submitter(c, a, p, gate)
+            allowed = destination == withdrawal_stage(gate) and submitter(c, a, p, gate)
         else:
             recorded = c.scalar(sa.select(db.decisions.c.id).where(db.decisions.c.review_id == review.id,
                 db.decisions.c.project_id == p.id, db.decisions.c.decided_by == a.person, db.decisions.c.option == verdict))
@@ -129,6 +129,10 @@ def transition_project(c, a, p, review, destination, rid, *, verdict=None, inten
         actor_id=a.person, actor_type=a.kind, request_id=UUID(rid)))
 
 
+def withdrawal_stage(gate: Gate) -> str:
+    return 'executing' if gate == 'closing' else ENTRY[gate]
+
+
 def decision_stage(gate, verdict):
     if verdict in ('pass', 'conditional_pass'):
         return {'charter': 'designing', 'feasibility': 'executing', 'closing': 'closed'}[gate]
@@ -136,7 +140,7 @@ def decision_stage(gate, verdict):
         return None
     if gate == 'charter' and verdict == 'reject':
         return 'rejected'
-    return 'executing' if gate == 'closing' else ENTRY[gate]
+    return withdrawal_stage(gate)
 
 
 def submit_review(c, a, pid, gate: Gate, expected, key, rid):

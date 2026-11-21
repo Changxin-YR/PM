@@ -20,7 +20,7 @@ from .requirement_delivery import synthetic_confirmation
 from .requirement_exceptions import Receipt as RequirementException
 from .review_scores import Assessment, Dimension, DimensionScore, Reason, assess, rubric
 from .reviews import (APPROVAL_ACTION, ReviewView, approval_hash, decision_stage, reviews,
-                      snapshots, transition_project, transitions, view)
+                      snapshots, transition_project, transitions, view, withdrawal_stage)
 
 WORKBENCH = 'human_review_workbench'
 SCORE = 'human_review_score'
@@ -517,7 +517,7 @@ def write_action(auth, op, review_id, command, key, expected):
         destination = p.stage
         if op == WITHDRAW:
             why = reason(command.reason)
-            destination = ENTRY[review.type]
+            destination = withdrawal_stage(review.type)
             transition_project(c, a, p, review, destination, rid, verdict='withdrawn')
             if intent:
                 t = db.approval_requests
