@@ -81,7 +81,7 @@ def listing(auth, pid):
         items=[view(r) for r in rows]
         manage=can_manage(c,a,project) if a.kind=='human' else None
         return Result[Page](data=Page(items=items,total=len(items),canDraft=manage and project.stage in ('drafting','designing'),
-            canForecast=manage and project.stage in WRITABLE),meta=meta(op,refs(items)))
+            canForecast=manage and project.stage in WRITABLE),meta=meta(op,refs(items),project_id=project.id))
     return run(auth,op,query)
 
 

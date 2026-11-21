@@ -16,6 +16,7 @@ import pytest
 import sqlalchemy as sa
 
 from pmo import evidence_storage, recovery, schema_v1 as db
+from pmo.audit_store import audit
 from pmo.health_calculation import TZ, week_key
 from pmo.requirement_disputes import t as disputes
 from pmo.session_schema import sessions
@@ -59,6 +60,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     owner, verifier, customer = uuid4(), uuid4(), uuid4()
     password = uuid4().hex
     preupgrade_session, preupgrade_csrf = uuid4().hex, uuid4().hex
+    legacy_request_id = str(uuid4())
     with engine.begin() as conn:
         org = conn.scalar(db.organizations.insert().values(name='Recovery fixture', status='active').returning(db.organizations.c.id))
         digest = PasswordHasher(time_cost=1, memory_cost=8192).hash(password)
@@ -69,8 +71,11 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                                                    is_active=True, user_id=account))
             if person == owner:
                 conn.execute(db.user_roles.insert().values(user_id=account, role='system_admin'))
+                conn.execute(db.user_roles.insert().values(user_id=account, role='delegator'))
                 conn.execute(sessions.insert().values(account_id=account, token_hash=sha256(preupgrade_session.encode()).hexdigest(),
                     csrf_hash=sha256(preupgrade_csrf.encode()).hexdigest(), expires_at=datetime.now(UTC)+timedelta(hours=1)))
+                conn.execute(db.audit_logs.insert().values(actor_id=account, actor_type='human', org_id=org, action='auth_login',
+                             request_id=legacy_request_id, result='success'))
         project = conn.scalar(db.projects.insert().values(org_id=org, code='DRILL', name='Recovery fixture', stage='drafting',
                              revision=1, initiator_id=owner, created_by=owner, pm_id=owner).returning(db.projects.c.id))
         member(conn, project, owner, owner, 'pm')
@@ -114,6 +119,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     path = f'projects/{project}'
     sheet = worksheet()
     with engine.begin() as c:
+        assert c.execute(sa.select(audit.c.action, audit.c.source_refs).where(
+            audit.c.request_id == legacy_request_id)).one() == ('auth_login', None)
         c.execute(db.projects.update().where(db.projects.c.id == project).values(stage='executing'))
         original_id = c.scalar(sa.select(db.evidence_files.c.id).where(db.evidence_files.c.storage_key == original))
         # Storage drill fixture only; authenticated dispute writes are exercised in the random-schema HTTP suite.
@@ -122,6 +129,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             reason='Original synthetic objection', open_request_id=uuid4()).returning(disputes.c.id))
         c.execute(disputes.update().where(disputes.c.id == dispute).values(revision=2, withdrawn_at=sa.func.clock_timestamp(),
             withdrawal_reason='Explicit synthetic withdrawal', withdrawal_request_id=uuid4()))
+    cli = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
+    guarded = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0026'], capture_output=True, text=True, env=cli)
+    assert guarded.returncode != 0 and 'Refusing to discard requirement dispute history' in guarded.stderr
     with serve(source, tmp_path, evidence_dir=originals, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as pm:
         pm.cookies.set('pmo_session', preupgrade_session, domain='127.0.0.1', path='/api/v1')
         pm.headers['X-CSRF-Token'] = preupgrade_csrf
@@ -172,6 +182,13 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         submitted = data(pm.post(report_path(draft)+'/submit', headers=headers(generated['revision']), json={}))
         weekly_published = data(pm.post(report_path(draft)+'/confirm', headers=headers(submitted['revision']), json={}))
         assert weekly_published['weeklyBasis']==weekly_basis and weekly_published['isCurrentConfirmed']
+        from test_reviews import issue
+        token = issue(pm, str(project), ['pmo_project_get'])
+        with httpx.Client(base_url=pm.base_url, trust_env=False) as agent:
+            read = agent.get(path, headers={'Authorization': 'Bearer ' + token}).raise_for_status()
+        read_request = read.headers['X-Request-ID']
+        read_audit, = data(pm.get('admin/audits', params={'requestId': read_request}))['items']
+        assert read_audit['actorType'] == 'agent' and read_audit['sourceRefs'] == read.json()['meta']['sourceRefs']
         issued = invite(pm, 'recovery-recruit@example.test')
         invite_receipt = data(issued)
         intake = command(issued.headers['X-PMO-Org-Invitation'])
@@ -181,9 +198,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert not data(change(pm, enrollment['userId'], False))['isActive']
     with engine.connect() as c:
         fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
-    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0026'], capture_output=True, text=True,
-        env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
-    assert failed.returncode != 0 and 'Refusing to discard requirement dispute history' in failed.stderr
+    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0028'], capture_output=True, text=True, env=cli)
+    assert failed.returncode != 0 and 'Refusing to discard written audit reference history' in failed.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -243,6 +259,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert history(pm, published)['items']==[analysis]
             assert data(pm.get(dispute_path))['items'] == [saved_dispute]
             assert data(pm.get(report_path(weekly_published)))==weekly_published
+            assert data(pm.get('admin/audits', params={'requestId': read_request}))['items'] == [read_audit]
+            legacy_log, = data(pm.get('admin/audits', params={'requestId': legacy_request_id}))['items']
+            assert legacy_log['action'] == 'auth_login' and 'sourceRefs' not in legacy_log
             assert inv_state(pm, invite_receipt)=='accepted'
             restored_user, = [row for row in data(pm.get('admin/users'))['items'] if row['userId']==enrollment['userId']]
             assert restored_user['revision']==2 and not restored_user['isActive']

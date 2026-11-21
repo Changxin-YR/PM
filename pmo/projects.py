@@ -4,6 +4,7 @@ import json
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from . import schema_v1 as db
+from .audit_store import audit, stable_refs
 from .contracts import Meta, Page, ProjectDetail, ProjectView, Result, RULE_VERSION
 from .identity import Failure, authenticate, visible
 from .db import engine
@@ -16,8 +17,10 @@ from .health_schema import SCAN_SOURCE_WRITES, request_scan
 def view(row):
     return ProjectView(projectId=row.id, code=row.code, name=row.name, stage=row.stage, revision=row.revision, orgId=row.org_id, createdAt=row.created_at)
 
-def meta(op, refs):
-    return Meta(asOf=datetime.now(UTC),operationId=op,sourceRefs=refs)
+def meta(op, refs, *, project_id=None):
+    result=Meta(asOf=datetime.now(UTC),operationId=op,sourceRefs=refs)
+    result._audit_project_id=project_id
+    return result
 
 def fingerprint(value):
     return sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
@@ -29,7 +32,18 @@ def run(header,op,fn,*,after_denied=None):
         with engine().begin() as c:
             actor=authenticate(c,header)
             if op not in actor.actions or (actor.kind=='agent' and op not in ROUTES): raise Failure(403,'FORBIDDEN')
-            return fn(c,actor,request_id)
+            result=fn(c,actor,request_id)
+            if actor.kind=='agent' and ROUTES[op][0]=='GET':
+                item=result[0] if isinstance(result,tuple) else result
+                path=ROUTES[op][1]
+                pid=item.meta._audit_project_id
+                if '{' in path and pid is None:
+                    raise RuntimeError('Agent read audit missing authorized project scope')
+                c.execute(audit.insert().values(actor_type='agent',actor_id=actor.credential,delegated_by=actor.account,
+                    org_id=actor.org,project_id=pid,action=op,request_id=request_id,request_path='/api/v1'+path,
+                    rule_version=item.meta.ruleVersion,source_refs=stable_refs(item.meta.sourceRefs),
+                    after_hash=fingerprint(item.model_dump(mode='json',exclude_none=True)),result='success'))
+            return result
     except Failure as e:
         actor=actor or e.actor
         if actor:
@@ -60,7 +74,7 @@ def detail(header,pid):
             visible(a,include_initiator=True),db.projects.c.id==pid)).mappings().one_or_none()
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
         if not row.materials_visible:
-            return Result[ProjectDetail](data=ProjectDetail(project=view(row),stakeholders=[]),meta=meta(op,[f'project:{pid}@{row.revision}']))
+            return Result[ProjectDetail](data=ProjectDetail(project=view(row),stakeholders=[]),meta=meta(op,[f'project:{pid}@{row.revision}'],project_id=row.id))
         charter=c.execute(sa.select(db.charters).where(db.charters.c.project_id==pid)).mappings().one_or_none()
         refs=[f'project:{pid}@{row.revision}']
         if charter: refs.append(f'charter:{charter.id}@{charter.revision}')
@@ -69,7 +83,7 @@ def detail(header,pid):
             s.c.id,s.c.project_id,s.c.name,s.c.type,s.c.contact_role,s.c.revision
         ).where(s.c.project_id==pid).order_by(s.c.created_at.desc(),s.c.id).limit(100)).mappings()]
         refs.extend(item.source_ref() for item in contacts)
-        return Result[ProjectDetail](data=ProjectDetail(project=view(row),charterSummary=charter_summary(charter) if charter else None,stakeholders=contacts),meta=meta(op,refs))
+        return Result[ProjectDetail](data=ProjectDetail(project=view(row),charterSummary=charter_summary(charter) if charter else None,stakeholders=contacts),meta=meta(op,refs,project_id=row.id))
     return run(header,op,query)
 
 def create(header,command,key):
@@ -95,7 +109,8 @@ def create(header,command,key):
 
 def record_receipt(c,a,key,op,request_id,resource_id,pid,payload_hash,response,digest,before=None):
     c.execute(db.idempotency_keys.insert().values(actor_id=a.credential,actor_type=a.kind,org_id=a.org,delegated_by=a.person if a.kind=='agent' else None,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=90),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=resource_id))
-    c.execute(db.audit_logs.insert().values(action=op,actor_type=a.kind,actor_id=a.credential,delegated_by=a.account if a.kind=='agent' else None,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION))
+    c.execute(audit.insert().values(action=op,actor_type=a.kind,actor_id=a.credential,delegated_by=a.account if a.kind=='agent' else None,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION,
+        source_refs=stable_refs(response.get('meta', {}).get('sourceRefs', []))))
     if pid is not None and op in SCAN_SOURCE_WRITES:
         request_scan(c, pid)
 

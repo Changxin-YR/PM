@@ -178,7 +178,7 @@ def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Res
                        plan=plan_view(projectId,plan) if a.kind=='human' else None,
                        canSaveBudget=editor and project.stage in ('drafting','designing') if a.kind=='human' else None,
                        canSaveForecast=editor and project.stage in WRITABLE if a.kind=='human' else None)
-        info = meta(op,refs); info.asOf = at
+        info = meta(op,refs,project_id=project.id); info.asOf = at
         return Result[Summary](data=data,meta=info)
     return run(authorization,op,query)
 

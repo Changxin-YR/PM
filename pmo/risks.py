@@ -94,7 +94,7 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
         manage=project.stage in WRITABLE and can_manage(c,a,project) if a.kind=='human' else None
         if a.kind=='human':
             for item in items: item.canEdit=project.stage in WRITABLE and item.status=='open' and (bool(manage) or item.ownerId==a.person)
-        return Result[Page](data=Page(items=items,total=total,page=page,pageSize=pageSize,canCreate=manage),meta=meta(op,[f'risk:{i.riskId}@{i.revision}' for i in items]))
+        return Result[Page](data=Page(items=items,total=total,page=page,pageSize=pageSize,canCreate=manage),meta=meta(op,[f'risk:{i.riskId}@{i.revision}' for i in items],project_id=projectId))
     return run(authorization,op,query)
 
 

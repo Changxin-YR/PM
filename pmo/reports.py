@@ -421,7 +421,7 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         total = c.scalar(sa.select(sa.func.count()).select_from(reports).where(*filters))
         rows = list(c.execute(sa.select(reports).where(*filters).order_by(r.period_start.desc(), r.type, r.version_no.desc(), r.id)
                              .offset((page - 1) * pageSize).limit(pageSize)).mappings())
-        info = meta(LIST, [_ref(row) for row in rows])
+        info = meta(LIST, [_ref(row) for row in rows], project_id=p.id)
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)
         can_create = p.stage != 'archived' and author_role if a.kind == 'human' else None
         return Result[Page](data=Page(items=[_view(row, a, p, pm, author_role) for row in rows], page=page, pageSize=pageSize,
@@ -438,7 +438,7 @@ def get(reportId: UUID, authorization: Auth) -> Result[Report]:
         # Only a scoped Process Manager can see the report text to quote it in a proposal.
         excerpt = a.kind == 'agent' and 'pmo_fact_propose' in a.actions and _is_pm(c, a, p) and _content(row) is not None
         return Result[Report](data=_view(row, a, p, pm, author_role, detail=True, agent_excerpt=excerpt),
-                              meta=meta(GET, [_ref(row)]))
+                              meta=meta(GET, [_ref(row)], project_id=p.id))
     return run(authorization, GET, read)
 
 

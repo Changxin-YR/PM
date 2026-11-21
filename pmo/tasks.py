@@ -182,7 +182,7 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
             and (pm or r.assignee_id == a.person) if human else None) for r in rows]
         result = TaskPage(items=items, page=page, pageSize=pageSize, total=total,
                           canCreate=writable and pm if human else None, projectRevision=p.revision if human else None)
-        return Result[TaskPage](data=result, meta=meta(LIST, [f'task:{i.taskId}@{i.revision}' for i in items]))
+        return Result[TaskPage](data=result, meta=meta(LIST, [f'task:{i.taskId}@{i.revision}' for i in items], project_id=p.id))
     return run(authorization, LIST, query)
 
 

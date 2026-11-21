@@ -278,7 +278,7 @@ def decision_list(auth, review_id):
         p, review, _frozen = context(c, a, review_id)
         record = decision_lookup(c, p, review)
         rows = [decision_public(record)] if record else []
-        metadata = meta(DECISION_GET, rows[0].sourceRefs if rows else [f'review:{review.id}@{review.revision}'])
+        metadata = meta(DECISION_GET, rows[0].sourceRefs if rows else [f'review:{review.id}@{review.revision}'], project_id=p.id)
         return Result[Decisions](data=Decisions(items=rows, total=len(rows), asOf=metadata.asOf), meta=metadata)
     return run(auth, DECISION_GET, read)
 

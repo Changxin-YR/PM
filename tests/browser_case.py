@@ -100,6 +100,61 @@ def browser_sessions(users, *roles):
     return {role: {'cookie': users[role].cookies['pmo_session'], 'csrf': users[role].headers['X-CSRF-Token']} for role in roles}
 
 
+def test_browser_and_stdio_same_snapshot_and_private_resources(live, team):
+    from hashlib import sha256
+    from test_evidence import binary
+    from test_health import code, prepare, sample
+    from test_lifecycle import upload
+    from test_reference_vectors_permissions import bearer, denied_audit, mcp_calls
+    from test_reports import body
+    from test_reviews import data, headers, issue
+
+    engine, api, port, _ = live
+    pid, people, users, _ = team
+    pm, reviewer, outsider = (users[role] for role in ('pm', 'reviewer', 'outsider'))
+    project, _ = prepare(live, team)
+    report = data(pm.post(project + '/reports', headers=headers(), json=body(narrative='Restricted synthetic report.')))
+    proof = upload(pm, reviewer, project, 'report', report['reportId'])
+    snapshot = sample(pm, project)
+    assert snapshot['publication'] == 'official' and snapshot['snapshotId']
+    other = data(outsider.post('projects', headers=headers(), json={'code': 'T02-SCOPE', 'name': 'Authorized other draft'}))
+    with engine.begin() as c:
+        account = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people['outsider']))
+        c.execute(db.user_roles.insert().values(user_id=account, role='delegator'))
+    actions = ['pmo_project_get', 'pmo_health_get', 'pmo_report_get', 'pmo_project_list']
+    allowed_token = issue(pm, pid, actions)
+    denied_token = issue(outsider, other['projectId'], actions)
+    read_report = ('pmo_report_get', {'reportId': report['reportId']})
+    read_project = ('pmo_project_get', {'projectId': pid})
+    read_snapshot = ('pmo_health_get', {'projectId': pid, 'asOf': snapshot['asOf']})
+    details, health, visible = mcp_calls(live, allowed_token, [read_project, read_snapshot, read_report])
+    assert not any(item.isError for item in (details, health, visible))
+    detail_data, health_data = (item.structuredContent['data'] for item in (details, health))
+    assert detail_data['project'] == stage(pm, project)
+    assert health_data['historical'] and health_data['snapshotId'] == snapshot['snapshotId']
+    assert health_data == {key: data_value for key, data_value in data(pm.get(project+'/health',
+        params={'asOf': snapshot['asOf']})).items() if key in health_data}
+    assert visible.structuredContent['data']['reportId'] == report['reportId']
+    listing, *denied = mcp_calls(live, denied_token, [('pmo_project_list', {}), read_project, read_snapshot, read_report])
+    assert listing.structuredContent['data']['items'] == [other]
+    assert all(item.isError and item.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND' for item in denied)
+    evidence_path = f"evidence/{proof['evidenceId']}?download=true"
+    assert sha256(pm.get(evidence_path).raise_for_status().content).hexdigest() == proof['sha256']
+    for path, status, error, operation in ((project, 404, 'RESOURCE_NOT_FOUND', 'pmo_project_get'),
+            (f"reports/{report['reportId']}", 404, 'RESOURCE_NOT_FOUND', 'pmo_report_get'),
+            (evidence_path, 403, 'FORBIDDEN', 'human_evidence_get')):
+        refused = api.get('/api/v1/' + path, headers=bearer(denied_token))
+        code(refused, status, error)
+        denied_audit(engine, refused, operation)
+        assert proof['sha256'] not in refused.text and report['narrative'] not in refused.text
+        code(outsider.get(path), 404, 'RESOURCE_NOT_FOUND')
+    with vite(port) as (root, url):
+        run_browser(root, url, 'dual-entry', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'outsider')),
+            'PMO_TEST_PACKET': json.dumps({'project': detail_data['project'], 'health': health_data,
+                'reportId': report['reportId'], 'evidenceId': proof['evidenceId'], 'other': other,
+                'restricted': report['narrative']})})
+
+
 def test_browser_read_only_project_assistant_without_model(live, team):
     execution_fixture(live, team)
     with vite(live[2]) as (root, url):

@@ -168,6 +168,19 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
         json={'decision': 'approve', 'rationale': 'The requester cannot approve their own submission.'}).status_code == 403
     key = headers(archive['revision'])
     command = {'decision': 'approve', 'rationale': 'Independently reviewed four answers and one confirmed lesson.'}
+    # Even a credential delegated by the very reviewer who can approve does not gain approval authority.
+    account = reviewer.get('auth/me').raise_for_status().json()['accountId']
+    with engine.begin() as c:
+        c.execute(db.user_roles.insert().values(user_id=account, role='delegator'))
+    token = issue(reviewer, pid, ['pmo_project_get'])
+    _, api, _, _ = live
+    agent = {'Authorization': 'Bearer ' + token}
+    assert data(api.get('/api/v1/' + project, headers=agent))['project']['stage'] == 'retrospective'
+    for uri, body in ((f"approvals/{archive['requestId']}/decide", command),
+                     (project + '/transitions', {'toStage': 'archived', 'approvalRequestId': archive['requestId']})):
+        refused = api.post('/api/v1/' + uri, headers={**key, **agent}, json=body)
+        assert (refused.status_code, refused.json()['code']) == (403, 'FORBIDDEN')
+    assert stage(pm, project)['stage'] == 'retrospective'
     saved = reviewer.post(f"approvals/{archive['requestId']}/decide", headers=key, json=command)
     assert data(saved)['status'] == 'applied'
     assert reviewer.post(f"approvals/{archive['requestId']}/decide", headers=key, json=command).json() == saved.json()

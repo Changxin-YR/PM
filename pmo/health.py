@@ -168,7 +168,7 @@ def _stored(project, row, *, historical, human, pm=False, appeal=None):
 
 
 def _response(op, item):
-    info = meta(op, item.sourceRefs)
+    info = meta(op, item.sourceRefs, project_id=item.projectId)
     info.asOf, info.ruleVersion = item.asOf, item.ruleVersion
     return Result[Health](data=item, meta=info)
 

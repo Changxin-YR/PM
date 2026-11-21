@@ -138,3 +138,15 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；OpenAPI 按 operationId、方法及路径与冻结表对照 | 0 | PASS，三套规格及 mypy 84 文件（`.local/operational-check.log`）。95/95 基线 REST、41 工程操作（新增两个探针）、40 MCP 注册。 |
 
 只证明合成候选版的启动、探针、基础写入和本机性能；目标环境 TLS、凭据轮换、告警与周期备份、试点性能须独立验收。未作生产发布。
+
+## 0029 组合验收与审计升级
+
+依据：§12.1–12.2、§20.3–20.6。基准 SHA `6c0dfe2a745a6f9cb7bd86925aa2e2f69a3284b9`，首个固定源码树 `b0a49af21ad802215de95f832d791b20fda09953`；仅追加成本故障测试后的源码树 `d6a3771e50b9587389a92e0f220c6a161df92459`。Windows、Edge、真实回环 HTTP 与隔离 PostgreSQL 16，合成账号，模型关闭。共享开发库只读回核 `0016`。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| [固定源码树后端全量（含 stdio）](M3-report.md#0029-逐项授权副作用与查询审计) | 0 | PASS：258 项；同轮包括 102 个参考向量、八规则关键边界、宕机补跑和 Outbox 去重、`0016→0029` 带数据升级、`pg_dump/pg_restore` 和私有附件联合恢复。旧审计无来源，新 Agent 审计按原请求号回读。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0029-edge.xml` | 0 | PASS：17 项 / 183.55 秒，`.local/rc0029-edge.log`。无模型从 `drafting` 经三关口到 `archived`，回读九条迁移、16 个补充样例及终止、例外、争议等路径。`test_browser_and_stdio_same_snapshot_and_private_resources`：同项目、版本和同一时点的正式快照一致；同组织越权与报告/附件路径拒绝。首次定位问题在 `.local/dual-entry-rescoped.log`；完善定位和 `baseURL` 后 `.local/dual-entry-0029.log` PASS。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_postings.py --tb=short --junitxml=.local/rc0029-cost-atomic.xml` | 0 | PASS：2 项 / 10.70 秒（金额、人天），`.local/rc0029-cost-atomic.log`。Outbox 故障下核验仍 pending、actual 不变、无成功审计、事件或幂等回执；恢复后两个独立核验者并发仅一人成功，回读 `cost-posting` 版本和响应哈希。 |
+
+首轮后端 `.local/rc0029-backend.log` 退出 1：LR-01 两例误以为 PM 在草稿/立项评审中可签发阶段请求动作，客户确认用例的读取路径未定义。修复测试：明确检查签发拒绝、正常 scoped 读工具与阶段请求分别验证；构造实际资源 URL，保留客户本人 Agent 对直接 HTTP 的拒绝和人工正例。工作树启动后曾因并行开发给既有抽取网关增加 `tools` 字段而失败（`.local/rc0029-backend-verified.log`，退出 1）；旧契约保留，审计批以固定源码树独立复跑。规格与类型 `.local/rc0029-spec.log` PASS；候选 Web 构建 `.local/rc0029-build.log` PASS，保留体积告警。Q1–Q8、T01～T08/T10 是合成产品证据；T09、试点、真实签核及生产放行不计入。

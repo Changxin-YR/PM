@@ -120,7 +120,19 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     assert step(manager,'customer-confirm',rev+2).status_code==403
     with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=None))
     assert step(client,'customer-confirm',rev+2).status_code==403
-    with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=customer))
+    with engine.begin() as c:
+        c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=customer))
+        account = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == customer))
+        c.execute(db.user_roles.insert().values(user_id=account, role='delegator'))
+    from test_reviews import issue
+    customer_token = issue(client, pid, ['pmo_requirement_list'])
+    customer_agent = {'Authorization': 'Bearer ' + customer_token}
+    requirements_path = f'/api/v1/projects/{pid}/requirements'
+    scoped = api.get(requirements_path, headers=customer_agent).raise_for_status().json()['data']['items']
+    assert scoped[0]['requirementId'] == req and scoped[0]['status'] == 'accepted'
+    denied = api.post('/api/v1/' + path + '/customer-confirm', headers={**h(rev+2), **customer_agent}, json=proof)
+    assert (denied.status_code, denied.json()['code']) == (403, 'FORBIDDEN')
+    assert api.get(requirements_path, headers=customer_agent).json()['data']['items'] == scoped
     final=step(client,'customer-confirm',rev+2); assert final.json()['data']['status']=='customer_confirmed',final.text
     assert quality()['satisfaction']=='1.000000' and quality()['confirmedP0']==1
     issued=manager.post(tokens,headers=h(manager.get(tokens).json()['data']['collectionRevision']),json={**grant,'allowedActions':['pmo_change_propose']})

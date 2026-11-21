@@ -9,9 +9,12 @@ import pytest
 import sqlalchemy as sa
 from argon2 import PasswordHasher
 from pmo import schema_v1 as db
+from pmo.audit_store import audit
+from pmo.projects import fingerprint
 
 
-def test_verified_cost_cycle(live,actor):
+@pytest.mark.parametrize('kind', ['money', 'effort'])
+def test_verified_cost_cycle(live,actor,kind):
     engine,api,port,_=live
     ops=('pmo_cost_posting_propose','pmo_cost_summary','pmo_preapproval_spending_list','human_verify_cost_posting','human_reverse_cost_posting','human_cost_postings_list')
     token,cred=actor(extra_actions=ops)
@@ -19,9 +22,9 @@ def test_verified_cost_cycle(live,actor):
     bearer={'Authorization':'Bearer '+token}
     proj=api.post('/api/v1/projects',headers={**key(),**bearer},json={'code':'LEDGER','name':'Verification'}).json()['data']
     pid=proj['projectId']; base='projects/'+pid+'/cost-postings'; view='/api/v1/projects/'+pid+'/costs'
-    def actual(): return api.get(view,headers=bearer).json()['data']['money']['actual']
+    def actual(): return api.get(view,headers=bearer).json()['data'][kind]['actual']
     def propose(ref,amount,k=None):
-        return api.post('/api/v1/'+base,headers={**(k or key()),**bearer},json={'type':'money','amount':amount,'period':'2020-02','sourceRef':ref})
+        return api.post('/api/v1/'+base,headers={**(k or key()),**bearer},json={'type':kind,'amount':amount,'period':'2020-02','sourceRef':ref})
     assert propose('negative','-1').status_code==422
     k=key(); response=propose('Bill #010','100',k); original=response.json()['data']['postingId']
     assert propose('Bill #010','100',k).json()==response.json() and actual()=='0.00'
@@ -51,9 +54,34 @@ def test_verified_cost_cycle(live,actor):
         assert admin.post(loc+'verify',headers=key(),json=proof).status_code==403
         for when in (None,'2020-03-01T00:00:00Z'):
             assert auditor.post(loc+'verify',headers=key(),json={**proof,'occurredAt':when}).status_code==422
+        lost = key()
+        with engine.begin() as c:
+            c.exec_driver_sql('CREATE TRIGGER cost_outbox_fault BEFORE INSERT ON outbox_events FOR EACH STATEMENT EXECUTE FUNCTION pmo_append_only()')
+        try:
+            fault = auditor.post(loc+'verify',headers=lost,json=proof)
+            assert (fault.status_code, fault.json()['code']) == (500, 'DATABASE_FAILURE')
+            rid = fault.headers['X-Request-ID']
+            with engine.connect() as c:
+                posting = c.execute(sa.select(db.cost_postings).where(db.cost_postings.c.id == original)).mappings().one()
+                assert posting.status == 'pending' and posting.verified_by is None and posting.verified_at is None
+                assert c.scalar(sa.select(audit.c.id).where(audit.c.request_id == rid, audit.c.result == 'success')) is None
+                assert c.scalar(sa.select(db.outbox_events.c.id).where(db.outbox_events.c.dedupe_key == rid)) is None
+                assert c.scalar(sa.select(db.idempotency_keys.c.id).where(
+                    db.idempotency_keys.c.idempotency_key == lost['Idempotency-Key'])) is None
+            assert actual() == '0.00'
+        finally:
+            with engine.begin() as c:
+                c.exec_driver_sql('DROP TRIGGER cost_outbox_fault ON outbox_events')
         with ThreadPoolExecutor(2) as pool:
-            results=list(pool.map(lambda who:who.post(loc+'verify',headers=key(),json=proof),[auditor,second]))
+            results=list(pool.map(lambda who:who.post(loc+'verify',headers=lost if who is auditor else key(),json=proof),[auditor,second]))
         assert sorted(r.status_code for r in results)==[200,409] and actual()=='100.00'
+        committed, = [result for result in results if result.is_success]
+        rid = committed.headers['X-Request-ID']
+        with engine.connect() as c:
+            trace = c.execute(sa.select(audit).where(audit.c.request_id == rid)).mappings().one()
+            assert (trace.action, trace.result) == ('human_verify_cost_posting', 'success')
+            assert f'cost-posting:{original}@2' in trace.source_refs and trace.after_hash == fingerprint(committed.json())
+            assert c.scalar(sa.select(db.outbox_events.c.event_type).where(db.outbox_events.c.dedupe_key == rid)) == 'human_verify_cost_posting'
         assert auditor.post(f'cost-postings/{same}/verify',headers=key(),json=proof).json()['code']=='SOURCE_ALREADY_VERIFIED'
         k=key(2); reason={'reason':'Correct source amount'}
         minus=auditor.post(loc+'reverse',headers=k,json=reason); assert minus.status_code==200,minus.text

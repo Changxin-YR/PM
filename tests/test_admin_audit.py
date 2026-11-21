@@ -4,6 +4,8 @@ import httpx
 import sqlalchemy as sa
 from argon2 import PasswordHasher
 from pmo import schema_v1 as db
+from pmo.audit_store import audit
+from pmo.projects import fingerprint
 
 
 def test_audit_scope_no_admin_role_inheritance(live,actor):
@@ -13,8 +15,8 @@ def test_audit_scope_no_admin_role_inheritance(live,actor):
     def create(secret):
         response=api.post('/api/v1/projects',headers={'Authorization':'Bearer '+secret,'Idempotency-Key':uuid4().hex},json={'code':'AUD','name':'Scoped'})
         assert response.is_success
-        return response.headers['X-Request-ID']
-    ours,theirs=create(local),create(other)
+        return response.headers['X-Request-ID'], response.json()['data']['projectId']
+    (ours, pid), (theirs, other_pid) = create(local), create(other)
     password=token_urlsafe(24)
     with engine.begin() as c:
         user=c.scalar(sa.select(db.agent_credentials.c.delegated_by).where(db.agent_credentials.c.id==cred))
@@ -30,7 +32,39 @@ def test_audit_scope_no_admin_role_inheritance(live,actor):
         for rid,action,result in [(ours,'pmo_project_create','success'),(denied.headers['X-Request-ID'],'admin_audits_list','denied')]:
             rows=human.get(path,params={'requestId':rid,'result':result}).json()['data']['items']
             assert len(rows)==1 and rows[0]['action']==action
+            if result == 'success':
+                assert rows[0]['sourceRefs'] == [f'project:{pid}@1'] and len(rows[0]['responseHash']) == 64
         assert human.get(path,params={'requestId':theirs}).json()['data']['total']==0
+        target = f'/api/v1/projects/{pid}'
+        agent = {'Authorization': 'Bearer ' + local}
+        read = api.get(target, headers=agent).raise_for_status()
+        rid = read.headers['X-Request-ID']
+        traced, = human.get(path, params={'requestId': rid}).raise_for_status().json()['data']['items']
+        assert (traced['actorType'], traced['actorId'], traced['delegatedBy'], traced['projectId']) == (
+            'agent', str(cred), str(user), pid)
+        assert traced['action'] == 'pmo_project_get' and traced['result'] == 'success'
+        assert traced['sourceRefs'] == read.json()['meta']['sourceRefs'] == [f'project:{pid}@1']
+        assert traced['ruleVersion'] == read.json()['meta']['ruleVersion']
+        assert traced['responseHash'] == fingerprint(read.json())
+        with engine.connect() as c:
+            assert c.scalar(sa.select(audit.c.request_path).where(audit.c.request_id == rid)) == '/api/v1/projects/{projectId}'
+            assert c.scalar(sa.select(db.outbox_events.c.id).where(db.outbox_events.c.dedupe_key == rid)) is None
+        blocked = api.get(f'/api/v1/projects/{other_pid}', headers=agent)
+        assert blocked.status_code == 404
+        failure, = human.get(path, params={'requestId': blocked.headers['X-Request-ID']}).json()['data']['items']
+        assert failure['result'] == 'denied' and 'sourceRefs' not in failure and 'projectId' not in failure
+
+        with engine.begin() as c:
+            c.exec_driver_sql('CREATE TRIGGER prevent_agent_read_audit BEFORE INSERT ON audit_logs '
+                              'FOR EACH STATEMENT EXECUTE FUNCTION pmo_append_only()')
+        try:
+            failed = api.get(target, headers=agent)
+            assert (failed.status_code, failed.json()['code']) == (500, 'DATABASE_FAILURE')
+            assert 'data' not in failed.json()
+            assert human.get(path, params={'requestId': failed.headers['X-Request-ID']}).json()['data']['total'] == 0
+        finally:
+            with engine.begin() as c:
+                c.exec_driver_sql('DROP TRIGGER prevent_agent_read_audit ON audit_logs')
         assert human.get(path,params={'page':2,'pageSize':1}).json()['data']['page']==2
         with engine.begin() as c: c.execute(db.user_roles.delete().where(db.user_roles.c.user_id==user))
         assert human.get(path).status_code==403

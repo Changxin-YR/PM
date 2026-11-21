@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Generic, Literal, TypeVar
 from uuid import UUID
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 from .dto import Strict as Strict
 from .stakeholder_models import ContactSummary
 
@@ -61,6 +61,7 @@ class Meta(Strict):
     sourceRefs: list[str]
     ruleVersion: str = RULE_VERSION
     operationId: str
+    _audit_project_id: UUID | None = PrivateAttr(default=None)
 
 T = TypeVar('T')
 class Result(Strict, Generic[T]):

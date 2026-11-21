@@ -72,7 +72,7 @@ def listing(auth,pid,page,size,rule=None,month=None):
                 'LR-03':'yellow','LR-04':'red','LR-06':'untrusted','LR-08':'yellow'}.get(row.rule_id,
                     'yellow' if row.rule_id=='LR-02' and info.get('kind')==FEASIBILITY_OVERDUE else 'hard'),
                 status=row.status,asOf=row.updated_at,sourceRefs=row.source_refs if a.kind=='human' else row.source_refs[:100],**detail))
-        return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total),meta=meta(op,[f'rule-event:{i.alertId}' for i in items]))
+        return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total),meta=meta(op,[f'rule-event:{i.alertId}' for i in items],project_id=pid))
     return run(auth,op,read)
 
 

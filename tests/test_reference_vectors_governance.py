@@ -1,4 +1,5 @@
 """Frozen transition, shortfall, and requirements cases through the real review services."""
+from datetime import UTC, datetime, timedelta
 from fractions import Fraction
 from uuid import UUID
 
@@ -9,8 +10,9 @@ from pmo import schema_v1 as db
 from test_health import code
 from test_lifecycle import begin_execution, complete_milestones, confirm_requirement, execute, gate, propose, stage, upload
 from test_reference_vectors import cases
+from test_reference_vectors_permissions import mcp_calls
 from test_requirement_additions import grant_reviewers
-from test_reviews import data, decide, headers, planning_setup, result_counts, score, start_charter, team as team
+from test_reviews import data, decide, headers, issue, planning_setup, result_counts, score, start_charter, team as team
 
 
 def lr(rule):
@@ -29,6 +31,24 @@ def test_transition_requires_decision(case, live, team):
             before = result_counts(c, pid)
         denied = propose(pm, path, case['toState'])
         code(denied, 422, 'TRANSITION_NOT_ALLOWED')
+        current = stage(pm, path)
+        forged = pm.patch(path, headers=headers(current['revision']), json={'fields': {'stage': case['toState']}})
+        code(forged, 422, 'VALIDATION_FAILED')
+        op = 'pmo_transition_request'
+        collection = data(pm.get('me/agent-tokens'))
+        grant = pm.post('me/agent-tokens', headers=headers(collection['collectionRevision']), json={
+            'allowedActions': [op], 'allowedProjectIds': [pid],
+            'expiresAt': (datetime.now(UTC) + timedelta(minutes=20)).isoformat()})
+        code(grant, 403, 'FORBIDDEN')
+        assert data(pm.get('me/agent-tokens')) == collection
+        token = issue(pm, pid, ['pmo_project_get'])
+        allowed, result = mcp_calls(live, token, [('pmo_project_get', {'projectId': pid}), (op, {
+            'projectId': pid, 'toStage': case['toState'],
+            'reason': 'A scoped synthetic request cannot bypass the gate.', 'expectedRevision': current['revision'],
+            'idempotencyKey': headers()['Idempotency-Key']})])
+        assert not allowed.isError and allowed.structuredContent['data']['project'] == current
+        assert result.isError and result.structuredContent['error']['code'] == 'FORBIDDEN'
+        assert stage(pm, path) == current
         with live[0].connect() as c:
             assert result_counts(c, pid) == before
             assert c.scalar(sa.select(db.audit_logs.c.result).where(

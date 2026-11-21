@@ -55,12 +55,12 @@ def history(requirementId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSiz
         matched=with_decision(t).join(target,sa.and_(t.c.target_id==target.c.id,t.c.project_id==target.c.project_id)).where(t.c.target_type=='requirement').cte('matched')
         counts=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
         rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset((page-1)*pageSize).limit(pageSize).subquery()
-        records=c.execute(sa.select(counts.c.total,rows,sa.func.statement_timestamp().label('at')).select_from(
+        records=c.execute(sa.select(counts.c.total,rows,target.c.project_id.label('authorized_project_id'),sa.func.statement_timestamp().label('at')).select_from(
             target.join(counts,sa.true()).outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         if not records: raise Failure(404,'RESOURCE_NOT_FOUND')
         items=[Entry(changeId=i.id,projectId=i.project_id,targetType=i.target_type,targetId=i.target_id,before=i.before,after=i.after,
             status=i.status,reason=i.reason,baseRevision=i.base_revision,revision=i.revision,requestedBy=i.requested_by,approvedBy=i.approved_by,
             createdAt=i.created_at,effectiveAt=i.effective_at,decidedBy=i.approver_id,decisionReason=i.rationale,decidedAt=i.decided_at) for i in records if i.id is not None]
-        at=records[0].at; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items]); info.asOf=at
+        at=records[0].at; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items],project_id=records[0].authorized_project_id); info.asOf=at
         return Result[Page](data=Page(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=at),meta=info)
     return run(authorization,op,read)

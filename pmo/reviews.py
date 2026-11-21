@@ -71,7 +71,7 @@ def preview(auth, pid, gate, *, prepare, operation=None):
             raise Failure(404, 'RESOURCE_NOT_FOUND')
         check, materials = evaluate(c, a, p, gate)
         sources = refs(p, materials)[:PAGE_SIZE]
-        metadata = meta(op, sources)
+        metadata = meta(op, sources, project_id=p.id)
         if prepare:
             can_submit = check.eligible and SUBMIT in a.actions and submitter(c, a, p, gate)
             result = Result[Preparation](data=Preparation(gateCheck=check, draftMaterials=sources[1:]), meta=metadata)
@@ -91,7 +91,7 @@ def listing(auth, pid):
         rows = c.execute(sa.select(reviews).where(*scope)
                          .order_by(reviews.c.created_at.desc(), reviews.c.id).limit(PAGE_SIZE)).mappings()
         items = [view(row) for row in rows]
-        metadata = meta(LIST, [f'review:{i.reviewId}@{i.revision}' for i in items])
+        metadata = meta(LIST, [f'review:{i.reviewId}@{i.revision}' for i in items], project_id=p.id)
         return Result[ReviewPage](data=ReviewPage(items=items, page=1, pageSize=PAGE_SIZE, total=total, asOf=metadata.asOf), meta=metadata)
 
     return run(auth, LIST, read)

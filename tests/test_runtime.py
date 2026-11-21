@@ -37,11 +37,12 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert len(db.metadata.tables)==33
     assert sum(len(t.c) for t in db.metadata.tables.values())==421
     extras = {'reports': {'content_hash', 'submitted_by', 'confirmed_by', 'confirmed_at', 'weekly_basis'}, 'user_accounts': {'status_revision'},
-              'health_appeals': {'appealed_at'}, 'rule_events': {'input_snapshot'}}
+              'health_appeals': {'appealed_at'}, 'rule_events': {'input_snapshot'}, 'audit_logs': {'source_refs'}}
     for name, table in db.metadata.tables.items():
         assert {column['name'] for column in inspector.get_columns(name)} == set(table.c.keys()) | extras.get(name, set())
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and any(f'RuntimeError: {reason}' in result.stderr for reason in (
+        'Refusing to discard written audit reference history',
         'Refusing destructive downgrade', 'Refusing to discard written acceptance history',
         'Refusing to discard report receipts', 'Refusing to discard review termination history',
         'Refusing to discard health and rule scan history', 'Refusing to discard Fact source and verification history',

@@ -33,3 +33,18 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_mcp_configuration.py tests/test_mcp_transition.py tests/test_runtime.py::test_mcp_stdio --tb=short`（`PMO_TEST_MCP_ENTRYPOINT` 指向隔离安装的 `pmo-mcp.exe`） | 0 | PASS：13 项 / 19.78 秒，`.local/mcp-installed-test.log`。Windows、随机隔离 PostgreSQL、合成令牌、真实回环 HTTP 和 SDK；仓库外启动发行入口枚举 40 项，调用项目列表与 REST 一致，错误配置和未交付令牌受控拒绝。 |
 
 这证明本机发行包和 SDK 可工作；Codex/DSH 目标 Host 证据仍分别 BLOCKED_EXTERNAL。没有推送、分发或部署。
+
+## 0029 逐项授权、副作用与查询审计
+
+源条款：§8.1–8.4、§12.2 T01/T02/T04/T05/T07/T09、§20.3。合成、Windows、隔离 PostgreSQL 16、回环 HTTP 和真实 Python SDK stdio。基准 SHA `6c0dfe2a745a6f9cb7bd86925aa2e2f69a3284b9`，固定导出源码树 `b0a49af21ad802215de95f832d791b20fda09953`。实现：`pmo/projects.py`、`pmo/audit_store.py`、`migrations/versions/0029_agent_read_audit.py`、`scripts/mcp_test_evidence.py`。
+
+| 实际命令（仓库的固定源码导出目录，使用仓库 venv） | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0029-mcp-clean.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0029-backend-clean.xml`（输出实际写到原仓库 `.local` 的绝对路径） | 0 | PASS：258 项 / 338.78 秒，`.local/rc0029-backend-clean.log`；[40 工具逐项证据](../acceptance/mcp-stdio-0029.json)。40/40 发现、闭合 DTO 成功调用、未授权动作及额外输入拒绝；18/18 读工具各有带来源审计且无 Outbox；22/22 写工具各有相同主体的首次收据及重放，无额外成功审计或事件。 |
+
+组织与项目范围、令牌过期/撤销/委托人失权、关键旧 revision 及并发的实测用例见追踪矩阵。未穷举每个工具在所有角色、阶段和并发组合。成功 Agent 查询用服务端已授权项目、委托账户、稳定引用、规则、响应哈希及内部请求号记录，未记录搜索词、正文或令牌；审计写入失败不返回查询数据。原有审计未伪造来源。基线仍是 95 REST 与 40 MCP；0029 不新增路由。
+
+| 承诺目标 Host | 已观测环境 | T09 |
+|---|---|---|
+| Codex Desktop | `26.1117.3838.0`；自带 CLI `0.171.0-alpha.13`，CLI 实查未登录。未验证目标 Host 枚举、读/写草稿、拒绝和撤销 | BLOCKED_EXTERNAL |
+| DSH | 独立桥接探测 `auth_required`；无足以完成本项目隔离连接的授权，Host 版本未核实 | BLOCKED_EXTERNAL |
