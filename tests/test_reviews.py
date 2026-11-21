@@ -187,14 +187,17 @@ def test_charter_read_only_submit_replay_and_rollback(live, team, actor):
     assert owner.post(path + '/reviews', headers=key, json=body).status_code == 404
 
 
-def planning_setup(engine, pid, people, users, *, seed_stage=True, priority='P0', first_day=None, effort_budget='10'):
+def planning_setup(engine, pid, people, users, *, seed_stage=True, priority='P0', first_day=None, effort_budget='10',
+                   extra_priorities=()):
     if seed_stage:
         with engine.begin() as c:
             c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='designing'))
     path = f'projects/{pid}'
     pm = users['pm']
-    req = data(pm.post(path + '/requirements', headers=headers(), json={'desc': 'Export results', 'acceptanceCriteria': 'Contains IDs',
-               'priority': priority, 'plannedConfirmAt': first_day.isoformat() if first_day else '2026-12-01'}))
+    reqs = [data(pm.post(path + '/requirements', headers=headers(), json={'desc': f'Export results {number}' if number else 'Export results',
+            'acceptanceCriteria': 'Contains IDs', 'priority': kind,
+            'plannedConfirmAt': first_day.isoformat() if first_day else '2026-12-01'}))
+            for number, kind in enumerate((priority, *extra_priorities))]
     for i in range(1, 4):
         day = (first_day + timedelta(days=i-1)).isoformat() if first_day else f'2026-12-0{i}'
         data(pm.post(path + '/milestones', headers=headers(), json={'name': f'Step {i}', 'ordinal': i, 'plannedDate': day, 'isKey': True}))
@@ -209,7 +212,7 @@ def planning_setup(engine, pid, people, users, *, seed_stage=True, priority='P0'
         baseline = data(who.get(url))
         data(who.post(url + '/sign', headers=headers(baseline['revision']), json={'contentHash': baseline['contentHash'],
                       'role': role, 'reason': 'Reviewed isolated test baseline'}))
-    return path, req['requirementId'], risk['riskId']
+    return path, reqs[0]['requirementId'], risk['riskId']
 
 
 def test_feasibility_signed_planning_and_pm_race(live, team):

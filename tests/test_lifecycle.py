@@ -50,21 +50,22 @@ def upload(pm, reviewer, project, kind, resource, content=None):
         json={'reason': 'Reviewed original synthetic evidence bytes', 'sha256': proof['sha256']}))
 
 
-def begin_execution(live, team, *, effort_budget='10'):
+def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), first_day=None):
     engine, _, _, _ = live
     pid, people, users, _ = team
     reviewer = users['reviewer']
     charter = start_charter(pid, users)
     score(reviewer, charter, [4] * 4)
     data(decide(reviewer, charter))
-    project, requirement, risk = planning_setup(engine, pid, people, users, seed_stage=False, effort_budget=effort_budget)
+    project, requirement, risk = planning_setup(engine, pid, people, users, seed_stage=False, effort_budget=effort_budget,
+                                               extra_priorities=extra_priorities, first_day=first_day)
     feasibility = gate(users['pm'], project, 'feasibility')
     score(reviewer, feasibility, [3] * 5)
     assert data(decide(reviewer, feasibility))['decision']['stage'] == 'executing'
     return project, requirement, risk
 
 
-def execution_fixture(live, team, *, effort_budget='10'):
+def execution_fixture(live, team, *, effort_budget='10', extra_priorities=()):
     engine, _, _, _ = live
     pid, people, users, _ = team
     with engine.begin() as c:
@@ -73,7 +74,7 @@ def execution_fixture(live, team, *, effort_budget='10'):
         for who in ('reviewer', 'outsider'):
             account = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people[who]))
             c.execute(db.user_roles.insert().values(user_id=account, role='finance_verifier'))
-    return begin_execution(live, team, effort_budget=effort_budget)
+    return begin_execution(live, team, effort_budget=effort_budget, extra_priorities=extra_priorities)
 
 
 def complete_milestones(pm, reviewer, project):
@@ -84,15 +85,20 @@ def complete_milestones(pm, reviewer, project):
             json={'actualDate': today, 'evidenceRef': proof['evidenceRef'], 'reason': 'Validated delivery output'}))
 
 
+def confirm_requirement(pm, reviewer, customer, project, req):
+    requirement = req['requirementId']
+    proof = upload(pm, reviewer, project, 'requirement', requirement)
+    for action, client in [('deliver', pm), ('accept', pm), ('customer-confirm', customer)]:
+        req = data(client.post(f'requirements/{requirement}/{action}', headers=headers(req['revision']),
+            json={'evidenceRef': proof['evidenceRef']}))
+    assert req['status'] == 'customer_confirmed'
+
+
 def close_materials(pm, reviewer, customer, project, requirement, risk, *, confirm=True,
                     actuals=('100.00', '10.00'), remaining=('0.00', '0.00')):
     if confirm:
-        req = data(pm.get(project + '/requirements'))['items'][0]
-        proof = upload(pm, reviewer, project, 'requirement', requirement)
-        for action, client in [('deliver', pm), ('accept', pm), ('customer-confirm', customer)]:
-            req = data(client.post(f'requirements/{requirement}/{action}', headers=headers(req['revision']),
-                json={'evidenceRef': proof['evidenceRef']}))
-        assert req['status'] == 'customer_confirmed'
+        req = next(req for req in data(pm.get(project + '/requirements'))['items'] if req['requirementId'] == requirement)
+        confirm_requirement(pm, reviewer, customer, project, req)
     rejected = data(pm.get(project + '/closing/check'))
     assert {'COST_RECONCILIATION_REQUIRED', 'BLOCKING_RISK_UNRESOLVED'} <= {i['code'] for i in rejected['missing']}
     risk_proof = upload(pm, reviewer, project, 'risk', risk)

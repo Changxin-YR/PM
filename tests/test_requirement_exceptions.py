@@ -17,7 +17,7 @@ from pmo.evidence import links
 from pmo.identity import Browser, Failure, authenticate
 from pmo.scope_quality import metrics
 from test_evidence import binary
-from test_lifecycle import close_materials, complete_milestones, execute, execution_fixture, gate, propose, stage
+from test_lifecycle import close_materials, complete_milestones, confirm_requirement, execute, execution_fixture, gate, propose, stage
 from test_reviews import bench, data, decide, headers, outcome, result_counts, team as team
 
 
@@ -317,13 +317,17 @@ def test_one_concurrent_sign_and_outbox(case):
 DEVIATION = 'In the synthetic retention export, this release omits the named report field.'
 
 
-def deliver_with_exception_material(live, team, *, close_risk=True, **kwargs):
+def deliver_with_exception_material(live, team, *, close_risk=True, confirm=False, extra_priorities=(), **kwargs):
     pid, people, users, _ = team
     pm, reviewer, customer, accountant = (users[k] for k in ('pm', 'reviewer', 'client_representative', 'outsider'))
-    project, requirement, risk = execution_fixture(live, team)
+    project, requirement, risk = execution_fixture(live, team, extra_priorities=extra_priorities)
     complete_milestones(pm, reviewer, project)
     data(execute(pm, project, data(propose(pm, project, 'delivering'))))
-    _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk, confirm=False, **kwargs)
+    if extra_priorities:
+        for item in data(pm.get(project + '/requirements'))['items']:
+            if item['requirementId'] != requirement:
+                confirm_requirement(pm, reviewer, customer, project, item)
+    _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk, confirm=confirm, **kwargs)
     if close_risk:
         data(reviewer.post(f'risks/{risk}/close', headers=headers(), json={'resolutionEvidenceRef': risk_proof['evidenceRef']}))
     reco = project + '/cost-reconciliations'
@@ -333,7 +337,7 @@ def deliver_with_exception_material(live, team, *, close_risk=True, **kwargs):
         reconciliation['overrunReasons'] = {'money': 'estimate', 'effort': 'execution'}
     data(accountant.post(reco, headers=headers(ledger['revision']), json=reconciliation))
 
-    def prepare():
+    def prepare(*, verify=True):
         state = data(customer.get(project + '/requirement-exceptions'))
         assert state['canSign'] and len(state['gaps']) == 1
         scope = exceptions.AcceptanceScope(decision='accept', gapHash=state['gapHash'],
@@ -346,7 +350,7 @@ def deliver_with_exception_material(live, team, *, close_risk=True, **kwargs):
             files={'file': ('signed-scope.pdf', pdf_text(original), 'application/pdf')},
             data={'linkedResourceType': 'requirement', 'linkedResourceId': requirement}))
         proof = data(reviewer.post(f"evidence/{pdf['evidenceId']}/verify", headers=headers(pdf['revision']),
-            json={'reason': 'Checked original synthetic acceptance and its exact intended scope', 'sha256': pdf['sha256']}))
+            json={'reason': 'Checked original synthetic acceptance and its exact intended scope', 'sha256': pdf['sha256']})) if verify else pdf
         return state, dict(scope.model_dump(mode='json'), evidenceRef=proof['evidenceRef'])
 
     return project, prepare

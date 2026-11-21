@@ -89,3 +89,14 @@
 | `.venv/Scripts/python.exe scripts/reference_vector_evidence.py .local/reference-vectors.xml docs/acceptance/reference-vectors-0028.csv` | 0 | [102 条逐项结果](../acceptance/reference-vectors-0028.csv)：PASS 44、FAIL 0、NOT_RUN 58；未匹配测试结果的冻结输入不计为通过。 |
 
 此前同一 pytest 命令两次退出 1：首次将 `.local/dev.env` 的口令误作 URL，22 项未完成 fixture 初始化；按开发脚本组装 URL 后，6 项凭证用例误取写入回执中的 `revision`（`.local/reference-vectors-dto-fail.xml`），改为人类账簿读取实际明细版本后核验，未改产品契约或放宽断言。
+
+## 0028 全部 102 条冻结向量产品复验
+
+依据：冻结 `04_PMO_V1_规则测试向量.json`，主方案 §4、§5.6、§6、§7、§20.4–20.6。基准 SHA `c2ca7c29698478f7b4cc789a19e47c137f855c5e`，被测源码树 `49c5ec6605f06b3ea99071849c556a1ba85c7f31`（含生成的逐项 CSV，不含本段）。Windows、PostgreSQL 16 随机 schema、真实回环 API/stdio，纯合成授权、独立账户、预算/凭证、原件与时点；超时用例单独启用回环模拟网关，不用真实模型。未变更规格原件、产品逻辑、数据库迁移或共享库。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `$vectorFiles = (Get-ChildItem -LiteralPath tests -Filter 'test_reference_vectors*.py').FullName`；`.venv/Scripts/python.exe -m pytest -q @vectorFiles --tb=short --junitxml=.local/reference-vectors-all.xml` | 0 | PASS：102 项 / 113.97 秒。各输入有独立 pytest 节点；需求分母仅用获批生效版本，成本与风险独立阻断，顺带实测 LR-01～08 全组冻结边界、扫描重跑、受控权限错码、降级保留报告。Sponsor 说明场景使用认证后提交的说明报告，不作为预算修订。 |
+| `.venv/Scripts/python.exe scripts/reference_vector_evidence.py .local/reference-vectors-all.xml docs/acceptance/reference-vectors-0028.csv --require-complete` | 0 | [逐项结果](../acceptance/reference-vectors-0028.csv)：PASS 102、FAIL 0、NOT_RUN 0。缺项、跳过或失败无法满足完整性检查。 |
+
+中间 FAIL（退出 1）：治理 3 项修正审计请求号文本比较和 ADR 0010 约定的无承诺整改日期（合法条件通过任务的未来期限另有测试）；`.local/reference-governance-signals-first.xml` 两项误用未公开里程碑 ordinal；`.local/reference-closing-first.xml` 一项误用报告字段；`.local/reference-permissions-first.xml` 一项在送审后用已失去材料可见性的发起人签发令牌，改用有合法授权的 PM 并先证明令牌确实可读该评审。保留拒绝和无副作用的断言。上述结果只覆盖冻结输入，不代替 A/Q/T 端到端组合、真实 Host、模型或试点。
