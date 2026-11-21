@@ -31,6 +31,7 @@ _placeholders = frozenset({'todo', 'tbd', 'n/a', 'na', 'none', 'null', 'unknown'
                            '未知', '无', '暂无', '不适用', '略'})
 Origin = Literal['closed', 'terminated']
 Kind = Literal['normal', 'terminated']
+QUESTIONS = ('目标与实际结果', '交付表现及原因', '可复用资产', '经验教训与建议')
 
 
 def _plain(value: str) -> str:
@@ -367,33 +368,42 @@ def confirm_lesson(lessonId: UUID, authorization: Auth, key: Key, expected: Revi
     return run(authorization, CONFIRM, write)
 
 
+def find_lessons(c, a, *, keyword, category, page, page_size, exclude_project=None, at=None):
+    source = _lessons.join(_projects, _lessons.c.project_id == _projects.c.id)
+    filters = [visible(a), *_valid_confirmation(), _same_org_confirmation(_projects.c.org_id),
+               _projects.c.stage.in_(('retrospective', 'archived'))]
+    if a.kind == 'agent':
+        filters.append(explicit_project_scope(a))
+    if exclude_project is not None:
+        filters.append(_projects.c.id != exclude_project)
+    if at is not None:
+        filters.append(_lessons.c.confirmed_at <= at)
+    if keyword and keyword.strip():
+        filters.append(sa.or_(*[col.icontains(keyword.strip(), autoescape=True) for col in
+                               (_lessons.c.what, _lessons.c.root_cause, _lessons.c.advice)]))
+    if category and category.strip():
+        filters.append(sa.func.lower(_lessons.c.category) == category.strip().lower())
+    total = c.scalar(sa.select(sa.func.count()).select_from(source).where(*filters))
+    items = []
+    offset = (page - 1) * page_size
+    if offset < total:
+        rows = c.execute(sa.select(_lessons, _projects.c.revision.label('project_revision')).select_from(source)
+                         .where(*filters).order_by(_lessons.c.confirmed_at.desc(), _lessons.c.id)
+                         .limit(page_size).offset(offset)).mappings()
+        for row in rows:
+            hits = [_lesson_ref(row), f'project:{row.project_id}@{row.project_revision}']
+            items.append(SearchHit(lessonId=row.id, projectId=row.project_id, category=row.category, what=row.what,
+                                   rootCause=row.root_cause, advice=row.advice, sourceRefs=hits, confirmedAt=row.confirmed_at))
+    return items, total
+
+
 @router.get('/lessons/search', operation_id=SEARCH)
 def search_lessons(authorization: Auth, keyword: Annotated[QueryText | None, Query(max_length=160)] = None,
                    category: Annotated[QueryText | None, Query(max_length=80)] = None,
                    page: Annotated[int, Query(ge=1)] = 1, pageSize: Annotated[int, Query(ge=1, le=100)] = 20) -> Result[SearchPage]:
     def query(c, a, _):
-        source = _lessons.join(_projects, _lessons.c.project_id == _projects.c.id)
-        filters = [visible(a), *_valid_confirmation(), _same_org_confirmation(_projects.c.org_id),
-                   _projects.c.stage.in_(('retrospective', 'archived'))]
-        if a.kind == 'agent':
-            filters.append(explicit_project_scope(a))
-        if keyword and keyword.strip():
-            filters.append(sa.or_(*[col.icontains(keyword.strip(), autoescape=True) for col in
-                                   (_lessons.c.what, _lessons.c.root_cause, _lessons.c.advice)]))
-        if category and category.strip():
-            filters.append(sa.func.lower(_lessons.c.category) == category.strip().lower())
-        total = c.scalar(sa.select(sa.func.count()).select_from(source).where(*filters))
-        items, refs = [], []
-        offset = (page - 1) * pageSize
-        if offset < total:
-            rows = c.execute(sa.select(_lessons, _projects.c.revision.label('project_revision')).select_from(source)
-                             .where(*filters).order_by(_lessons.c.confirmed_at.desc(), _lessons.c.id)
-                             .limit(pageSize).offset(offset)).mappings()
-            for row in rows:
-                hits = [_lesson_ref(row), f'project:{row.project_id}@{row.project_revision}']
-                refs.extend(hits)
-                items.append(SearchHit(lessonId=row.id, projectId=row.project_id, category=row.category, what=row.what,
-                                       rootCause=row.root_cause, advice=row.advice, sourceRefs=hits, confirmedAt=row.confirmed_at))
+        items, total = find_lessons(c, a, keyword=keyword, category=category, page=page, page_size=pageSize)
+        refs = [ref for hit in items for ref in hit.sourceRefs]
         metadata = meta(SEARCH, list(dict.fromkeys(refs)))
         data = SearchPage(items=items, page=page, pageSize=pageSize, total=total, asOf=metadata.asOf)
         return Result[SearchPage](data=data, meta=metadata)

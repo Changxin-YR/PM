@@ -173,6 +173,22 @@ def _response(op, item):
     return Result[Health](data=item, meta=info)
 
 
+def current(c, a, project, now, *, human: bool, pm: bool = False) -> Health:
+    if project.stage not in ACTIVE:
+        return _dto(project, now, {'health': 'unavailable', 'dataTrust': 'unavailable',
+            'publication': 'unavailable', 'gaps': ['HEALTH_NOT_ACTIVE']},
+            [f'project:{project.id}@{project.revision}'], human=human)
+    row = latest(c, project.id, now)
+    obs = observe(c, project, now)
+    if row and row.input_hash == obs.digest:
+        appeal = _appeals_for(c, [row.id], a.person, _role(c, a, project, 'reviewer')).get(row.id) if human else None
+        return _stored(project, row, historical=False, human=human, pm=pm, appeal=appeal)
+    values = dict(obs.results)
+    if values['publication'] == 'official':
+        values['publication'] = 'preview'  # Scanning or a human refresh publishes a durable observation.
+    return _dto(project, now, values, obs.refs, inputs=obs.inputs, human=human, pm=pm)
+
+
 @router.get('/projects/{projectId}/health', operation_id=GET, response_model_exclude_none=True)
 def get(projectId: UUID, authorization: Auth, asOf: AwareDatetime | None = None) -> Result[Health]:
     def read(c, a, _):
@@ -182,23 +198,12 @@ def get(projectId: UUID, authorization: Auth, asOf: AwareDatetime | None = None)
             raise Failure(422, 'FUTURE_AS_OF', project_id=projectId)
         pm = _role(c, a, project, 'pm')
         human = a.kind == 'human'
-        row = latest(c, projectId, asOf)
         if asOf is not None:
+            row = latest(c, projectId, asOf)
             if not row:
                 raise Failure(404, 'HEALTH_SNAPSHOT_NOT_FOUND', project_id=projectId)
             return _response(GET, _stored(project, row, historical=True, human=human))
-        if project.stage not in ACTIVE:
-            return _response(GET, _dto(project, now, {'health': 'unavailable', 'dataTrust': 'unavailable',
-                'publication': 'unavailable', 'gaps': ['HEALTH_NOT_ACTIVE']},
-                [f'project:{projectId}@{project.revision}'], human=human))
-        obs = observe(c, project, now)
-        if row and row.input_hash == obs.digest:
-            appeal = _appeals_for(c, [row.id], a.person, _role(c, a, project, 'reviewer')).get(row.id) if human else None
-            return _response(GET, _stored(project, row, historical=False, human=human, pm=pm, appeal=appeal))
-        values = dict(obs.results)
-        if values['publication'] == 'official':
-            values['publication'] = 'preview'  # Scanning or a human refresh publishes a durable observation.
-        return _response(GET, _dto(project, now, values, obs.refs, inputs=obs.inputs, human=human, pm=pm))
+        return _response(GET, current(c, a, project, now, human=human, pm=pm))
     return run(authorization, GET, read)
 
 

@@ -64,3 +64,17 @@
 失败和修复：首轮后端类型缺 JSON 值注解，首轮 Vue 类型缺 `projectRevision`，均修复。`.local/weekly-0027-affected-first.log`（退出 1）修正了测试的私有草稿 404 与审计编号字符串类型断言，继续断言提交后非 PM 403 和无成功审计。`.local/weekly-0027-affected.log`（27 PASS，1 FAIL，退出 1）发现旧 Fact 回滚测试跨项目计算整库数量；改为对本测试项目断言零残留，未去除失败时必须回滚的断言。全量终态按上表。
 
 基线 REST 95/95、工程接口 30、MCP 注册 40/40；周报工程接口保持人工专用，不增加 Agent 工具。独立的真实模型、各目标 Host、试点与业务签核仍 BLOCKED_EXTERNAL。
+
+## 2026-11-22 项目助理四模式
+
+源条款：§7.1、§8.5–8.6、Q1/Q2/Q5/Q6、T08。项目资料统一页签及四个封闭只读输出：立项预检仅结合已裁决的评分摘要及授权可见、已确认的历史 Lesson；过程限现任 PM，复用三线、规则事件、Fact 澄清和确定性周报，并展示同报告版本/哈希的异步分析候选；结项用正式门槛与四问，引用实际复盘摘录但不落库；台账问答仅支持受控主题和可核验引用，不用旧快照填补不可信结果。写操作均回各自工作页，并保持人审、版本及权限。Agent 仍经已有 MCP 工具访问同一服务，不能直调人工助理接口。实现 `pmo/assistant.py`、`web/src/ProjectAssistant.vue`；未新增迁移、未使用真实模型。
+
+基准 `ec230048ffb5f7a4feadaf79cc81ae66bdb9a1cb`，被测助理源码树 `6b46af24b1efd6a138add240bce5e04f268c2bc7`（含模拟网关浏览器用例，不含进度文本与独立 MCP 发行改动）。Windows、实际 PostgreSQL 16 隔离 schema、回环 HTTP、Edge；合成会话、模型关闭或回环模拟。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_assistant.py tests/test_lifecycle.py tests/test_health.py tests/test_facts.py tests/test_weekly_drafts.py tests/test_retrospectives.py tests/test_cost_math.py --tb=short` | 0 | PASS：35 项 / 58.35 秒，`.local/assistant-affected.log`。验证待审评分不泄露、正式总分和引用一致、重复读取不写入、跨项目及 Agent 拒绝、Fact 争议剔除、周报摘要指纹一致、三线不可信时不用旧快照、结项缺口与正式预检一致、已确认 Lesson 可反哺新立项。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_read_only_project_assistant_without_model tests/browser_case.py::test_browser_report_analysis --tb=short` | 0 | PASS：Edge 3 项 / 31.84 秒，`.local/assistant-edge-modes.log`。移动切换四模式、拒答及刷新；关闭模型转人工、模拟网关候选回读，仅人选用后进入低信任候选。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格、mypy 与 Vue 类型，`.local/assistant-check.log`。 |
+
+初次定向 FAIL（3 项 PASS、1 项 FAIL，`.local/assistant-affected-first.log`）：用例未先办理进入复盘，产品正确拒绝写入。修正用例按真实审批流程推进后复验。运行目录 95/95 基线 REST + 38 工程接口，40 项 MCP 工具不变。四模式在合成工作台可用；过程模式的外部模型仅在授权下配置，其余模式当前采用确定性建议/有来源的模板输出，未验真实模型、真实试点或签核。

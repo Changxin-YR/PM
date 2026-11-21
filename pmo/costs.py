@@ -153,6 +153,14 @@ def cost_basis(c, pid: UUID, at: datetime) -> CostBasis:
     return CostBasis(pid, plan, list(rows), list(verified))
 
 
+def summary_line(c, basis: CostBasis, kind, at: datetime) -> Line:
+    budget, actual, remaining = basis.amounts(kind)
+    result = cost_line(budget, actual, remaining, zero_declared=zero_budget_claim(c,basis,kind,at) is not None)
+    return Line(budget=format(budget or Decimal(0),'.2f'),actual=format(actual,'.2f'),forecastRemaining=format(remaining,'.2f'),
+        projectedTotal=format(result.projected,'.2f'),varianceRate=format(result.variance,'.4f') if result.variance is not None else None,
+        color=result.color)
+
+
 @router.get('/projects/{projectId}/costs',operation_id='pmo_cost_summary',response_model_exclude_none=True)
 def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Result[Summary]:
     op = 'pmo_cost_summary'
@@ -165,13 +173,8 @@ def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Res
         basis = cost_basis(c, projectId, at)
         plan = basis.plan
         refs = [f'project:{projectId}', *basis.refs()]
-        def line(kind):
-            budget, actual, remaining = basis.amounts(kind)
-            result = cost_line(budget,actual,remaining,zero_declared=zero_budget_claim(c,basis,kind,at) is not None)
-            return Line(budget=format(budget or Decimal(0),'.2f'),actual=format(actual,'.2f'),forecastRemaining=format(remaining,'.2f'),
-                projectedTotal=format(result.projected,'.2f'),varianceRate=format(result.variance,'.4f') if result.variance is not None else None,color=result.color)
         editor = a.kind=='human' and asOf is None and can_manage(c,a,project)
-        data = Summary(projectId=projectId,money=line('money'),effort=line('effort'),asOf=at,ruleVersion=RULE_VERSION,
+        data = Summary(projectId=projectId,money=summary_line(c,basis,'money',at),effort=summary_line(c,basis,'effort',at),asOf=at,ruleVersion=RULE_VERSION,
                        plan=plan_view(projectId,plan) if a.kind=='human' else None,
                        canSaveBudget=editor and project.stage in ('drafting','designing') if a.kind=='human' else None,
                        canSaveForecast=editor and project.stage in WRITABLE if a.kind=='human' else None)

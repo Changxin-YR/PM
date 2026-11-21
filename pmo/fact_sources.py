@@ -148,3 +148,17 @@ def high_evidence(c, project_id, report_id, ref):
         raise Failure(422, 'FACT_OBJECTIVE_EVIDENCE_REQUIRED', project_id=project_id)
     evidence_storage.checked_bytes(evidence.storage_key, evidence.sha256, evidence.size_bytes)
     return f'evidence:{evidence.id}', evidence.sha256
+
+
+def verified_source(c, report, row) -> bool:
+    if row.validation_status != 'verified' or row.trust not in ('high', 'medium'):
+        return False
+    try:
+        recheck(report, row)
+        if row.trust == 'high':
+            return high_evidence(c, row.project_id, report.id, row.evidence_ref or '') == (row.evidence_ref, row.evidence_hash)
+    except Failure as exc:
+        if exc.code not in ('FACT_SOURCE_STALE', 'FACT_OBJECTIVE_EVIDENCE_REQUIRED', 'EVIDENCE_INTEGRITY_FAILED'):
+            raise
+        return False
+    return True

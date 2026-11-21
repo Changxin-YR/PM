@@ -10,7 +10,7 @@ from pydantic import Field, JsonValue, StrictStr, field_validator
 from . import fact_store as facts, schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import RULE_VERSION, Result, Strict
-from .fact_sources import high_evidence, recheck
+from .fact_sources import verified_source
 from .health_calculation import ACTIVE, observe
 from .identity import Failure
 from .projects import fingerprint, run
@@ -51,15 +51,7 @@ def _trusted_facts(c, p, start, end, at):
             sources[row.report_id] = c.execute(sa.select(reports).where(r.id == row.report_id,
                 r.project_id == p.id)).mappings().one()
         report = sources[row.report_id]
-        try:
-            recheck(report, row)
-            if row.trust == 'high':
-                ref, digest = high_evidence(c, p.id, report.id, row.evidence_ref or '')
-                if (ref, digest) != (row.evidence_ref, row.evidence_hash):
-                    continue
-        except Failure as exc:
-            if exc.code not in ('FACT_SOURCE_STALE', 'FACT_OBJECTIVE_EVIDENCE_REQUIRED', 'EVIDENCE_INTEGRITY_FAILED'):
-                raise
+        if not verified_source(c, report, row):
             continue
         trusted.append(WeeklyFact(sourceRef=facts.fact_ref(row), reportRef=row.source_ref, reportHash=row.content_hash,
             quotePath=row.quote_path, quoteOffset=row.quote_offset, quote=row.quote, subject=row.subject,

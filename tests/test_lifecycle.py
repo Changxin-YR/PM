@@ -130,12 +130,16 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     assert data(execute(pm, project, request))['status'] == 'applied'
     assert stage(pm, project)['stage'] == 'delivering'
     now, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk)
+    checked = data(pm.get(project + '/closing/check'))
+    assisted = data(pm.get(project + '/assistant/closing'))
+    assert assisted['gateEligible'] is False and assisted['gateGaps'] == checked['missing']
     data(reviewer.post(f'risks/{risk}/close', headers=headers(), json={'resolutionEvidenceRef': risk_proof['evidenceRef']}))
     reco = project + '/cost-reconciliations'
     state = data(reconciler.get(reco))
     assert state['canCreate']
     data(reconciler.post(reco, headers=headers(state['revision']), json={'costHash': state['costHash'], 'evidenceRefs': [cost_proof['evidenceRef']]}))
     assert data(pm.get(project + '/closing/check'))['eligible']
+    assert data(pm.get(project + '/assistant/closing'))['gateEligible'] is True
     closing = gate(pm, project, 'closing')
     assert data(decide(reviewer, closing))['decision']['stage'] == 'closed'
 

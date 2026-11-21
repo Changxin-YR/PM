@@ -14,7 +14,7 @@ async function openReport(page){
   await button(reports.getByRole('row').filter({hasText:'2025-W01'}),'查看').click()
   const facts=reports.getByRole('region',{name:'Fact 证据与澄清',exact:true})
   await button(facts,'Fact 证据与澄清').click()
-  return {facts, analysis:facts.getByRole('region',{name:'报告分析',exact:true})}
+  return {drawer, facts, analysis:facts.getByRole('region',{name:'报告分析',exact:true})}
 }
 
 async function submit(page,action,suffix){
@@ -41,6 +41,14 @@ try{
   await page.reload()
   const restored=await openReport(page)
   await expect(restored.analysis.getByText(outcome,{exact:true})).toBeVisible()
+  await expect(restored.facts.getByText('暂无候选事实',{exact:true})).toBeVisible()
+  await restored.drawer.getByRole('tab',{name:'项目助理',exact:true}).click()
+  const assistant=restored.drawer.getByRole('region',{name:'项目助理',exact:true})
+  await assistant.getByText('过程管家',{exact:true}).click()
+  await expect(assistant.getByText(model?'候选已生成':'待人工处理',{exact:true})).toBeVisible()
+  if(model)await expect(assistant.getByText(/Work took 2\.50 days\./)).toBeVisible()
+  else await expect(assistant.getByRole('heading',{name:'待核验候选',exact:true})).toHaveCount(0)
+  await restored.drawer.getByRole('tab',{name:'日报周报',exact:true}).click()
   await expect(restored.facts.getByText('暂无候选事实',{exact:true})).toBeVisible()
   if(model){
     await expect(restored.analysis.getByText('Work took 2.50 days.',{exact:true})).toBeVisible()
