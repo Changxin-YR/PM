@@ -128,3 +128,13 @@
 | `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/mcp-calls-0028.json -q --tb=short` | 0 | PASS：124 项 / 201.65 秒，`.local/0028-full-with-mcp.log`。不代表 T10 组合验收。 |
 
 初次全量回归 FAIL（120 通过、3 失败），修复测试使用的项目可见身份和 0028 降级保护文案后复验通过；未放宽项目隔离。共享开发库仍在 0016。
+
+## Q4 正式立项前支出
+
+源条款：§4.2、§12.1 Q4、ADR 0005。`pmo/spending.py` 以首次生效的正式立项 Decision（通过或有条件通过）划界，按实际发生时点查询已核验正负流水。核验时间晚于决议不会抹除历史支出，待核凭证和立项后的支出不进入列表。基准 SHA `b88f83f334f0f4c497ff20470f4e742d9ea5ea4d`，本切片源码树 `ba3a59d02673af6f2779a77d7a2342bed78f4de1`；Windows、PostgreSQL 16 随机 schema、独立合成审阅人及核验人、真实回环 HTTP/stdio、无模型。同期工作区有独立的落地提醒改动，不涉及本查询。
+
+| 命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_spending.py tests/test_postings.py --tb=short --junitxml=.local/preapproval-conditional.xml` | 0 | PASS：2 项 / 11.95 秒。正式条件通过后按发生时间截取；历史金额与人天、之后支出、候选、未授权人员和 SDK 枚举同一个列表；凭证独立核验、并发、冲销回归。 |
+
+修复前 `.local/preapproval-conditional-first.xml` 记录 FAIL（退出 1）：正式条件通过后发生的已核验流水被错误纳入。未更改立项门槛或支出记录。

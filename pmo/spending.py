@@ -41,7 +41,8 @@ def spending(authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=
         at=c.scalar(sa.select(sa.func.clock_timestamp()))
         approval=(sa.select(d.c.id.label('decision'),d.c.decided_at.label('approved')).join(r,r.c.id==d.c.review_id)
             .where(d.c.project_id==p.c.id,r.c.project_id==p.c.id,r.c.type=='charter',r.c.status=='decided',
-                r.c.verdict=='pass',d.c.option=='pass',d.c.decided_at<=at).order_by(d.c.decided_at,d.c.id).limit(1).correlate(p).lateral())
+                r.c.verdict.in_(('pass', 'conditional_pass')),d.c.option==r.c.verdict,
+                d.c.decided_at<=at).order_by(d.c.decided_at,d.c.id).limit(1).correlate(p).lateral())
         matching=(sa.select(p.c.id.label('pid'),p.c.code,t.c.id,t.c.occurred_at,t.c.amount_signed,t.c.type,t.c.source_ref,approval.c.approved,approval.c.decision)
             .select_from(p.join(t,t.c.project_id==p.c.id).outerjoin(approval,sa.true())).where(visible(a),t.c.status=='verified',
             t.c.verified_at<=at,t.c.occurred_at<=at,sa.or_(approval.c.approved.is_(None),t.c.occurred_at<approval.c.approved)).cte('matching'))

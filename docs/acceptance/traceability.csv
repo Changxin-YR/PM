@@ -33,7 +33,7 @@
 "Q1","§7.1","合成立项分数与弱项、原始锚点和理由、同类教训与无资料提示","Q1","PASS","pmo/review_outcomes.py;pmo/assistant.py","tests/test_reviews.py;tests/test_assistant.py;docs/progress/M4-report.md"
 "Q2","§7.1","合成：当前时间线、金额、人天、需求满足率、精确值及时点；不可信时不使用旧快照","Q2","PASS","pmo/health.py;pmo/assistant.py;web/src/Health.vue","tests/test_health.py;tests/test_assistant.py;docs/progress/M4-report.md"
 "Q3","§7.1","预测漂移无变更","Q3","NOT_TESTED","",""
-"Q4","§7.1","未评审提前产生支出","Q4","LOCAL_QUERY_VERIFIED_GATE_FIXTURE","pmo/spending.py;web/src/PreapprovalSpending.vue","tests/test_postings.py;tests/test_runtime.py;tests/browser_case.py"
+"Q4","§12.1;ADR 0005","合成：立项通过前的已核验支出与正式条件通过到期边界、历史核验、候选过滤及项目隔离","Q4","PASS","pmo/spending.py;web/src/PreapprovalSpending.vue","tests/test_spending.py;tests/test_postings.py;docs/progress/M2-report.md"
 "Q5","§7.1","合成：需求、成本和风险独立结项缺口、阈值及合法补救，与正式预检一致","Q5","PASS","pmo/gates.py;pmo/assistant.py","tests/test_lifecycle.py;tests/test_requirement_exceptions.py;docs/progress/M4-report.md"
 "Q6","§7.1","合成：分类和关键词检索已确认 Lesson、出处、无来源拒答、项目可见性","Q6","PASS","pmo/retrospectives.py;pmo/assistant.py","tests/test_retrospectives.py;tests/test_assistant.py;docs/progress/M4-report.md"
 "Q7","§7.1","本周黄红及原因","Q7","NOT_TESTED","",""
