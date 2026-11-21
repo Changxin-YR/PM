@@ -82,30 +82,32 @@ def complete_milestones(pm, reviewer, project):
             json={'actualDate': today, 'evidenceRef': proof['evidenceRef'], 'reason': 'Validated delivery output'}))
 
 
-def close_materials(pm, reviewer, customer, project, requirement, risk):
-    req = data(pm.get(project + '/requirements'))['items'][0]
-    proof = upload(pm, reviewer, project, 'requirement', requirement)
-    for action, client in [('deliver', pm), ('accept', pm), ('customer-confirm', customer)]:
-        req = data(client.post(f'requirements/{requirement}/{action}', headers=headers(req['revision']),
-            json={'evidenceRef': proof['evidenceRef']}))
-    assert req['status'] == 'customer_confirmed'
+def close_materials(pm, reviewer, customer, project, requirement, risk, *, confirm=True,
+                    actuals=('100.00', '10.00'), remaining=('0.00', '0.00')):
+    if confirm:
+        req = data(pm.get(project + '/requirements'))['items'][0]
+        proof = upload(pm, reviewer, project, 'requirement', requirement)
+        for action, client in [('deliver', pm), ('accept', pm), ('customer-confirm', customer)]:
+            req = data(client.post(f'requirements/{requirement}/{action}', headers=headers(req['revision']),
+                json={'evidenceRef': proof['evidenceRef']}))
+        assert req['status'] == 'customer_confirmed'
     rejected = data(pm.get(project + '/closing/check'))
     assert {'COST_RECONCILIATION_REQUIRED', 'BLOCKING_RISK_UNRESOLVED'} <= {i['code'] for i in rejected['missing']}
     risk_proof = upload(pm, reviewer, project, 'risk', risk)
     now = datetime.now(UTC)
-    for kind, actual in [('money', '100.00'), ('effort', '10.00')]:
+    for kind, actual in zip(('money', 'effort'), actuals):
         posting = data(pm.post(project + '/cost-postings', headers=headers(), json={
             'type': kind, 'amount': actual, 'period': now.strftime('%Y-%m'), 'sourceRef': f'Synthetic {kind} verified source'}))
         data(reviewer.post(f"cost-postings/{posting['postingId']}/verify", headers=headers(), json={
             'reason': 'Checked underlying synthetic source', 'occurredAt': now.isoformat()}))
-    for index, kind in enumerate(('money', 'effort'), start=3):
+    for index, (kind, amount) in enumerate(zip(('money', 'effort'), remaining), start=3):
         data(pm.put(project + '/cost-forecasts', headers=headers(index), json={'type': kind,
-            'forecastRemaining': '0.00', 'reason': 'All work completed and no further commitment exists in this synthetic case.'}))
+            'forecastRemaining': amount, 'reason': 'Remaining commitments from the fixed synthetic test scenario.'}))
 
     # Fixed source values independent of the live cost teller; source time covers the verified subset.
     original = {'schemaVersion': 1, 'projectId': project.split('/')[-1], 'coveredThrough': datetime.now(UTC).isoformat(), 'lines': [
-        {'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL-100'},
-        {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEETS-10'}]}
+        {'type': 'money', 'netActual': actuals[0], 'sourceRef': 'SYNTHETIC-GL-CLOSING'},
+        {'type': 'effort', 'netActual': actuals[1], 'sourceRef': 'SYNTHETIC-TIMESHEETS-CLOSING'}]}
     cost_proof = upload(pm, reviewer, project, 'project', original['projectId'], original)
     return now, risk_proof, cost_proof
 

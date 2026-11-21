@@ -17,6 +17,7 @@ from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment, active_member
 from .requirement_delivery import synthetic_confirmation
+from .requirement_exceptions import Receipt as RequirementException
 from .review_scores import Assessment, Dimension, DimensionScore, Reason, assess, rubric
 from .reviews import (APPROVAL_ACTION, ReviewView, approval_hash, decision_stage, reviews,
                       snapshots, transition_project, transitions, view)
@@ -131,6 +132,7 @@ class Workbench(Strict):
     assessment: Assessment | None = None
     confirmations: list[Confirmation]
     decision: Decision | None = None
+    requirementException: RequirementException | None = None
     withdrawalReason: str | None = None
     tasks: list[Task]
     canScore: bool
@@ -311,6 +313,8 @@ def workbench(c, a, p, review, frozen):
     task_rows = c.execute(sa.select(t).join(task_refs, task_refs.c.task_id == t.c.id).where(
         task_refs.c.review_id == review.id, t.c.project_id == p.id).order_by(t.c.created_at, t.c.id)).mappings()
     show_full_material = bool(p.materials_visible or owner or initiator)
+    exception = (stored.payload.get('requirementException') if stored else
+                 frozen.materials.get('requirementException') if frozen and pending else None)
     return Workbench(review=view(review), round=round_no, approvalRequestId=intent.id if intent else None,
         dimensions=rubric(review.type), materialRefs=frozen.source_refs if frozen and show_full_material else [],
         scores=[Card(scorecardId=row.id, reviewerId=row.reviewer_id, round=row.round, dimensions=row.dimensions,
@@ -318,6 +322,7 @@ def workbench(c, a, p, review, frozen):
         appeal=appeal_view(reconsideration) if reconsideration else None, assessment=calculated if can_read_scores else None,
         confirmations=confirmations_found if can_read_scores else [], decision=Decision(**decision_public(record).model_dump(),
             rationale=record.rationale, stage=stored.payload['stage'] if stored else p.stage) if record else None,
+        requirementException=RequirementException.model_validate(exception) if exception and show_full_material else None,
         tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy,
         withdrawalReason=review.minutes if review.verdict == 'withdrawn' else None,
         canScore=valid and reviewer and bool(rubric(review.type)) and not any(r.reviewer_id == a.person and r.round == round_no for r in rows),
@@ -363,7 +368,7 @@ def valid_assignee(c, p, who):
 
 
 def make_tasks(c, a, p, review, verdict, conditions, calculated, now):
-    if (verdict == 'conditional_pass') != bool(conditions) or (review.type == 'closing' and conditions):
+    if (verdict == 'conditional_pass' and review.type != 'closing') != bool(conditions):
         raise Failure(422, 'CONDITIONS_REQUIRED_OR_NOT_ALLOWED', project_id=p.id)
     specs = {}
     for term in conditions:
@@ -427,10 +432,16 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
                 raise Failure(422, 'SPONSOR_CONFIRMATION_REQUIRED', project_id=p.id)
             if by_role.get('initiator') != p.initiator_id or not active_member(c, p, p.initiator_id, 'initiator'):
                 raise Failure(422, 'INITIATOR_CONFIRMATION_REQUIRED', project_id=p.id)
-    if review.type == 'closing' and command.verdict == 'conditional_pass':
-        raise Failure(422, 'CLOSING_EXCEPTION_NOT_AVAILABLE', project_id=p.id)
+    exception = frozen.materials.get('requirementException') if review.type == 'closing' else None
+    if review.type == 'closing' and command.verdict in PASS:
+        if command.verdict == 'conditional_pass' and not exception:
+            raise Failure(422, 'CLOSING_EXCEPTION_NOT_AVAILABLE', project_id=p.id)
+        if command.verdict == 'pass' and exception:
+            raise Failure(422, 'CLOSING_CONDITIONAL_DECISION_REQUIRED', project_id=p.id)
     check_score_evidence(c, a, p, review, frozen, scored)
     now = c.scalar(sa.select(sa.func.clock_timestamp()))
+    if exception and command.verdict == 'conditional_pass' and now >= RequirementException.model_validate(exception).expiresAt:
+        raise Failure(409, 'REVIEW_SNAPSHOT_STALE', project_id=p.id)
     make_tasks(c, a, p, review, command.verdict, command.conditions, calculated, now)
     destination = decision_stage(review.type, command.verdict)
     assert destination is not None
@@ -445,6 +456,8 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
         'submittedBy': str(intent.requested_by), 'delegatedBy': str(intent.delegated_by) if intent.delegated_by else None,
         'reviewerAssignment': snapshot(reviewer_assignment(c, a, p, review, frozen)), 'sourceRefs': frozen.source_refs,
         'conditions': [term.model_dump(mode='json') for term in command.conditions], 'approvedBaselines': baselines}
+    if exception and command.verdict == 'conditional_pass':
+        payload['requirementException'] = exception
     c.execute(outcomes.insert().values(decision_id=decision_id, review_id=review.id, approval_request_id=intent.id,
         rule_version=RULE_VERSION, material_hash=frozen.snapshot_hash, payload_hash=fingerprint(payload), payload=payload, request_id=UUID(rid)))
     transition_project(c, a, p, review, destination, rid, verdict=command.verdict)

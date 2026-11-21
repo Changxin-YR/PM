@@ -70,6 +70,49 @@ try {
   const pm=await actor('pm')
   if(process.env.PMO_TEST_PHASE==='delivery') {
     await directStage(pm,'有效里程碑均已完工，并已核验交付凭证。','delivering','交付验收')
+  } else if(process.env.PMO_TEST_PHASE==='exception') {
+    const command=JSON.parse(process.env.PMO_TEST_REQUIREMENT_EXCEPTION)
+    const customer=await actor('client_representative'), reviewer=await actor('reviewer')
+    const panel=await open(customer,'需求例外')
+    const deviation=command.items[0].deviation
+    await panel.getByLabel('具体接受的偏差',{exact:true}).fill(deviation)
+    const local=await customer.evaluate(iso=>{
+      const date=new Date(iso)
+      return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16)
+    },command.expiresAt)
+    await panel.getByLabel('接受有效截至（本地时间）',{exact:true}).fill(local)
+    await panel.getByRole('checkbox',{name:new RegExp(command.evidenceRef)}).check()
+    await panel.getByLabel('我作为客户代表明确接受所列需求偏差。',{exact:true}).check()
+    const receipt=await write(customer,'POST','/requirement-exceptions',button(panel,'签署书面例外'))
+    expect(receipt.items[0].deviation).toBe(deviation)
+    await customer.reload()
+    await expect((await open(customer,'需求例外')).getByText('当前有效的客户书面接受',{exact:true})).toBeVisible()
+
+    const gatePanel=await open(pm,'关口送审')
+    await expect(gatePanel.getByText('结项预检 · 材料齐备',{exact:true})).toBeVisible()
+    await button(gatePanel,'提交结项评审').click()
+    await write(pm,'POST','/projects/[^/]+/reviews',button(dialog(pm,'确认送审'),'确认送审'))
+    const openClosing=async()=>{
+      const reviewing=await open(reviewer,'关口送审')
+      await button(reviewing.getByRole('row').filter({has:reviewer.getByRole('cell',exact('结项'))}),'打开评审工作台').click()
+      return dialog(reviewer,'关口人工工作台')
+    }
+    const workbench=await openClosing()
+    await expect(workbench.getByText(deviation,{exact:true})).toBeVisible()
+    await button(workbench,'登记裁决').click()
+    const judgment=workbench.getByLabel('裁决',{exact:true})
+    await expect(judgment.locator('option[value=pass]')).toBeDisabled()
+    await judgment.selectOption('conditional_pass')
+    const reason='独立核验客户书面接受的具体需求偏差，成本与风险仍按正常结项规则检查。'
+    await workbench.getByLabel('裁决理由',{exact:true}).fill(reason)
+    const result=await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
+    expect(result.decision).toMatchObject({stage:'closed',rationale:reason,option:'conditional_pass'})
+    expect(result.requirementException.receiptHash).toBe(receipt.receiptHash)
+    await reviewer.reload()
+    const history=await openClosing()
+    await expect(history.getByText('裁决接受的具体需求偏差',{exact:true})).toBeVisible()
+    await expect(history.getByText(deviation,{exact:true})).toBeVisible()
+    await expect(history.getByText(reason,{exact:true})).toBeVisible()
   } else {
     const reviewer=await actor('reviewer'), reconciler=await actor('outsider')
     const gatePanel=await open(pm,'关口送审')

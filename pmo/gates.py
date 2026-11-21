@@ -151,7 +151,13 @@ def planning_material(c, a, p, gate, out):
             out.reject('RISK_REGISTER_REQUIRED', '需登记项目风险并填写应对措施。', risk_refs)
         return
     if quality.activeP0 != quality.confirmedP0 or not quality.activeWeight or 10 * quality.confirmedWeight < 9 * quality.activeWeight:
-        out.reject('CUSTOMER_ACCEPTANCE_REQUIRED', '有效 P0 需全部确认，且加权满足率至少为 90%。', req_refs)
+        from .requirement_exceptions import gate_check
+        exception = gate_check(c, a, p)
+        if exception is None:
+            out.reject('CUSTOMER_ACCEPTANCE_REQUIRED', '有效 P0 需全部确认，且加权满足率至少为 90%，或有具体需求的客户书面例外。', req_refs)
+        else:
+            out.content['requirementException'] = exception.snapshot
+            out.refs.extend(exception.source_refs)
     for r in reqs:
         if r.status == 'customer_confirmed':
             evidence(c, a, out, r, 'requirement')

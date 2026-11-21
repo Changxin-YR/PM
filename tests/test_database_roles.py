@@ -103,6 +103,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as api_db:
             assert api_db.execute('SELECT id FROM user_roles FOR SHARE').fetchall()
+            assert api_db.execute("SELECT has_table_privilege('requirement_exception_events', 'SELECT,INSERT')").fetchone() == (True,)
             denied(api_db, [
                 'CREATE TABLE public.unauthorized(id int)', 'CREATE TEMP TABLE unauthorized(id int)',
                 'ALTER TABLE audit_logs DISABLE TRIGGER USER', 'TRUNCATE audit_logs',
@@ -113,12 +114,14 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE change_approval_grants SET project_id=project_id',
                 'UPDATE user_accounts SET password_hash=password_hash',
                 'UPDATE cost_entries SET actual=actual', 'UPDATE alembic_version SET version_num=version_num',
+                'UPDATE requirement_exception_events SET fingerprint=fingerprint', 'TRUNCATE requirement_exception_events',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
             ])
         with psycopg.connect(**connection_args(urls['worker']), autocommit=True) as worker_db:
             denied(worker_db, ['SELECT password_hash FROM user_accounts', 'SELECT token_hash FROM agent_credentials',
                                'SELECT * FROM evidence_files', 'SELECT * FROM audit_logs', 'UPDATE projects SET name=name',
+                               'SELECT * FROM requirement_exception_events',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 
         with serve(urls['api'], tmp_path) as api:

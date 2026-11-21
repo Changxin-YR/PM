@@ -5,6 +5,7 @@ import Milestones from './Milestones.vue'
 import Requirements from './Requirements.vue'
 import Changes from './Changes.vue'
 import RequirementBaseline from './RequirementBaseline.vue'
+import RequirementExceptions from './RequirementExceptions.vue'
 import Evidence from './Evidence.vue'
 import Stakeholders from './Stakeholders.vue'
 import Charter from './Charter.vue'
@@ -86,6 +87,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane label="里程碑"><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane v-if="['delivering','closing_review'].includes(materialProject.stage)" label="需求例外" lazy><RequirementExceptions :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="变更台账" lazy><Changes :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane label="证据附件" lazy><Evidence :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>

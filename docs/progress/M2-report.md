@@ -31,3 +31,17 @@
 失败与根因记录：初次复盘专项 FAIL（4 失败），合成夹具未同时写入 0019 规定的流转申请，已修正后通过。初次综合回归 FAIL（57 通过、9 失败于夹具登录阶段），同源 IP 测试跨用例累计触发真实限流；只在随机隔离 schema 的用例之间推进该 IP 的窗口，新增真实 IP 与账户限流断言，67 项重验通过。Edge 发现脚本语法、更新期间主动关闭、重名按钮和嵌套定位错误，修正后定向重验通过。
 
 阶段边界：正常合成闭环通过，未覆盖需求书面例外、全部终止边及 LR-08 定时通知。真实非零承诺仍阻断；金额、人天和风险绝不受需求例外豁免。
+
+## 2026-11-21 具体需求书面例外（0020）
+
+源条款：§4.4、§6、§19.4、§20.5，DEC-09/26、LR-07、A07。合成默认：独立客户代表以认证会话签署（必须有对应客户联系身份），另一个仍在任的 Reviewer 核验版本、偏差、范围和有效期完全一致的 PDF 原件；回执和撤销事件只追加。条件裁决与普通裁决互斥；结项快照和 Decision 持久化具体偏差及证据哈希，不改需求实际确认状态，不生成落地补强任务。其他结项门槛保持独立。产线仍 `POLICY_PENDING`。
+
+基准 SHA `487d96f5999924239fc2a8ece2361d7b8cef3a09`，本批被测源码树 `fd5fd041001f316dbbea95f98aa4dcb0d01447c2`（不含后续周报/任务及进度文本）。位置：`migrations/versions/0020_requirement_exceptions.py`、`pmo/requirement_exceptions.py`、`pmo/gates.py`、`pmo/review_outcomes.py`、`web/src/RequirementExceptions.vue`。环境：Windows、回环 HTTP、PostgreSQL 16.14 随机隔离 schema 和临时私有原件、Edge、不同合成账号，无模型和业务签核。
+
+| 实际命令（测试数据库由开发脚本同样的本地配置注入） | 结果 | 证据 |
+|---|---|---|
+| `.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_requirement_exceptions.py tests/test_lifecycle.py tests/test_reviews.py tests/test_database_roles.py` | PASS，退出 0，20 项 / 139.53 秒 | 真实 HTTP 条件结项和独立否决路径，撤销/过期/改动原件后裁决失败，撤回重送，同键只写一次，金额/人天超限、非零承诺和未接收风险不能送审；API/Outbox 分账号保护。 |
+| `.venv/Scripts/python.exe -m pytest -q --tb=short tests/browser_case.py::test_browser_customer_exception_and_conditional_decision` | PASS，退出 0，1 项 / 51.94 秒 | `web/e2e/lifecycle.mjs`：不同账号签署、送审、核验偏差、条件裁决、刷新读回。前置对账/关闭风险和原件准备走 HTTP。 |
+| `scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | PASS，退出 0 | 静态规格检查、mypy、Vue 类型、Vite 构建；主包大小警告仍存在。 |
+
+失败记录：首次例外专项 FAIL（5 项通过、1 项失败，退出 1），测试把文本型审计请求号按 UUID 绑定；改按文本比较。首次组合回归 FAIL（19 项通过、1 项失败，退出 1），超支夹具未按对账规则提供归因；补真实请求中的归因，未放松产品门槛。初次类型检查 FAIL，解决附件参数和在制周报类型错误后复验通过。最终候选仍需针对现有数据和新增附件引用联合恢复。

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue'
 import {Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
+import RequirementExceptionReceipt, {type RequirementException} from './RequirementExceptionReceipt.vue'
 
 const gates={charter:'立项',feasibility:'落地',closing:'结项'}
 const statuses={draft:'草稿',pending:'待评审',decided:'已裁决'}
@@ -24,6 +25,7 @@ type Workbench={
   assessment?:{classification:keyof typeof classifications;total?:string;means:Record<string,string>;weakDimensions:string[]}
   confirmations:{role:Role;confirmedAt:string;confirmedBy:string;current:boolean}[]
   decision?:{decisionId:string;option:string;rationale:string;decidedAt:string;decidedBy:string;stage:string}
+  requirementException?:RequirementException
   tasks:{taskId:string;title:string;assigneeId?:string;dueAt?:string;sourceType:string;sourceId:string;status:string;revision:number}[]
   canScore:boolean;canAppeal:boolean;canDecide:boolean;canWithdraw:boolean;canConfirmSponsor:boolean;canConfirmInitiator:boolean
   policyPending:boolean;stale:boolean
@@ -69,7 +71,7 @@ function addCondition(){if(conditions.value.length<maxConditions)conditions.valu
 function selectAction(id:Action['id']){
   selected.value=id;reason.value='';verdict.value='';conditions.value=[];error.value='';notice.value=''
 }
-function changeVerdict(){if(verdict.value==='conditional_pass'&&!conditions.value.length)addCondition()}
+function changeVerdict(){if(verdict.value==='conditional_pass'&&view.value?.review.type!=='closing'&&!conditions.value.length)addCondition()}
 
 async function read(){
   const {data:next}:{data:Workbench}=await props.api(`${path}/workbench`)
@@ -112,6 +114,10 @@ const command=computed(()=>{
   if(action.id!=='decide')return {reason:reason.value.trim()}
   if(!verdict.value||!data.approvalRequestId)return null
   const base={verdict:verdict.value,rationale:reason.value.trim(),approvalRequestId:data.approvalRequestId}
+  if(data.review.type==='closing'){
+    if(verdict.value==='conditional_pass'&&!data.requirementException||verdict.value==='pass'&&data.requirementException)return null
+    return base
+  }
   if(verdict.value!=='conditional_pass')return base
   if(!conditions.value.length||conditions.value.some(row=>textLength(row.title.replace(/\s+/g,' '))<4||
     !uuidPattern.test(row.assigneeId.trim())||!(Date.parse(row.dueAt)>Date.now())))return null
@@ -179,6 +185,8 @@ async function submit(previous?:Attempt){
       <template v-if="view">
         <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" :closable="false" show-icon/>
         <el-alert v-if="view.stale" type="warning" title="送审所依据的材料或授权已变化。" :closable="false" show-icon/>
+        <RequirementExceptionReceipt v-if="view.requirementException" :receipt="view.requirementException"
+          :title="view.decision?'裁决接受的具体需求偏差':'本次送审冻结的客户书面例外'"/>
         <section v-if="view.assessment" class="group" aria-label="评分评定">
           <h4>评分评定 · {{classifications[view.assessment.classification]}}</h4>
           <p v-if="view.assessment.total!=null">总分：{{view.assessment.total}}</p>
@@ -231,10 +239,10 @@ async function submit(previous?:Attempt){
               <label>裁决<select v-model="verdict" aria-label="裁决" required @change="changeVerdict">
                 <option value="" disabled>请选择裁决</option>
                 <option v-for="(label,option) in verdicts" :key="option" :value="option"
-                  :disabled="option==='conditional_pass'&&view.review.type==='closing'">{{label}}</option>
+                  :disabled="view.review.type==='closing'&&((option==='conditional_pass'&&!view.requirementException)||(option==='pass'&&!!view.requirementException))">{{label}}</option>
               </select></label>
               <label>裁决理由<textarea v-model="reason" rows="3" required minlength="4" maxlength="1500"/></label>
-              <template v-if="verdict==='conditional_pass'">
+              <template v-if="verdict==='conditional_pass'&&view.review.type!=='closing'">
                 <fieldset v-for="(condition,index) in conditions" :key="condition.id" class="form-block">
                   <legend>条件 {{index+1}}</legend>
                   <label>条件标题<input v-model.trim="condition.title" required minlength="4" maxlength="180"/></label>

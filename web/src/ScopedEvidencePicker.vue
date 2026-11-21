@@ -5,7 +5,7 @@ import {Download,RefreshCw,X} from 'lucide-vue-next'
 type Evidence={evidenceId:string;evidenceRef:string;projectId:string;originalName:string;mimeType:string;sizeBytes:number;
   status:string;linkedResourceType:string;linkedResourceId:string;description:string}
 type Page={items:Evidence[];page:number;total:number}
-const props=defineProps<{projectId:string;resourceType:'project'|'risk';resourceId:string;label:string;
+const props=defineProps<{projectId:string;resourceType:'project'|'risk'|'requirement';resourceId?:string;resourceIds?:string[];label:string;
   api:(path:string,options?:RequestInit)=>Promise<any>;mimeType?:string;maxBytes?:number;limit?:number;disabled?:boolean}>()
 const selected=defineModel<string[]>({required:true})
 const page=ref(1),total=ref(0),pageSize=40,loading=ref(false),error=ref(''),rows=ref<Evidence[]>([])
@@ -18,7 +18,7 @@ async function load(next=page.value){
     const q=new URLSearchParams({verifiedOnly:'true',page:String(next),pageSize:String(pageSize)})
     const {data}:{data:Page}=await props.api(`projects/${props.projectId}/evidence?${q}`)
     rows.value=data.items.filter(item=>item.status==='verified'&&item.projectId===props.projectId&&
-      item.linkedResourceType===props.resourceType&&item.linkedResourceId===props.resourceId&&
+      item.linkedResourceType===props.resourceType&&(item.linkedResourceId===props.resourceId||props.resourceIds?.includes(item.linkedResourceId))&&
       (!props.mimeType||item.mimeType===props.mimeType)&&(!props.maxBytes||item.sizeBytes<=props.maxBytes))
     page.value=data.page;total.value=data.total
   }catch(e){rows.value=[];error.value=e instanceof Error?e.message:'未能读取项目附件。'}

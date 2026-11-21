@@ -67,4 +67,6 @@ $script | .\.venv\Scripts\python.exe -B -X utf8 -
 
 REST 尚缺：`pmo_task_list`、`human_task_create`、`pmo_task_update`、`pmo_report_list`、`pmo_report_submit`、`pmo_report_get`、`human_report_confirm`、`human_report_submit_existing`、`human_report_analyze`、`pmo_fact_propose`、`human_fact_verify`、`human_fact_clarify`、`human_report_fact_list`、`pmo_health_get`、`human_appeal_health`、`human_health_history`、`admin_users_list`、`admin_user_invite`、`admin_user_update_status`、`admin_members_list`。
 
+2026-11-21 `0020`：复用按 `(method, path, operationId)` 比对的 `app.openapi()` 探针，退出 0，75/95 基线、17 项工程接口。新增需求例外读取、签署、撤销均为受控人工接口，不增加 MCP 注册；本批真实 HTTP/Edge 证据见 [M2](M2-report.md)。
+
 MCP 尚缺：`pmo_task_list`、`pmo_task_update`、`pmo_report_list`、`pmo_report_submit`、`pmo_report_get`、`pmo_fact_propose`、`pmo_health_get`。MCP 仍无直接评分、复议、终裁或归档工具。

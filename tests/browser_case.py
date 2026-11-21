@@ -94,6 +94,10 @@ def run_browser(root, url, case, values):
                    env={**os.environ, **values, 'PMO_BROWSER_URL':url})
 
 
+def browser_sessions(users, *roles):
+    return {role: {'cookie': users[role].cookies['pmo_session'], 'csrf': users[role].headers['X-CSRF-Token']} for role in roles}
+
+
 def test_browser_delivery_through_archive(live, team):
     _, _, users, _ = team
     pm, reviewer, customer = (users[k] for k in ('pm', 'reviewer', 'client_representative'))
@@ -101,8 +105,7 @@ def test_browser_delivery_through_archive(live, team):
     complete_milestones(pm, reviewer, project)
     # Before any UI stage write, prepare the remaining independent materials using HTTP.
     # The customer signs only after the UI has reached the delivering stage.
-    sessions = {role: {'cookie': users[role].cookies['pmo_session'], 'csrf': users[role].headers['X-CSRF-Token']}
-                for role in ('pm', 'reviewer', 'outsider')}
+    sessions = browser_sessions(users, 'pm', 'reviewer', 'outsider')
     with vite(live[2]) as (root, url):
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(sessions), 'PMO_TEST_PHASE':'delivery'})
         assert stage(pm, project)['stage'] == 'delivering'
@@ -111,3 +114,15 @@ def test_browser_delivery_through_archive(live, team):
             'PMO_TEST_RISK_PROOF':risk_proof['evidenceRef'], 'PMO_TEST_COST_PROOF':cost_proof['evidenceRef'],
             'PMO_TEST_ANSWERS':json.dumps(ANSWERS)})
     assert stage(pm, project)['stage'] == 'archived'
+
+
+def test_browser_customer_exception_and_conditional_decision(live, team):
+    from test_requirement_exceptions import deliver_with_exception_material
+
+    _, _, users, _ = team
+    project, prepare = deliver_with_exception_material(live, team)
+    _, command = prepare()
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm', 'reviewer', 'client_representative')),
+            'PMO_TEST_PHASE':'exception', 'PMO_TEST_REQUIREMENT_EXCEPTION':json.dumps(command)})
+    assert stage(users['pm'], project)['stage'] == 'closed'

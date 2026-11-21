@@ -28,7 +28,8 @@ API_READ = frozenset('''organizations user_accounts user_roles persons projects
     agent_collection_versions web_sessions login_windows idempotency_keys audit_logs
     rule_events review_submission_snapshots project_stage_transitions tasks review_appeals review_confirmations
     review_decision_snapshots review_strengthening_tasks cost_reconciliation_grants cost_reconciliations
-    risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes'''.split())
+    risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
+    requirement_exception_events'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures
@@ -37,7 +38,8 @@ API_ADD = frozenset('''projects project_members charters charter_versions milest
     agent_collection_versions web_sessions login_windows idempotency_keys audit_logs outbox_events
     rule_events review_submission_snapshots project_stage_transitions tasks scorecards decisions
     review_appeals review_confirmations review_decision_snapshots review_strengthening_tasks cost_reconciliations
-    risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes'''.split())
+    risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
+    requirement_exception_events'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
