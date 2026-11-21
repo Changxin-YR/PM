@@ -7,6 +7,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from . import schema_v1 as db
 from .contracts import RULE_VERSION
@@ -14,6 +15,7 @@ from .db import engine
 from .health_calculation import ACTIVE, Observation, observe
 from .health_schema import FEASIBILITY_OVERDUE, events, scan_state
 from .milestone_forecasts import reconcile
+from .observability import emit
 from .projects import fingerprint
 from .reports import TZ
 from .requirement_baselines import active_member
@@ -236,19 +238,27 @@ def scan_batch(database, limit=50):
     return processed
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--limit', type=int, choices=range(1, 501), default=50, metavar='1..500')
     parser.add_argument('--watch', action='store_true', help='Run the independent scheduler every 30 seconds')
     args = parser.parse_args()
-    database = engine()
-    while True:
-        count = scan_batch(database, args.limit)
-        print(json.dumps({'scanned': count}), flush=True)
-        if not args.watch:
-            return
-        sleep(30 if count < args.limit else 1)
+    try:
+        database = engine()
+        while True:
+            count = scan_batch(database, args.limit)
+            if not args.watch:
+                print(json.dumps({'scanned': count}), flush=True)
+                return 0
+            if count:
+                emit('rules.batch', scanned=count)
+            sleep(30 if count < args.limit else 1)
+    except (SQLAlchemyError, KeyError):
+        emit('rules.failed', 'error', code='RULE_SCAN_DATABASE_FAILURE')
+        return 1
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

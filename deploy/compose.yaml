@@ -1,0 +1,100 @@
+name: pmo104-stack
+
+x-runtime: &runtime
+  image: ${COMPOSE_PROJECT_NAME:-pmo104-stack}-runtime:local
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+psycopg://pmo_api:${PMO_DEPLOY_API_PASSWORD:?set API password}@db:5432/pmo
+  PMO_REPORT_ANALYSIS: "0"
+
+services:
+  db:
+    image: postgres:16.14-alpine
+    environment:
+      POSTGRES_USER: pmo_bootstrap
+      POSTGRES_DB: pmo
+      POSTGRES_PASSWORD: ${PMO_DEPLOY_DB_PASSWORD:?set database bootstrap password}
+      PMO_DEPLOY_MIGRATE_PASSWORD: ${PMO_DEPLOY_MIGRATE_PASSWORD:?set migration password}
+      PMO_DEPLOY_API_PASSWORD: ${PMO_DEPLOY_API_PASSWORD:?set API password}
+      PMO_DEPLOY_OUTBOX_PASSWORD: ${PMO_DEPLOY_OUTBOX_PASSWORD:?set Outbox password}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/10-pmo-roles.sql:ro
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, pmo_bootstrap, -d, pmo]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  migrate:
+    <<: *runtime
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+      args:
+        PYTHON_IMAGE: ${PMO_PYTHON_IMAGE:-python:3.12-slim}
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgresql+psycopg://pmo_migrate:${PMO_DEPLOY_MIGRATE_PASSWORD:?set migration password}@db:5432/pmo
+      PMO_MIGRATION_DATABASE_URL: postgresql+psycopg://pmo_migrate:${PMO_DEPLOY_MIGRATE_PASSWORD:?set migration password}@db:5432/pmo
+    command: [sh, -ec, 'alembic upgrade head && exec python -m pmo.database_roles --dedicated-database --api-role pmo_api --worker-role pmo_outbox']
+
+  api:
+    <<: *runtime
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    environment:
+      <<: *api-env
+      PMO_LOCAL_HTTP: "1"
+    volumes:
+      - evidence:/var/lib/pmo/evidence
+    healthcheck:
+      test: [CMD, python, -c, 'from urllib.request import urlopen; urlopen("http://127.0.0.1:8000/health/ready", timeout=6).close()']
+      interval: 10s
+      timeout: 7s
+      retries: 8
+      start_period: 8s
+    restart: on-failure:3
+
+  scheduler:
+    <<: *runtime
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    environment: *api-env
+    volumes:
+      - evidence:/var/lib/pmo/evidence:ro
+    command: [python, -m, pmo.rule_scan, --watch]
+    restart: on-failure:3
+
+  outbox:
+    <<: *runtime
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    environment:
+      DATABASE_URL: postgresql+psycopg://pmo_outbox:${PMO_DEPLOY_OUTBOX_PASSWORD:?set Outbox password}@db:5432/pmo
+    command: [python, -m, pmo.outbox, --watch]
+    restart: on-failure:3
+
+  web:
+    image: ${COMPOSE_PROJECT_NAME:-pmo104-stack}-web:local
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      args:
+        NODE_IMAGE: ${PMO_NODE_IMAGE:-node:24-alpine}
+        NGINX_IMAGE: ${PMO_NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.27-alpine}
+    depends_on:
+      api: {condition: service_healthy}
+    ports:
+      - '127.0.0.1:${PMO_DEPLOY_PORT:-18760}:8080'
+    restart: on-failure:3
+
+volumes:
+  dbdata:
+  evidence:

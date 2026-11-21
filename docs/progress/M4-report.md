@@ -122,3 +122,19 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格和 mypy 82 文件，`.local/weekly-health-check.log`；Vue 类型。 |
 
 首次 API FAIL（退出 1，`.local/weekly-health-api.xml`）：缺人工操作白名单；添加本操作但未加入 Agent 路由。首轮 Vue 类型 FAIL 修复分页回调类型；下一轮 `.local/weekly-health-retest.xml` 退出 1，因为用例默认历史周并非当期，改为提交实际采样对应的周并保留全部断言。
+
+## 0028 隔离部署、运行探针与性能
+
+依据：主方案 §9.1、§14 第 6 项、REL-001。基准 SHA `a323905be7c81d1b7cb18640c9ccff63edb17dba`，被测部署源码树 `7c84ae1cd1f4bbb9029d508760d46afad0ca09b3`（不含本证据及并行 MCP 动作回归）。实现：`deploy/compose.yaml`、`pmo/health_probes.py`、`pmo/observability.py`、`pmo/database_roles.py` 与独立扫描和 Outbox。部署与失效处置见[手册](../ops/isolated-deployment.md)。
+
+环境：Windows 构建 26300、Ryzen 9 7945HX（32 逻辑 CPU）、16 GiB 主机内存，Docker Desktop Engine 29.8.2（约 5.8 GiB），Compose 5.6.0，PostgreSQL 16.14；Edge `158.0.4370.33`、1280×900。合成隔离 Compose `pmo104-rc-0c3c7df1`，只发布回环 Web，数据库和私有文件使用独立卷。实际 head `0028`，共享开发库只读回核为 `0016`，未升级；无真实项目、外部模型或业务签核。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `docker compose -p pmo104-rc-0c3c7df1 --env-file .local/pmo104-rc-0c3c7df1.env -f deploy/compose.yaml up --build -d --wait` | 0 | PASS，空库初始化、迁移退出 0、API 就绪后起 Web，见 `.local/pmo104-rc-0c3c7df1-build.log`。 |
+| `.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-0c3c7df1` | 0 | PASS，实际连接角色为非超级用户 API、扫描和 Outbox。登录并正式写入 15 个草稿和 15 条里程碑，未赋项目审批角色；15 条创建事件均有唯一已投递回执。实停隔离 DB，`live` 200、`ready` 503；恢复双 200，草稿和回执数量不变，退出登录成功。三轮热身后各测 30 次：筛选从点击到结果渲染 p95 **37 ms**，详情到真实里程碑显示 p95 **43 ms**，本机合成数据低于 1 秒。`.local/pmo104-rc-0c3c7df1-smoke.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_mcp_action_matrix.py tests/test_operational_checks.py tests/test_outbox.py tests/test_database_roles.py tests/test_runtime.py::test_runtime_has_all_baseline_methods_paths_and_tool_mappings --tb=short --junitxml=.local/operational-final.xml` | 0 | PASS，9 项 / 39.84 秒。探针错误版本、私有目录、日志脱敏、受限账号与重复投递；同时包含 MCP 动作矩阵。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_recovery.py tests/test_database_roles.py tests/test_error_contract.py --tb=short --junitxml=.local/rc0028-recovery.xml` | 0 | PASS，4 项 / 34.62 秒。专用合成库从 `0016` 带数据升级到 `0028`，真实 `pg_dump/pg_restore` 与私有附件一起恢复；回读旧立项和附件、健康输入、日报周报及来源、Fact 原话、核验及争议、开户审计和分析收据。损坏归档、异地/重叠恢复路径和有记录的破坏性降级被拒绝。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；OpenAPI 按 operationId、方法及路径与冻结表对照 | 0 | PASS，三套规格及 mypy 84 文件（`.local/operational-check.log`）。95/95 基线 REST、41 工程操作（新增两个探针）、40 MCP 注册。 |
+
+只证明合成候选版的启动、探针、基础写入和本机性能；目标环境 TLS、凭据轮换、告警与周期备份、试点性能须独立验收。未作生产发布。

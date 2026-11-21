@@ -2,6 +2,7 @@
 import argparse
 import json
 from dataclasses import dataclass
+from time import sleep
 from uuid import UUID
 
 from sqlalchemy import Connection, Engine, text
@@ -10,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .db import engine
 from .org_events import ORGANIZATION_EVENTS
+from .observability import emit
 
 LEASE_SECONDS = 30
 MAX_ATTEMPTS = 5
@@ -118,11 +120,14 @@ def fail(db: Engine, lease: Lease, *, invalid: bool) -> None:
             mark_sent(c, lease)
             return
         dead = lease.attempt >= MAX_ATTEMPTS
+        code = 'INVALID_PROJECT_EVENT' if invalid else 'DELIVERY_FAILED'
         c.execute(text('''UPDATE outbox_events SET status=:status,last_error=:code,locked_until=NULL,
             updated_at=now(),next_attempt_at=clock_timestamp()+:delay*interval '1 second' WHERE id=:id'''),
             dict(id=lease.event_id, status='dead_letter' if dead else 'pending',
-                 code='INVALID_PROJECT_EVENT' if invalid else 'DELIVERY_FAILED', delay=min(300,2**lease.attempt)))
+                 code=code, delay=min(300,2**lease.attempt)))
         finish_attempt(c, lease, 'dead_letter' if dead else 'retry')
+    emit('outbox.dead_letter' if dead else 'outbox.retry', 'error' if dead else 'warning',
+         eventId=str(lease.event_id), attempt=lease.attempt, code=code)
 
 
 def dispatch(db: Engine, limit: int) -> int:
@@ -141,21 +146,38 @@ def dispatch(db: Engine, limit: int) -> int:
     return count
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--limit', type=int, default=50)
     parser.add_argument('--dead-letters', action='store_true')
+    parser.add_argument('--watch', action='store_true')
     args = parser.parse_args()
     if not 1 <= args.limit <= 500:
         parser.error('--limit must be 1..500')
-    db = engine()
-    if args.dead_letters:
-        with db.connect() as c:
-            rows = c.execute(text("SELECT id,event_type,retry_count,last_error FROM outbox_events WHERE status='dead_letter' ORDER BY updated_at,id LIMIT :n"), {'n':args.limit}).mappings()
-            print(json.dumps([dict(row) for row in rows], default=str))
-    else:
-        print(json.dumps({'acknowledged':dispatch(db, args.limit)}))
+    if args.dead_letters and args.watch:
+        parser.error('--dead-letters and --watch are mutually exclusive')
+    try:
+        db = engine()
+        if args.dead_letters:
+            with db.connect() as c:
+                rows = c.execute(text("SELECT id,event_type,retry_count,last_error FROM outbox_events WHERE status='dead_letter' ORDER BY updated_at,id LIMIT :n"), {'n':args.limit}).mappings()
+                print(json.dumps([dict(row) for row in rows], default=str))
+            return 0
+        while True:
+            count = dispatch(db, args.limit)
+            if not args.watch:
+                print(json.dumps({'acknowledged': count}))
+                return 0
+            if count:
+                emit('outbox.batch', acknowledged=count)
+            if count < args.limit:
+                sleep(2)
+    except (SQLAlchemyError, KeyError):
+        emit('outbox.failed', 'error', code='OUTBOX_DATABASE_FAILURE')
+        return 1
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

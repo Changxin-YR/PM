@@ -45,5 +45,5 @@ switch ($Action) {
     }
     Invoke-Checked { & $python -m mypy pmo --ignore-missing-imports }
   }
-  api { Invoke-Checked { & $python -m uvicorn pmo.api:app --host 127.0.0.1 --port 8000 } }
+  api { Invoke-Checked { & $python -m uvicorn pmo.api:app --host 127.0.0.1 --port 8000 --reload --reload-dir pmo --no-access-log } }
 }

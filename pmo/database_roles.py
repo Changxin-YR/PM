@@ -17,7 +17,7 @@ class RoleError(Exception):
 
 
 # SELECT is not implied for new tables. Extend the matrix alongside new handlers.
-API_READ = frozenset('''organizations user_accounts user_roles persons projects
+API_READ = frozenset('''alembic_version organizations user_accounts user_roles persons projects
     project_members charters charter_versions milestones requirements
     stakeholders risks reviews reports decisions scorecards cost_entries cost_postings
     cost_plan_versions cost_baseline_history evidence_files evidence_links

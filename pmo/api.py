@@ -1,5 +1,6 @@
 from typing import Annotated
 from uuid import UUID, uuid4
+from time import perf_counter
 import os
 from fastapi import FastAPI, Header, Query, Request, Response
 from pydantic import Field, SecretStr
@@ -50,6 +51,8 @@ from .org_accounts import router as org_accounts_router
 from .org_invitations import router as org_invitations_router
 from .assistant import router as assistant_router
 from .weekly_health import router as weekly_health_router
+from .health_probes import router as health_probes_router
+from .observability import emit
 
 class ErrorResponse(Strict):
     code: str
@@ -95,16 +98,28 @@ app.include_router(org_accounts_router)
 app.include_router(org_invitations_router)
 app.include_router(assistant_router)
 app.include_router(weekly_health_router)
+app.include_router(health_probes_router)
 
 
 @app.middleware('http')
 async def trace(request: Request, call_next):
     rid=str(uuid4())
     token=request_id.set(rid)
+    started = perf_counter()
     try:
-        response=await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            emit('http.unhandled', 'error', requestId=rid, exceptionType=type(exc).__name__)
+            response = error(500, 'INTERNAL_ERROR')
         response.headers['X-Request-ID']=rid
         response.headers['Cache-Control']='no-store'
+        elapsed = round((perf_counter() - started) * 1000, 2)
+        status = response.status_code
+        operation = getattr(request.scope.get('route'), 'operation_id', None) or 'unmatched'
+        if not (operation in ('ops_liveness', 'ops_readiness') and status < 400):
+            emit('http.request', 'error' if status >= 500 else 'warning' if elapsed >= 1000 else 'info',
+                 requestId=rid, operationId=operation, status=status, durationMs=elapsed, slow=elapsed >= 1000)
         return response
     finally:
         request_id.reset(token)

@@ -18,6 +18,8 @@ npm.cmd --prefix web ci
 
 OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。测试通过随机 PostgreSQL schema 创建合成数据，启动单独的 HTTP 和 MCP 进程；不要将测试 URL 指向生产库。API 不会返回未授权的项目。
 
+开发 API 和 Web 支持热重载。合成候选版的镜像启动、分权运行、探针、日志及性能复验见[隔离部署手册](docs/ops/isolated-deployment.md)。共享开发库须经确认、备份及迁移后再运行当前源码；隔离验证不会替它升级。
+
 在第二个 PowerShell 中执行 `.\scripts\dev.ps1 web`，访问 `http://127.0.0.1:5173`。首次使用空库 bootstrap 交互输入组织、账号、姓名和口令，需至少 14 字符，不回显。不能在已初始化库重复运行。系统管理员不自动获得任何项目审批角色。Web 可登录、维护项目资料、查看风险与成本，并进行关口预检。退出会撤销数据库会话。构建命令 `npm.cmd --prefix web run build`。浏览器测试在 Windows 默认使用已安装的 Microsoft Edge，不需要生产口令或模型密钥。
 
 点击项目名称可维护里程碑（最多八个）及需求草稿。项目进入冻结阶段后，草稿编辑权限不会代替正式变更审批。
