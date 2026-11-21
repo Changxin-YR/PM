@@ -53,6 +53,10 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                              revision=1, initiator_id=owner, created_by=owner).returning(db.projects.c.id))
         milestone = conn.scalar(db.milestones.insert().values(project_id=project, created_by=owner, name='Deliver', ordinal=1,
                                 planned_date=date(2026, 10, 1), is_key=True).returning(db.milestones.c.id))
+        legacy_report = conn.scalar(db.reports.insert().values(project_id=project, created_by=owner, author_id=owner,
+            type='weekly', period='2026-W40', period_start=date(2026, 9, 28), period_end=date(2026, 10, 5),
+            version_no=1, is_current=True, is_current_confirmed=True, status='confirmed', structured_fields={},
+            narrative='Preserve legacy report text', submitted_at=datetime(2026, 10, 5, tzinfo=UTC)).returning(db.reports.c.id))
 
     def upload(content=png, resource='milestone', resource_id=milestone, name='record.png', mime='image/png'):
         key = uuid4().hex
@@ -112,6 +116,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                 FROM public.evidence_files f JOIN public.evidence_links l ON l.evidence_id=f.id''').fetchall()
             assert {(r[0],r[3],r[4]) for r in rows} == {(original,'milestone',milestone), (external,'project',project)}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
+            assert restored.execute('''SELECT narrative, content_hash, submitted_by, confirmed_by, confirmed_at
+                FROM public.reports WHERE id=%s''', (legacy_report,)).fetchone() == ('Preserve legacy report text', None, None, None, None)
             monkeypatch.setenv('PMO_EVIDENCE_DIR', str(targets / receipt['evidenceDirectory']))
             assert {r[0]: evidence_storage.checked_bytes(*r[:3]) for r in rows} == {original: png, external: book}
         assert {p.name for p in originals.iterdir()} == {original, external, orphan, late[0]}

@@ -26,18 +26,26 @@ APPLY = 'human_execute_transition'
 INBOX = 'human_approval_inbox'
 DECIDE = 'human_decide_approval'
 RESUBMIT = 'human_charter_resubmit'
+TERMINATION_INBOX = 'human_termination_confirmation_inbox'
+TERMINATION_CONFIRM = 'human_termination_confirm'
 ACTION = 'project_stage_transition'
+HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 
 DIRECT = {('executing', 'delivering'), ('delivering', 'executing'),
           ('closed', 'retrospective'), ('terminated', 'retrospective')}
+REVIEW_TERMINATIONS = {'feasibility_review': 'feasibility', 'closing_review': 'closing'}
 APPROVED = {('executing', 'on_hold'), ('on_hold', 'executing'), ('rejected', 'terminated'),
-            ('executing', 'terminated'), ('on_hold', 'terminated'), ('retrospective', 'archived')}
+            ('executing', 'terminated'), ('on_hold', 'terminated'), ('retrospective', 'archived')} | {
+                (stage, 'terminated') for stage in REVIEW_TERMINATIONS}
 
 intents = sa.table('project_transition_intents', sa.column('approval_id', sa.Uuid), sa.column('from_stage'),
     sa.column('to_stage'), sa.column('basis', JSONB), sa.column('source_refs', JSONB), sa.column('reason'),
     sa.column('actor_type'), sa.column('requested_at', sa.DateTime(timezone=True)))
 results = sa.table('project_transition_outcomes', sa.column('approval_id', sa.Uuid), sa.column('decision_id', sa.Uuid),
     sa.column('payload', JSONB), sa.column('payload_hash'), sa.column('request_id', sa.Uuid))
+termination_signoffs = sa.table('project_termination_confirmations', sa.column('approval_id', sa.Uuid),
+    sa.column('signer_id', sa.Uuid), sa.column('assignment_id', sa.Uuid), sa.column('payload_hash'), sa.column('reason'),
+    sa.column('signed_at', sa.DateTime(timezone=True)), sa.column('request_id', sa.Uuid))
 approval = db.approval_requests
 
 
@@ -80,6 +88,17 @@ class Entry(TransitionRequest):
     stale: bool
     decisionId: UUID | None = None
     decisionReason: str | None = None
+    holdUntil: datetime | None = None
+    awaitsInitiator: bool = False
+    initiatorConfirmedAt: datetime | None = None
+
+
+class TerminationEntry(Entry):
+    projectName: str
+
+
+class TerminationPage(Strict):
+    items: list[TerminationEntry]
 
 
 class Page(Strict):
@@ -166,6 +185,45 @@ def terminal_basis(c, p):
     return {'terminationDecision': snapshot(row)}, [f'decision:{row.decision_id}']
 
 
+def reviewed_termination_basis(c, p, gate):
+    from .reviews import APPROVAL_ACTION, reviews, snapshots
+    r, s, q = reviews.c, snapshots.c, approval.c
+    row = c.execute(sa.select(r.id, r.revision, r.snapshot_hash, q.payload_hash.label('request_hash'))
+        .select_from(reviews.join(snapshots, s.review_id == r.id).join(approval, q.id == r.id))
+        .where(r.project_id == p.id, r.type == gate, r.status == 'pending', q.project_id == p.id,
+               q.action == APPROVAL_ACTION, q.status == 'pending', r.snapshot_hash == s.snapshot_hash,
+               q.snapshot_hash == s.snapshot_hash).with_for_update(read=True, of=(reviews, approval))).mappings().one_or_none()
+    if row is None:
+        raise Failure(422, 'PENDING_REVIEW_REQUIRED', project_id=p.id)
+    contents, refs = {'review': snapshot(row)}, [f'review:{row.id}@{row.revision}', f'review-snapshot:{row.id}']
+    if gate == 'feasibility':
+        assignment = active_assignment(c, p, p.initiator_id, 'initiator')
+        if not assignment:
+            raise Failure(422, 'INITIATOR_ASSIGNMENT_REQUIRED', project_id=p.id)
+        contents['initiatorAssignment'] = snapshot(assignment)
+        refs.append(f'project-member:{assignment.id}')
+    return contents, refs
+
+
+def valid_termination_confirmation(c, req, intent):
+    t = termination_signoffs.c
+    assignment = intent.basis.get('initiatorAssignment')
+    if not assignment:
+        return None
+    return one(c, termination_signoffs, t.approval_id == req.id, t.payload_hash == req.payload_hash,
+               t.assignment_id == UUID(assignment['id']), t.signer_id == UUID(assignment['person_id']))
+
+
+def hold_basis(c, p):
+    row = c.execute(sa.text('''SELECT x.decision_id,x.payload,x.payload_hash FROM project_transition_outcomes x
+        JOIN project_stage_transitions s ON s.approval_request_id=x.approval_id
+        WHERE s.project_id=:pid AND s.to_stage='on_hold' ORDER BY s.to_revision DESC LIMIT 1'''),
+        {'pid': p.id}).mappings().one_or_none()
+    if not row or fingerprint(row.payload) != row.payload_hash or not row.payload.get('holdUntil'):
+        raise Failure(422, 'HOLD_DECISION_REQUIRED', project_id=p.id)
+    return {'holdDecision': str(row.decision_id), 'holdDecisionHash': row.payload_hash, 'holdUntil': row.payload['holdUntil']}, [f'decision:{row.decision_id}']
+
+
 def basis(c, a, p, edge):
     if p.stage != edge[0]:
         raise Failure(409, 'TRANSITION_STALE', project_id=p.id)
@@ -176,6 +234,10 @@ def basis(c, a, p, edge):
         return archive_basis(c, a, p)
     if edge == ('terminated', 'retrospective'):
         return terminal_basis(c, p)
+    if edge[1] == 'terminated' and edge[0] in REVIEW_TERMINATIONS:
+        return reviewed_termination_basis(c, p, REVIEW_TERMINATIONS[edge[0]])
+    if edge[0] == 'on_hold':
+        return hold_basis(c, p)
     if edge[0] == 'rejected':
         row, used, deadline, now = rejected_basis(c, p)
         if edge[1] == 'drafting' and (now > deadline or used):
@@ -234,11 +296,15 @@ def entry(c, a, p, req, intent):
     edge = (intent.from_stage, intent.to_stage)
     stale = req.status == 'pending' and not current(c, a, p, req, intent)
     outcome = one(c, results, results.c.approval_id == req.id)
+    confirmation = valid_termination_confirmation(c, req, intent)
     return Entry(requestId=req.id, projectId=p.id, fromStage=edge[0], toStage=edge[1], status=req.status,
         revision=req.expected_revision, requestedBy=req.requested_by, requestedAt=intent.requested_at, reason=intent.reason,
         canExecute=req.status == 'pending' and not stale and direct_actor(c, a, p, edge), stale=stale,
         canDecide=req.status == 'pending' and not stale and bool(authority(c, a, p, edge, req)) and synthetic_confirmation(c),
-        decisionId=outcome.decision_id if outcome else None, decisionReason=outcome.payload['rationale'] if outcome else None)
+        decisionId=outcome.decision_id if outcome else None, decisionReason=outcome.payload['rationale'] if outcome else None,
+        holdUntil=outcome.payload.get('holdUntil') if outcome and outcome.payload.get('holdUntil') else intent.basis.get('holdUntil'),
+        awaitsInitiator=req.status == 'pending' and bool(intent.basis.get('initiatorAssignment')) and confirmation is None,
+        initiatorConfirmedAt=confirmation.signed_at if confirmation else None)
 
 
 def finish(c, a, p, req, op, rid, key, signature, item, refs):
@@ -282,8 +348,11 @@ def propose(projectId: UUID, command: Propose, authorization: Auth, key: Key, ex
 
 
 def record_transition(c, a, p, req, intent, rid, *, judge=None, grant=None):
-    from .reviews import transition_project
+    from .reviews import APPROVAL_ACTION, reviews, transition_project
     at = c.scalar(sa.select(sa.func.clock_timestamp()))
+    review = intent.basis.get('review')
+    approval_of_review_termination = judge and judge.decision == 'approve' and review is not None
+    review_id = UUID(review['id']) if approval_of_review_termination else None
     if judge:
         why = judge.rationale.strip()
         if len(why) < 4:
@@ -291,12 +360,17 @@ def record_transition(c, a, p, req, intent, rid, *, judge=None, grant=None):
         requires_until = intent.to_stage == 'on_hold' and judge.decision == 'approve'
         if (judge.holdUntil is not None) != requires_until or judge.holdUntil is not None and judge.holdUntil <= at:
             raise Failure(422, 'INVALID_HOLD_UNTIL', project_id=p.id)
-        decision = c.scalar(db.decisions.insert().values(review_id=None, project_id=p.id, created_by=a.person, decided_by=a.person,
+        confirmation = valid_termination_confirmation(c, req, intent)
+        if approval_of_review_termination and intent.from_stage == 'feasibility_review' and not confirmation:
+            raise Failure(422, 'TERMINATION_INITIATOR_CONFIRMATION_REQUIRED', project_id=p.id)
+        decision = c.scalar(db.decisions.insert().values(review_id=review_id, project_id=p.id, created_by=a.person, decided_by=a.person,
             decided_at=at, subject=f'project-transition:{intent.from_stage}:{intent.to_stage}', option=judge.decision, rationale=why)
             .returning(db.decisions.c.id))
         evidence = {'approvalId': str(req.id), 'proposedBy': str(req.requested_by), 'actorType': intent.actor_type,
             'fromStage': intent.from_stage, 'toStage': intent.to_stage, 'basis': intent.basis, 'ruleVersion': RULE_VERSION,
             'authorityRef': grant, 'decision': judge.decision, 'rationale': why, 'holdUntil': judge.holdUntil.isoformat() if judge.holdUntil else None}
+        if confirmation:
+            evidence['initiatorConfirmation'] = snapshot(confirmation)
         c.execute(results.insert().values(approval_id=req.id, decision_id=decision, request_id=UUID(rid), payload=evidence,
                                          payload_hash=fingerprint(evidence)))
     else:
@@ -304,6 +378,11 @@ def record_transition(c, a, p, req, intent, rid, *, judge=None, grant=None):
     status = 'rejected' if judge and judge.decision == 'reject' else 'applied'
     if status == 'applied':
         transition_project(c, a, p, None, intent.to_stage, rid, intent_id=req.id)
+        if review_id is not None:
+            c.execute(reviews.update().where(reviews.c.id == review_id, reviews.c.project_id == p.id, reviews.c.status == 'pending')
+                .values(status='decided', verdict='terminated', minutes=why, updated_at=at, revision=reviews.c.revision + 1).returning(reviews.c.id)).scalar_one()
+            c.execute(approval.update().where(approval.c.id == review_id, approval.c.action == APPROVAL_ACTION, approval.c.status == 'pending')
+                .values(status='withdrawn', decided_by=a.person, reason=why, decided_at=at, updated_at=at).returning(approval.c.id)).scalar_one()
     return c.execute(approval.update().where(approval.c.id == req.id).values(status=status,
         decided_by=a.person, decided_at=at, updated_at=at, reason=why).returning(approval)).mappings().one()
 
@@ -323,7 +402,8 @@ def permit_transition(c, a, p, destination, intent_id):
     if direct_actor(c, a, p, edge):
         return True
     decided = one(c, results, results.c.approval_id == req.id)
-    return bool(authority(c, a, p, edge, req) and decided and decided.payload['decision'] == 'approve')
+    return bool(authority(c, a, p, edge, req) and decided and decided.payload['decision'] == 'approve'
+                and (edge != ('feasibility_review', 'terminated') or valid_termination_confirmation(c, req, i)))
 
 
 def execute(auth, project_id, request_id, op, command, key, expected):
@@ -364,6 +444,64 @@ def apply(projectId: UUID, command: Apply, authorization: Auth, key: Key, expect
 @router.post('/approvals/{approvalId}/decide', operation_id=DECIDE, response_model_exclude_none=True)
 def judge(approvalId: UUID, command: Judge, authorization: Auth, key: Key, expected: Revision) -> Result[Entry]:
     return execute(authorization, None, approvalId, DECIDE, command, key, expected)
+
+
+@router.post('/approvals/{approvalId}/confirm-termination', operation_id=TERMINATION_CONFIRM,
+             response_model_exclude_none=True, openapi_extra=HUMAN)
+def confirm_termination(approvalId: UUID, command: Resubmit, authorization: Auth, key: Key, expected: Revision) -> Result[Entry]:
+    sig = fingerprint([str(approvalId), expected, command.model_dump(mode='json')])
+
+    def write(c, a, rid):
+        if a.kind != 'human':
+            raise Failure(403, 'FORBIDDEN')
+        pid = c.scalar(sa.select(approval.c.project_id).where(approval.c.id == approvalId, approval.c.action == ACTION))
+        p = lock_project(c, a, pid, write=True)
+        req, intent = lookup(c, p.id, approvalId)
+        assignment = active_assignment(c, p, a.person, 'initiator') if p.initiator_id == a.person else None
+        if (intent.from_stage, intent.to_stage) != ('feasibility_review', 'terminated') or not assignment:
+            raise Failure(403, 'TERMINATION_INITIATOR_REQUIRED', project_id=p.id)
+        old = replay(c, a, TERMINATION_CONFIRM, key, sig, Result[Entry])
+        if old:
+            return old
+        if p.revision != int(expected):
+            raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
+        if req.status != 'pending' or not current(c, a, p, req, intent):
+            raise Failure(409, 'TRANSITION_STALE', project_id=p.id)
+        if valid_termination_confirmation(c, req, intent):
+            raise Failure(409, 'TERMINATION_ALREADY_CONFIRMED', project_id=p.id)
+        if len(why := command.reason.strip()) < 4:
+            raise Failure(422, 'INVALID_REASON', project_id=p.id)
+        c.execute(termination_signoffs.insert().values(approval_id=req.id, signer_id=a.person, assignment_id=assignment.id,
+            payload_hash=req.payload_hash, reason=why, request_id=UUID(rid)))
+        return finish(c, a, p, req, TERMINATION_CONFIRM, rid, key, sig, entry(c, a, p, req, intent),
+                      [*intent.source_refs, f'termination-confirmation:{req.id}'])
+
+    return run(authorization, TERMINATION_CONFIRM, write)
+
+
+@router.get('/me/termination-confirmations', operation_id=TERMINATION_INBOX, response_model_exclude_none=True, openapi_extra=HUMAN)
+def termination_inbox(authorization: Auth) -> Result[TerminationPage]:
+    def read(c, a, _):
+        if a.kind != 'human':
+            raise Failure(403, 'FORBIDDEN')
+        p, q, i = db.projects, approval, intents
+        rows = c.execute(sa.select(q.c.id, p.c.id.label('pid')).select_from(
+            q.join(i, i.c.approval_id == q.c.id).join(p, p.c.id == q.c.project_id)).where(
+            q.c.status == 'pending', q.c.action == ACTION, i.c.from_stage == 'feasibility_review', i.c.to_stage == 'terminated',
+            p.c.org_id == a.org, p.c.initiator_id == a.person,
+            p.c.stage == i.c.from_stage, q.c.expected_revision == p.c.revision, visible(a, include_initiator=True))
+            .order_by(q.c.created_at.desc(), q.c.id).limit(100)).all()
+        items = []
+        for row in rows:
+            project = lock_project(c, a, row.pid)
+            if not active_member(c, project, a.person, 'initiator'):
+                continue
+            item = entry(c, a, project, *lookup(c, project.id, row.id))
+            if item.awaitsInitiator and not item.stale:
+                items.append(TerminationEntry(**item.model_dump(), projectName=project.name))
+        return Result[TerminationPage](data=TerminationPage(items=items), meta=meta(TERMINATION_INBOX, [f'approval:{i.requestId}' for i in items]))
+
+    return run(authorization, TERMINATION_INBOX, read)
 
 
 @router.get('/approvals', operation_id=INBOX, response_model_exclude_none=True)

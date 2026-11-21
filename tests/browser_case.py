@@ -126,3 +126,23 @@ def test_browser_customer_exception_and_conditional_decision(live, team):
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm', 'reviewer', 'client_representative')),
             'PMO_TEST_PHASE':'exception', 'PMO_TEST_REQUIREMENT_EXCEPTION':json.dumps(command)})
     assert stage(users['pm'], project)['stage'] == 'closed'
+
+
+def test_browser_tasks_and_reports(live, team):
+    _, _, users, _ = team
+    project, _, _ = execution_fixture(live, team)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
+            'PMO_TEST_PHASE':'tasks_reports'})
+    assert stage(users['pm'], project)['stage'] == 'executing'
+
+
+def test_browser_independent_termination_confirmation(live, team):
+    from test_lifecycle import start_feasibility
+
+    _, _, users, _ = team
+    project, _ = start_feasibility(live, team)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm', 'initiator', 'sponsor')),
+            'PMO_TEST_PHASE':'termination'})
+    assert stage(users['pm'], project)['stage'] == 'terminated'

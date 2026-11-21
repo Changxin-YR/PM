@@ -15,14 +15,14 @@ async function closeDialog(panel) {
   await expect(panel).toBeHidden()
 }
 
-async function actor(role) {
+async function actor(role, requiresProject=true) {
   const context = await browser.newContext({viewport:{width:1280,height:820}})
   const session = sessions[role]
   await context.addCookies([{name:'pmo_session', value:session.cookie, domain:new URL(url).hostname, path:'/api/v1', httpOnly:true, sameSite:'Strict'}])
   await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf), session.csrf)
   const page = await context.newPage()
   await page.goto(url)
-  await expect(project(page)).toBeVisible()
+  await expect(requiresProject?project(page):button(page,'我的终止确认')).toBeVisible()
   return page
 }
 
@@ -63,7 +63,7 @@ async function directStage(page, reason, next, label) {
   await button(panel,'执行阶段流转').click()
   const state=await write(page,'POST','/projects/[^/]+/transitions',button(dialog(page,'执行阶段流转'),'确认执行流转'))
   expect(state).toMatchObject({toStage:next,status:'applied'})
-  await expect(panel.getByText('当前阶段：'+label,{exact:true})).toBeVisible()
+  await expect(panel.getByLabel('项目生命周期').getByText('当前阶段：'+label,{exact:true})).toBeVisible()
 }
 
 try {
@@ -112,6 +112,69 @@ try {
     const history=await openClosing()
     await expect(history.getByText('裁决接受的具体需求偏差',{exact:true})).toBeVisible()
     await expect(history.getByText(deviation,{exact:true})).toBeVisible()
+    await expect(history.getByText(reason,{exact:true})).toBeVisible()
+  } else if(process.env.PMO_TEST_PHASE==='tasks_reports') {
+    const panel=await open(pm,'补强任务')
+    const title='按复核记录更新交付清单'
+    await button(panel,'新建补强任务').click()
+    await panel.getByLabel('标题',{exact:true}).fill(title)
+    await panel.getByRole('combobox',exact('来源记录')).click()
+    await pm.getByRole('option',{name:/落地评审/}).click()
+    const task=await write(pm,'POST','/tasks',button(panel,'保存任务'))
+    expect(task).toMatchObject({status:'todo',sourceType:'review',title})
+    const row=panel.getByRole('row').filter({hasText:title})
+    await button(row,'编辑任务').click()
+    await panel.getByRole('combobox',exact('任务状态')).selectOption('done')
+    const completed=await write(pm,'PATCH','/tasks/[^/]+',button(panel,'保存任务'))
+    expect(completed).toMatchObject({taskId:task.taskId,status:'done',revision:task.revision+1})
+    await expect(row.getByText('已完成',{exact:true})).toBeVisible()
+
+    const reporting=await open(pm,'日报周报'), note='核对本周材料，未将预估记为实际。'
+    await button(reporting,'新建报告草稿').click()
+    await reporting.getByLabel('申报人天',{exact:true}).fill('2.50')
+    await reporting.getByLabel('补充说明',{exact:true}).fill(note)
+    const draft=await write(pm,'POST','/reports/drafts',button(reporting,'保存草稿'),false)
+    expect(draft).toMatchObject({status:'draft',structuredFields:{effort_person_days:'2.50'}})
+    const report=reporting.getByRole('article',{name:'报告详情'})
+    const submitted=await write(pm,'POST','/reports/[^/]+/submit',button(report,'提交报告'))
+    expect(submitted).toMatchObject({reportId:draft.reportId,status:'submitted'})
+    await button(report,'确认并发布').click()
+    const published=await write(pm,'POST','/reports/[^/]+/confirm',button(pm,'发布报告'))
+    expect(published).toMatchObject({reportId:draft.reportId,status:'confirmed',isCurrentConfirmed:true})
+    await pm.reload()
+    const after=await open(pm,'日报周报')
+    await button(after,'查看').click()
+    await expect(after.getByRole('article',{name:'报告详情'}).getByText(note,{exact:true})).toBeVisible()
+    await expect(after.getByRole('row').getByText('已发布',{exact:true})).toBeVisible()
+  } else if(process.env.PMO_TEST_PHASE==='termination') {
+    const requestReason='原实施条件已取消，申请终止落地评审。'
+    await requestStage(pm,requestReason,'terminated')
+    const owner=await actor('initiator',false), sponsor=await actor('sponsor')
+    const stagePanel=await open(sponsor,'阶段流转')
+    await expect(stagePanel.getByText('待发起人确认',{exact:true})).toBeVisible()
+    await button(stagePanel,'裁决阶段流转').click()
+    const judge=dialog(sponsor,'裁决阶段流转')
+    await expect(judge.locator('option[value=approve]')).toBeDisabled()
+    await closeDialog(judge)
+    await button(owner,'我的终止确认').click()
+    const inbox=dialog(owner,'我的终止确认')
+    await expect(inbox.getByText(requestReason,{exact:true})).toBeVisible()
+    await button(inbox,'处理').click()
+    await inbox.getByLabel('确认理由',{exact:true}).fill('作为原发起人，确认不再继续该方案。')
+    const signed=await write(owner,'POST','/approvals/[^/]+/confirm-termination',button(inbox,'确认终止申请'))
+    expect(signed.awaitsInitiator).toBe(false)
+    await expect(inbox.getByText('暂无待确认的终止申请。',{exact:true})).toBeVisible()
+    await button(stagePanel,'刷新阶段流转').click()
+    await expect(stagePanel.getByText('发起人确认',{exact:true})).toBeVisible()
+    await button(stagePanel,'裁决阶段流转').click()
+    await judge.getByLabel('流转裁决',{exact:true}).selectOption('approve')
+    const reason='已独立核对原发起人确认与对应评审版本。'
+    await judge.getByLabel('裁决理由',{exact:true}).fill(reason)
+    const stopped=await write(sponsor,'POST','/approvals/[^/]+/decide',button(judge,'确认流转裁决'))
+    expect(stopped).toMatchObject({status:'applied',toStage:'terminated',decisionReason:reason})
+    await sponsor.reload()
+    const history=await open(sponsor,'阶段流转')
+    await expect(history.getByText('当前阶段：已终止',{exact:true})).toBeVisible()
     await expect(history.getByText(reason,{exact:true})).toBeVisible()
   } else {
     const reviewer=await actor('reviewer'), reconciler=await actor('outsider')
@@ -189,7 +252,7 @@ try {
     expect(result).toMatchObject({toStage:'archived', status:'applied', decisionReason:archiveReason})
     await reviewer.reload()
     const history=await open(reviewer,'阶段流转')
-    await expect(history.getByText('当前阶段：已归档',{exact:true})).toBeVisible()
+    await expect(history.getByLabel('项目生命周期').getByText('当前阶段：已归档',{exact:true})).toBeVisible()
     await expect(history.getByText(archiveReason,{exact:true})).toBeVisible()
     await pm.reload()
     const readonly=await open(pm,'复盘与教训')

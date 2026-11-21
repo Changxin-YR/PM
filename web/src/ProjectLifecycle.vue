@@ -4,7 +4,7 @@ import {ArrowRight,Gavel,Play,RefreshCw,RotateCcw,Send} from 'lucide-vue-next'
 
 type Entry={requestId:string;projectId:string;fromStage:string;toStage:string;status:string;revision:number;
   requestedBy:string;requestedAt:string;reason:string;canExecute:boolean;canDecide:boolean;stale:boolean;
-  decisionId?:string;decisionReason?:string}
+  decisionId?:string;decisionReason?:string;holdUntil?:string;awaitsInitiator?:boolean;initiatorConfirmedAt?:string}
 type Inbox={items:Entry[];projectId:string;projectRevision:number;stage:string;requestable:string[];canResubmit:boolean;policyPending:boolean}
 type Mode='request'|'execute'|'decide'|'resubmit'
 type Intent={mode:Mode;revision:number;fromStage:string;toStage?:string;requestId?:string}
@@ -67,6 +67,7 @@ function begin(mode:Mode,item?:Entry){
   reason.value='';decision.value='';holdUntil.value='';formError.value='';notice.value='';attempt=undefined;dialog.value=true
 }
 const needsHold=computed(()=>intent.value?.mode==='decide'&&intent.value.toStage==='on_hold'&&decision.value==='approve')
+const awaitsInitiator=computed(()=>state.value?.items.some(row=>row.requestId===intent.value?.requestId&&row.awaitsInitiator)??false)
 const command=computed(()=>{
   const inbox=state.value,action=intent.value,why=reason.value.trim()
   if(!inbox||!action||outdated.value||inbox.projectRevision!==action.revision||inbox.stage!==action.fromStage)return null
@@ -78,7 +79,7 @@ const command=computed(()=>{
   const item=inbox.items.find(row=>row.requestId===action.requestId)
   if(!item||!eligible(action.mode,item))return null
   if(action.mode==='execute')return {path:`${base}/transitions`,payload:{toStage:item.toStage,approvalRequestId:item.requestId}}
-  if(!decision.value||why.length<4||why.length>2000)return null
+  if(!decision.value||why.length<4||why.length>2000||decision.value==='approve'&&item.awaitsInitiator)return null
   const timestamp=Date.parse(holdUntil.value)
   if(needsHold.value&&!Number.isFinite(timestamp))return null
   return {path:`approvals/${item.requestId}/decide`,payload:{decision:decision.value,rationale:why,
@@ -132,9 +133,12 @@ async function save(){
           <strong class="edge">{{stageName(item.fromStage)}} <ArrowRight :size="14" aria-hidden="true"/> {{stageName(item.toStage)}}</strong>
           <el-tag size="small" :type="item.status==='applied'?'success':item.status==='rejected'?'danger':'info'">{{statuses[item.status]??item.status}}</el-tag>
           <el-tag v-if="item.stale" size="small" type="warning">依据已失效</el-tag>
+          <el-tag v-else-if="item.awaitsInitiator" size="small" type="warning">待发起人确认</el-tag>
           <time class="meta" :datetime="item.requestedAt">{{time(item.requestedAt)}}</time>
         </div>
         <dl class="detail-lines"><dt>申请原因</dt><dd>{{item.reason}}</dd>
+          <template v-if="item.holdUntil"><dt>暂停截至</dt><dd>{{time(item.holdUntil)}}</dd></template>
+          <template v-if="item.initiatorConfirmedAt"><dt>发起人确认</dt><dd>{{time(item.initiatorConfirmedAt)}}</dd></template>
           <template v-if="item.decisionReason"><dt>裁决理由</dt><dd>{{item.decisionReason}}</dd></template>
         </dl>
         <details class="meta"><summary>记录来源</summary>
@@ -161,7 +165,7 @@ async function save(){
           <option value="" disabled>请选择</option><option v-for="stage in destinations" :key="stage" :value="stage">{{stageName(stage)}}</option>
         </select></label>
         <label v-if="intent.mode==='decide'">流转裁决<select aria-label="流转裁决" v-model="decision" required>
-          <option value="" disabled>请选择</option><option value="approve">通过</option><option value="reject">拒绝</option>
+          <option value="" disabled>请选择</option><option value="approve" :disabled="awaitsInitiator">{{awaitsInitiator?'通过（待发起人确认）':'通过'}}</option><option value="reject">拒绝</option>
         </select></label>
         <label v-if="intent.mode!=='execute'">{{intent.mode==='decide'?'裁决理由':intent.mode==='resubmit'?'重提理由':'申请原因'}}
           <textarea v-model="reason" rows="3" :minlength="intent.mode==='request'?3:4" maxlength="2000" required/>

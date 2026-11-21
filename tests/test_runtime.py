@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 import jsonschema
 import sqlalchemy as sa
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from mcp import ClientSession,StdioServerParameters
 from mcp.client.stdio import stdio_client
 from pmo import schema_v1 as db
@@ -15,10 +17,16 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     engine,_,_,env=live
     inspector=sa.inspect(engine)
     assert len(db.metadata.tables)==33
-    assert sum(len(inspector.get_columns(t)) for t in db.metadata.tables)==421
+    assert sum(len(t.c) for t in db.metadata.tables.values())==421
+    extras = {'reports': {'content_hash', 'submitted_by', 'confirmed_by', 'confirmed_at'}}
+    for name, table in db.metadata.tables.items():
+        assert {column['name'] for column in inspector.get_columns(name)} == set(table.c.keys()) | extras.get(name, set())
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
-    assert result.returncode and 'Refusing destructive downgrade' in result.stderr
-    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))=='0019'
+    assert result.returncode and any(f'RuntimeError: {reason}' in result.stderr for reason in (
+        'Refusing destructive downgrade', 'Refusing to discard written acceptance history',
+        'Refusing to discard report receipts', 'Refusing to discard review termination history'))
+    head = ScriptDirectory.from_config(Config('alembic.ini')).get_current_head()
+    with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))==head
 
 def test_concurrent_replay_scope_and_denial(live,actor):
     engine,api,_,_=live
@@ -48,7 +56,7 @@ def test_mcp_stdio(live,actor):
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
-            assert set(tools)=={*cost_ops,'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update','pmo_gate_check','pmo_review_prepare','pmo_review_list','pmo_review_submit','pmo_decision_get','pmo_transition_request','pmo_lessons_search'}
+            assert set(tools)=={*cost_ops,'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update','pmo_gate_check','pmo_review_prepare','pmo_review_list','pmo_review_submit','pmo_decision_get','pmo_transition_request','pmo_lessons_search','pmo_task_list','pmo_task_update','pmo_report_list','pmo_report_get','pmo_report_submit'}
             async def call(op,args):
                 r=await session.call_tool(op,args); assert not r.isError,r.content
                 jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']

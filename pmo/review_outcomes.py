@@ -321,7 +321,7 @@ def workbench(c, a, p, review, frozen):
                      reviewedAt=row.reviewed_at) for row in rows if not pending or row.reviewer_id == a.person],
         appeal=appeal_view(reconsideration) if reconsideration else None, assessment=calculated if can_read_scores else None,
         confirmations=confirmations_found if can_read_scores else [], decision=Decision(**decision_public(record).model_dump(),
-            rationale=record.rationale, stage=stored.payload['stage'] if stored else p.stage) if record else None,
+            rationale=record.rationale, stage=stored.payload['stage'] if stored else 'terminated' if review.verdict == 'terminated' else p.stage) if record else None,
         requirementException=RequirementException.model_validate(exception) if exception and show_full_material else None,
         tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy,
         withdrawalReason=review.minutes if review.verdict == 'withdrawn' else None,

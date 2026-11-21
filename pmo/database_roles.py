@@ -29,8 +29,8 @@ API_READ = frozenset('''organizations user_accounts user_roles persons projects
     rule_events review_submission_snapshots project_stage_transitions tasks review_appeals review_confirmations
     review_decision_snapshots review_strengthening_tasks cost_reconciliation_grants cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
-    requirement_exception_events'''.split())
-API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders
+    requirement_exception_events project_termination_confirmations'''.split())
+API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders reports
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures
     requirement_transitions milestone_completions milestone_forecasts milestone_delay_episodes
@@ -39,17 +39,19 @@ API_ADD = frozenset('''projects project_members charters charter_versions milest
     rule_events review_submission_snapshots project_stage_transitions tasks scorecards decisions
     review_appeals review_confirmations review_decision_snapshots review_strengthening_tasks cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
-    requirement_exception_events'''.split())
+    requirement_exception_events project_termination_confirmations'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
 LOCKS = {
     'user_roles': 'id', 'persons': 'id', 'appointment_authorities': 'org_id',
     'change_approval_grants': 'project_id', 'agent_project_grants': 'project_id',
-    'reports': 'id', 'decisions': 'id', 'stakeholders': 'id',
+    'decisions': 'id', 'stakeholders': 'id',
     'cost_reconciliation_grants': 'id',
 }
 API_EDIT = {
+    'reports': 'content_hash narrative structured_fields status is_current is_current_confirmed revision submitted_at submitted_by confirmed_at confirmed_by updated_at',
+    'tasks': 'status due_at completed_at revision updated_at',
     'user_accounts': 'last_login_at', 'web_sessions': 'revoked_at',
     'login_windows': 'started_at attempt_count',
     'agent_credentials': 'status revoked_at allowed_project_ids',

@@ -45,3 +45,17 @@
 | `scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | PASS，退出 0 | 静态规格检查、mypy、Vue 类型、Vite 构建；主包大小警告仍存在。 |
 
 失败记录：首次例外专项 FAIL（5 项通过、1 项失败，退出 1），测试把文本型审计请求号按 UUID 绑定；改按文本比较。首次组合回归 FAIL（19 项通过、1 项失败，退出 1），超支夹具未按对账规则提供归因；补真实请求中的归因，未放松产品门槛。初次类型检查 FAIL，解决附件参数和在制周报类型错误后复验通过。最终候选仍需针对现有数据和新增附件引用联合恢复。
+
+## 2026-11-21 报告、任务及原评审终止（0021–0022）
+
+源条款：§5.6 周报周期及 LR-06 输入、§6、§7.2、§8.4、§20.4–20.5；A16。实现：`pmo/reports.py`、`pmo/tasks.py`、`pmo/project_lifecycle.py`、`migrations/versions/0021_report_receipts.py`、`migrations/versions/0022_review_termination.py`。基准 `bba0ca095558e38b48ed38810ad67332a98e8683`，最终被测源码树 `61b80177c5950e5c5708e30f15cc5c1ad9380557`（不含随后进度文本）。Windows、PostgreSQL 16 隔离 schema、回环 HTTP、Python MCP SDK、Edge；合成角色，无模型和真实签核。
+
+| 实际命令 | 结果 | 证据 |
+|---|---|---|
+| `scripts/dev.ps1 test` | PASS，退出 0，89 项 / 158.17 秒 | `tests/test_reports.py`、`tests/test_tasks.py`、`tests/test_lifecycle.py`、`tests/test_recovery.py` 等。覆盖真实报告作者及人工 PM 发布、冻结正文和版本、任务授权、显式 Agent 委托及重试、独立发起人签认与 Sponsor 裁决、暂停恢复、结项返工、并发/过期/Outbox 注入回滚、隔离角色和恢复。后续修复只触及 Web 标签与定位。 |
+| `git archive` 最终源码树后运行 `.venv/Scripts/python.exe -m pytest -q --tb=short tests/browser_case.py` | PASS，退出 0，5 项 / 106.03 秒 | `tests/browser_case.py`、`web/e2e/lifecycle.mjs`。草稿、真实会话审批、交付归档、书面需求例外、报告和三账号终止各路径；原日志在 `.local/browser-0022-verified.log`。 |
+| `scripts/dev.ps1 check`、`npm.cmd --prefix web run build` | PASS，退出 0 | 规格静态检查、mypy、Vue 类型及 Vite 构建；构建包体积警告仍在。 |
+
+初次报告组合 FAIL（18 通过、1 失败），降级保护错误的断言未匹配新保护文案，已修正。浏览器回归 FAIL（1 失败、4 通过）：先捕获阶段文字重名，后发现随阶段插入「需求例外」会重排隐式标签 ID；修复选择器、稳定标签名及打开默认项，重验 PASS。未把周期扫描或真实放行写成已验。
+
+目录通过实际 `app.openapi()` 与冻结 OpenAPI 的方法和规格化路径求差集，并与 `pmo.tool_routes.ROUTES` 对表：83/95 基线、21 项工程接口、38/40 工具。基线缺项为健康 GET/历史/申诉（3）、报告分析及 Fact 枚举/候选/核验/澄清（5）、管理员组织成员/用户列表/邀请/状态（4）；未注册 `pmo_health_get`、`pmo_fact_propose`。目录和单项调用证据分开，不代表目标 Host 兼容性。

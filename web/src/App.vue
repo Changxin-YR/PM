@@ -21,6 +21,9 @@ import Reviews from './Reviews.vue'
 import ProjectLifecycle from './ProjectLifecycle.vue'
 import Retrospective from './Retrospective.vue'
 import IncomingRisk from './IncomingRisk.vue'
+import TerminationConfirmations from './TerminationConfirmations.vue'
+import Reports from './Reports.vue'
+import Tasks from './Tasks.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -28,10 +31,13 @@ const dialog=ref(false),selected=ref<Project|null>(null),name=ref(''),code=ref('
 const csrf=ref(sessionStorage.getItem('pmo.csrf')||'');let sequence=0,attempt='',lastPayload=''
 const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿')
 const admin=ref(false)
-const materialProject=ref<Project|null>(null),showMaterials=ref(false)
-function materials(row:Project){materialProject.value=row;showMaterials.value=true}
+const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('milestones')
+function materials(row:Project){materialProject.value=row;materialTab.value='milestones';showMaterials.value=true}
 function stageRead(projectId:string,stage:string,revision:number){
-  if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision)materialProject.value={...materialProject.value,stage,revision}
+  if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision){
+    materialProject.value={...materialProject.value,stage,revision}
+    if(materialTab.value==='exceptions'&&!['delivering','closing_review'].includes(stage))materialTab.value='requirements'
+  }
   rows.value=rows.value.map(row=>row.projectId===projectId&&revision>=row.revision?{...row,stage,revision}:row)
 }
 const stageNames:Record<string,string>={drafting:'草稿',charter_review:'立项评审',rejected:'已拒绝',designing:'方案细化',feasibility_review:'落地评审',executing:'执行中',on_hold:'已暂停',delivering:'交付验收',closing_review:'结项评审',closed:'已结项',retrospective:'复盘',terminated:'已终止',archived:'已归档'}
@@ -80,24 +86,27 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <PreapprovalSpending :api="api"/>
 <Alerts :api="api"/>
 <IncomingRisk :api="api"/>
+<TerminationConfirmations :api="api"/>
 <AuditLog v-if="admin" :api="api"/>
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>
-  <el-tabs v-if="materialProject" :key="materialProject.projectId">
-    <el-tab-pane label="里程碑"><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane v-if="['delivering','closing_review'].includes(materialProject.stage)" label="需求例外" lazy><RequirementExceptions :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane label="变更台账" lazy><Changes :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane label="证据附件" lazy><Evidence :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane label="联系台账" lazy><Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane label="风险" lazy><Risks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane label="成本" lazy><Costs :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :project-revision="materialProject.revision" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
-    <el-tab-pane label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api" @stage-read="stageRead"/></el-tab-pane>
-    <el-tab-pane label="复盘与教训" lazy><Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"/></el-tab-pane>
+  <el-tabs v-if="materialProject" v-model="materialTab" :key="materialProject.projectId">
+    <el-tab-pane name="milestones" label="里程碑"><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="requirements" label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="baseline" label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="exceptions" v-if="['delivering','closing_review'].includes(materialProject.stage)" label="需求例外" lazy><RequirementExceptions :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="changes" label="变更台账" lazy><Changes :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="evidence" label="证据附件" lazy><Evidence :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="charter" label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="stakeholders" label="联系台账" lazy><Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="members" label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="risks" label="风险" lazy><Risks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="costs" label="成本" lazy><Costs :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="reviews" label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :project-revision="materialProject.revision" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane name="lifecycle" label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane name="tasks" label="补强任务" lazy><Tasks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="reports" label="日报周报" lazy><Reports :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="retrospective" label="复盘与教训" lazy><Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"/></el-tab-pane>
   </el-tabs>
 </el-drawer>
 <el-dialog v-model="dialog" :title="title" width="min(440px,94vw)" :close-on-click-modal="false"><form @submit.prevent="save"><label>项目编号<input v-model="code" :disabled="!!selected" maxlength="60" required></label><label>项目名称<input v-model="name" maxlength="160" required></label><label v-if="!selected">说明<textarea v-model="description" maxlength="2000" rows="3"></textarea></label><el-alert v-if="formError" :title="formError" type="error" :closable="false"/><div class="actions"><el-button v-if="selected && formError" @click="reread">重新读取版本</el-button><el-button @click="dialog=false">取消</el-button><el-button type="primary" native-type="submit" :loading="busy">保存</el-button></div></form></el-dialog></main>

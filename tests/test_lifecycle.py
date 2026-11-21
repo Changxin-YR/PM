@@ -1,4 +1,5 @@
 """Model-off product lifecycle over real HTTP, with only accounts/grants as fixtures."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, timezone
 import json
 from uuid import UUID, uuid4
@@ -204,3 +205,115 @@ def test_termination_and_rejected_resubmission_use_separate_histories(live, team
         assert c.scalar(sa.text('''SELECT count(*) FROM project_stage_transitions WHERE project_id=:pid
             AND from_stage='rejected' AND to_stage='drafting' '''), {'pid': pid}) == 1
         assert c.scalar(sa.select(db.decisions.c.review_id).where(db.decisions.c.id == UUID(approved['decisionId']))) is None
+
+
+def judgment(client, request, *, key=None, **details):
+    return client.post(f"approvals/{request['requestId']}/decide", headers=key or headers(request['revision']),
+        json={'decision': 'approve', 'rationale': 'Checked authority and the recorded reason.', **details})
+
+
+def start_feasibility(live, team):
+    pid, people, users, _ = team
+    charter = start_charter(pid, users)
+    score(users['reviewer'], charter, [4] * 4)
+    data(decide(users['reviewer'], charter))
+    project, _, _ = planning_setup(live[0], pid, people, users, seed_stage=False)
+    return project, gate(users['pm'], project, 'feasibility')
+
+
+def test_feasibility_termination_confirmation_is_scoped_and_atomic(live, team):
+    engine, api, _, _ = live
+    pid, _, users, _ = team
+    pm, sponsor, owner, reviewer = (users[r] for r in ('pm', 'sponsor', 'initiator', 'reviewer'))
+    project, review = start_feasibility(live, team)
+    req = data(propose(pm, project, 'terminated'))
+    why = {'reason': 'As original initiator I confirm stopping this proposal.'}
+    path = f"approvals/{req['requestId']}/confirm-termination"
+    assert [row['requestId'] for row in data(owner.get('me/termination-confirmations'))['items']] == [req['requestId']]
+    assert data(reviewer.get('me/termination-confirmations'))['items'] == []
+    assert judgment(sponsor, req).json()['code'] == 'TERMINATION_INITIATOR_CONFIRMATION_REQUIRED'
+    assert judgment(pm, req).status_code == 403
+    assert pm.post(path, headers=headers(req['revision']), json=why).status_code == 403
+    score(reviewer, review, [3] * 5)
+    assert owner.post(path, headers=headers(req['revision']), json=why).json()['code'] == 'TRANSITION_STALE'
+    assert data(owner.get('me/termination-confirmations'))['items'] == []
+
+    grant = issue(pm, pid, actions=('pmo_transition_request',))
+    req = data(propose(pm, project, 'terminated'))
+    path = f"approvals/{req['requestId']}/confirm-termination"
+    auth = {'Authorization': f'Bearer {grant}', **headers(req['revision'])}
+    assert api.post('/api/v1/' + path, headers=auth, json=why).status_code == 403
+    assert api.post('/api/v1/' + path.replace('confirm-termination', 'decide'), headers=auth,
+        json={'decision': 'approve', 'rationale': why['reason']}).status_code == 403
+    sign_key = headers(req['revision'])
+    sign = data(owner.post(path, headers=sign_key, json=why))
+    assert sign['initiatorConfirmedAt'] and not sign['awaitsInitiator']
+    assert data(owner.post(path, headers=sign_key, json=why)) == sign
+    assert data(owner.get('me/termination-confirmations'))['items'] == []
+
+    with engine.begin() as c:
+        c.exec_driver_sql('CREATE TRIGGER test_terminate_outbox_failure BEFORE INSERT ON outbox_events '
+                          'FOR EACH STATEMENT EXECUTE FUNCTION pmo_append_only()')
+    try:
+        assert judgment(sponsor, req).status_code >= 500
+        assert stage(pm, project)['stage'] == 'feasibility_review'
+        assert bench(reviewer, review)['review']['status'] == 'pending'
+        with engine.connect() as c:
+            assert not c.scalar(sa.text("SELECT count(*) FROM decisions WHERE project_id=:id AND subject LIKE 'project-transition:%'"), {'id': pid})
+            assert not c.scalar(sa.text("""SELECT count(*) FROM audit_logs WHERE project_id=:id
+                AND action='human_decide_approval' AND result='success'"""), {'id': pid})
+    finally:
+        with engine.begin() as c:
+            c.exec_driver_sql('DROP TRIGGER test_terminate_outbox_failure ON outbox_events')
+    decide_key = headers(req['revision'])
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, replayed = pool.map(lambda _: judgment(sponsor, req, key=decide_key), range(2))
+    assert first.json() == replayed.json()
+    decision = data(first)
+    assert decision['status'] == 'applied' and stage(pm, project)['stage'] == 'terminated'
+    stopped = bench(reviewer, review)
+    assert stopped['review']['verdict'] == 'terminated' and stopped['decision']['decisionId'] == decision['decisionId']
+    assert decide(reviewer, review).json()['code'] == 'REVIEW_NOT_PENDING'
+    assert data(execute(pm, project, data(propose(pm, project, 'retrospective'))))['status'] == 'applied'
+    assert bench(reviewer, review)['decision']['stage'] == 'terminated'
+    assert data(pm.get(project + '/retrospective'))['kind'] == 'terminated'
+
+
+def test_closing_rework_and_then_authorized_termination(live, team):
+    _, _, users, _ = team
+    pm, sponsor, reviewer, customer, accountant = (users[r] for r in ('pm', 'sponsor', 'reviewer', 'client_representative', 'outsider'))
+    project, req, risk = execution_fixture(live, team)
+    complete_milestones(pm, reviewer, project)
+    data(execute(pm, project, data(propose(pm, project, 'delivering'))))
+    _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, req, risk)
+    data(reviewer.post(f'risks/{risk}/close', headers=headers(), json={'resolutionEvidenceRef': risk_proof['evidenceRef']}))
+    path = project + '/cost-reconciliations'
+    reco = data(accountant.get(path))
+    data(accountant.post(path, headers=headers(reco['revision']), json={'costHash': reco['costHash'], 'evidenceRefs': [cost_proof['evidenceRef']]}))
+    review = gate(pm, project, 'closing')
+    assert data(decide(reviewer, review, verdict='reject'))['decision']['stage'] == 'executing'
+    data(execute(pm, project, data(propose(pm, project, 'delivering'))))
+    review = gate(pm, project, 'closing')
+    req = data(propose(pm, project, 'terminated'))
+    assert judgment(reviewer, req).status_code == 403
+    assert data(judgment(sponsor, req))['status'] == 'applied'
+    assert bench(reviewer, review)['review']['verdict'] == 'terminated'
+    assert stage(pm, project)['stage'] == 'terminated'
+
+
+def test_pause_resume_checks_sponsor_deadline_and_stale_revision(live, team):
+    _, _, users, _ = team
+    pm, sponsor, reviewer = (users[r] for r in ('pm', 'sponsor', 'reviewer'))
+    project, _, _ = execution_fixture(live, team)
+    pause = data(propose(pm, project, 'on_hold'))
+    expiry = datetime.now(UTC) + timedelta(hours=1)
+    assert judgment(pm, pause, holdUntil=expiry.isoformat()).status_code == 403
+    assert judgment(reviewer, pause, holdUntil=expiry.isoformat()).status_code == 403
+    assert judgment(sponsor, pause).json()['code'] == 'INVALID_HOLD_UNTIL'
+    assert judgment(sponsor, pause, holdUntil=(expiry - timedelta(hours=2)).isoformat()).json()['code'] == 'INVALID_HOLD_UNTIL'
+    held = data(judgment(sponsor, pause, holdUntil=expiry.isoformat()))
+    assert datetime.fromisoformat(held['holdUntil']) == expiry and stage(pm, project)['stage'] == 'on_hold'
+    assert judgment(sponsor, pause, holdUntil=expiry.isoformat()).json()['code'] == 'VERSION_CONFLICT'
+    resume = data(propose(pm, project, 'executing'))
+    resumed = data(judgment(sponsor, resume))
+    assert datetime.fromisoformat(resumed['holdUntil']) == expiry and stage(pm, project)['stage'] == 'executing'

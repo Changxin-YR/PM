@@ -39,6 +39,8 @@ from .risk_resolution import router as risk_resolution_router
 from .project_lifecycle import router as lifecycle_router
 from .retrospectives import router as retrospective_router
 from .requirement_exceptions import router as requirement_exception_router
+from .reports import router as report_router
+from .tasks import router as task_router
 
 class ErrorResponse(Strict):
     code: str
@@ -73,6 +75,8 @@ app.include_router(risk_resolution_router)
 app.include_router(lifecycle_router)
 app.include_router(retrospective_router)
 app.include_router(requirement_exception_router)
+app.include_router(report_router)
+app.include_router(task_router)
 
 
 @app.middleware('http')

@@ -51,8 +51,10 @@ def browser_actor(conn,identity):
         'human_review_confirm','human_review_withdraw','human_closing_check',
         'human_cost_reconciliation_get','human_cost_reconciliation_create',
         'human_requirement_exception_get','human_requirement_exception_sign','human_requirement_exception_revoke',
+        'human_task_create','human_report_draft_create','human_report_draft_update','human_report_submit_existing','human_report_confirm',
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
+        'human_termination_confirmation_inbox','human_termination_confirm',
         'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson'}),(),True,'human')
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
         raise Failure(403,'CSRF_INVALID',actor)

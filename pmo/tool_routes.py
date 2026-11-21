@@ -1,5 +1,10 @@
 """Only contract operations backed by a live implementation belong here."""
 ROUTES = {
+    'pmo_task_list': ('GET', '/projects/{projectId}/tasks'),
+    'pmo_task_update': ('PATCH', '/tasks/{taskId}'),
+    'pmo_report_list': ('GET', '/projects/{projectId}/reports'),
+    'pmo_report_get': ('GET', '/reports/{reportId}'),
+    'pmo_report_submit': ('POST', '/projects/{projectId}/reports'),
     'pmo_gate_check': ('GET', '/projects/{projectId}/gates/check'),
     'pmo_review_prepare': ('GET', '/projects/{projectId}/reviews/prepare'),
     'pmo_review_list': ('GET', '/projects/{projectId}/reviews'),
