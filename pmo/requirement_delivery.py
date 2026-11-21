@@ -13,7 +13,8 @@ from .evidence import verified_link
 from .identity import Failure, visible
 from .materials import finish, replay
 from .projects import fingerprint, meta, run
-from .requirement_baselines import active_member, s as signatures
+from .requirement_additions import addition, applied_addition, initial_signature, origin
+from .requirement_baselines import active_member
 from .requirements import View, view
 
 router=APIRouter(prefix='/api/v1',tags=['Requirement delivery'])
@@ -51,17 +52,23 @@ def synthetic_confirmation(c):
 
 
 def baseline_evidence_time(c,pid,old):
+    signed=None
     if old.baseline_version==1:
-        signed=c.scalar(sa.select(signatures.c.snapshot).where(signatures.c.project_id==pid,
-            signatures.c.signer_role=='client_representative').order_by(signatures.c.revision.desc()).limit(1))
+        signed=initial_signature(c,pid)
         if any(i['requirementId']==str(old.id) and i['desc']==old['desc'] and i['priority']==old.priority and i['acceptanceCriteria']==old.acceptance_criteria
-                and i.get('plannedConfirmAt')==(old.planned_confirm_at.isoformat() if old.planned_confirm_at else None) for i in signed or []): return None
-    elif old.baseline_version>1:
-        receipt=c.execute(sa.text('''SELECT d.new_state,d.decided_at FROM change_entries ch JOIN change_decision_records d ON ch.id=d.change_id
-            WHERE ch.project_id=:pid AND ch.target_id=:id AND ch.target_type='requirement' AND d.outcome='applied'
+                and i.get('plannedConfirmAt')==(old.planned_confirm_at.isoformat() if old.planned_confirm_at else None)
+                for i in (signed.snapshot if signed else [])): return None
+    if old.baseline_version>=1:
+        receipt=c.execute(sa.text('''SELECT ch.before,ch.after,ch.target_type,ch.base_revision,d.old_state,d.new_state,d.decided_at
+            FROM change_entries ch JOIN change_decision_records d ON ch.id=d.change_id
+            WHERE ch.project_id=:pid AND ch.target_id=:id AND ch.target_type='requirement' AND ch.status='applied' AND d.outcome='applied'
             ORDER BY ch.effective_at DESC,ch.id DESC LIMIT 1'''),dict(pid=pid,id=old.id)).mappings().one_or_none()
-        if receipt and all(receipt.new_state[k]==old[k] for k in ('baseline_version','desc','priority','acceptance_criteria')) and receipt.new_state['planned_confirm_at']==(
-                old.planned_confirm_at.isoformat() if old.planned_confirm_at else None): return receipt.decided_at
+        if receipt and (old.baseline_version>1 or (addition(receipt) and applied_addition(receipt,origin(pid,signed)))):
+            values=receipt.new_state
+            if (values.get('id')==str(old.id) and values.get('project_id')==str(pid)
+                    and all(values.get(k)==old[k] for k in ('baseline_version','desc','priority','acceptance_criteria'))
+                    and values.get('planned_confirm_at')==(old.planned_confirm_at.isoformat() if old.planned_confirm_at else None)):
+                return receipt.decided_at
     raise Failure(422,'SIGNED_BASELINE_REQUIRED')
 
 

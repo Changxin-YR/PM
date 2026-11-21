@@ -75,3 +75,17 @@
 初次定向回归 FAIL（退出 1；旧降级保护、工具集合断言未同步），与首轮 Edge FAIL（退出 1；新增用例夹具缺 `data` 和 `headers` 导入）原日志 `.local/health-0023-first.log`、`.local/health-0023-browser.log`；修正后按上表重验。
 
 目录校验（`app.openapi()` 与冻结 YAML 的方法、路径和 ID；`pmo.mcp_server.tools` 与 `ROUTES`）：PASS，退出 0，**86/95 基线 REST + 24 工程接口；39/40 注册工具**。缺报告分析与 Fact 5 项、组织管理 4 项，唯一未注册 `pmo_fact_propose`。逐项调用及目标 Host 验收另记。获批新增需求、客户正式争议入账、零预算结项仍未验证；本次不标记 Q/T、八规则全部组合或政策为通过。
+
+## 2026-11-21 获批新增需求
+
+源条款：§5.3–5.4、§5.6 LR-05、§6.2、Q8/T05/T07，见 [ADR 0016](../adr/0016-approved-requirement-additions.md)。基准 SHA `abf460d6bb0b245e4540cbc347f9c348fadbb2b9`；全量被测树 `4bf9814af8c17dac843e1e68d78b651fa1fe9659`，增量扫描补充后的被测树 `255e47d330730c03a12032d88deef09a9e8dde5a`（均不含后补证据文档）。实现：`pmo/change_requests.py`、`pmo/change_decisions.py`、`pmo/requirement_additions.py`、`pmo/scope_quality.py`、`pmo/requirement_delivery.py`、`web/src/Changes.vue`；无新迁移。Windows/隔离 PostgreSQL/真实 HTTP、Edge，合成身份。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_requirement_additions.py tests/test_change_requests.py tests/test_change_history.py tests/test_scope_quality.py tests/test_requirement_baselines.py tests/test_lifecycle.py tests/test_weekly_drafts.py` | 0 | PASS：13 项，`.local/addition-affected-first.log`。预留 ID 不在需求清单/分母，独立授权、同键异参、自批/Agent/跨项目拒绝，并发批准一次，Outbox 故障事务完整回滚，初始签名不篡改，新增 P1 客户确认后满足率精确为 `2/5`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 test` | 0 | PASS：117 项 / 190.22 秒，`.local/addition-full.log`（增量队列补充前）。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 browser` | 0 | PASS：Edge 12 项 / 157.52 秒，`.local/addition-edge.log`。桌面 PM 发起，独立 Reviewer 移动视口批准，刷新真实清单、台账一致，`web/e2e/requirement-additions.mjs`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_requirement_additions.py tests/test_health.py::test_incremental_scan_lr04_lr03_dedupe_and_transaction` | 0 | PASS：3 项 / 17.34 秒，`.local/addition-scan.log`。加入与既有变更相同的扫描标记后重新验证 LR-05、并发和现有扫描。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`、`npm.cmd --prefix web run build` | 0 | PASS：规格三检、mypy、Vue 类型和构建，日志 `.local/addition-check-first.log`、`.local/addition-build.log`；包体告警仍在。 |
+
+新入口是工程补充，基线 95 和 MCP 注册 40 不变。DEC-07 继续待真实签核；合成客户确认不代表真实客户签收。

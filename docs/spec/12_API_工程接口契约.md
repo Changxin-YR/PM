@@ -136,6 +136,8 @@
 
 周报初稿（工程接口，不新增基线操作或 MCP 工具）：`POST /api/v1/projects/{projectId}/reports/weekly-drafts`，本项目现任人工 PM，要求浏览器会话、CSRF、`Idempotency-Key`、`If-Match`（父项目 revision），请求 `{ "period": "2025-W01" }`。200 返回现有报告 DTO 的 `draft` 与只读 `weeklyBasis`（生成时间、规则、源摘要、核验人天与过滤后的 Fact）。人工项目报告详情回读该依据；MCP 响应保持原样。相关来源变化会在提交/发布时返回 409 `WEEKLY_DRAFT_SOURCE_CHANGED`；生成不提交、不发布。见 [ADR 0015](../adr/0015-weekly-report-basis.md)。
 
+新增需求申请（工程接口）：`POST /api/v1/projects/{projectId}/changes/requirement-additions`，仅人工现任 PM，要求 `If-Match`（项目 revision）、CSRF 与幂等键。请求 `desc`、`priority`、`acceptanceCriteria`、`plannedConfirmAt`（本地日期）、`reason`。200 返回 `pending` 的 `ChangeEntry`；`targetId` 是预留 ID，批准前不是有效需求。`baseRevision` 是共同签署的初始基线版本。批准和拒绝沿用 `/changes/{changeId}/approve|reject`；不改变既有 `pmo_change_propose` DTO。见 [ADR 0016](../adr/0016-approved-requirement-additions.md)。
+
 **固定契约**：`GET /projects/{id}/gates/check?gate=...` 为关口预检查，原文中出现的 `/transitions/preview` 和 `/gates/{type}/check` 不再作为第二套接口；客户确认统一 `/requirements/{id}/customer-confirm`，项目成员添加通过受控角色邀请，不新增裸写 `/projects/{id}/members`。
 
 **前后端一致**：`12_OpenAPI_路由请求基线.yaml` 是唯一机器路由输入基线；跨文件检查用于发现接口遗漏，但不证明操作已经部署。M0 要生成 FastAPI 原生 `/openapi.json` 并对照每个 `operationId`、HTTP 方法、入参、权限、输出 Schema。

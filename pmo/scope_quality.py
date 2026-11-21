@@ -9,7 +9,8 @@ from . import schema_v1 as db
 from .access import Auth
 from .contracts import RULE_VERSION, Result, Strict
 from .projects import fingerprint, meta, run
-from .requirement_baselines import project, s as signatures
+from .requirement_additions import addition, applied_addition, initial_signature, origin
+from .requirement_baselines import project
 
 router=APIRouter(prefix='/api/v1',tags=['Quality'])
 WEIGHTS={'P0':3,'P1':2,'P2':1}
@@ -17,7 +18,10 @@ WEIGHTS={'P0':3,'P1':2,'P2':1}
 
 def scope_event(c,change,opening):
     if change.target_type!='requirement': return
-    t=db.rule_events; digest=fingerprint(['LR-05',str(change.id),RULE_VERSION]); refs=[f'requirement:{change.target_id}@{change.base_revision}',f'change:{change.id}@{change.revision}']
+    t=db.rule_events; digest=fingerprint(['LR-05',str(change.id),RULE_VERSION])
+    base=(f'requirement-baseline:{change.project_id}@{change.base_revision}' if addition(change)
+          else f'requirement:{change.target_id}@{change.base_revision}')
+    refs=[base,f'change:{change.id}@{change.revision}']
     if opening:
         c.execute(t.insert().values(project_id=change.project_id,rule_id='LR-05',rule_version=RULE_VERSION,business_period=str(change.created_at.date()),
             fingerprint=digest,status='open',source_refs=refs))
@@ -56,25 +60,30 @@ class Schedule:
 
 def metrics(c,pid,*,schedule: list[Schedule] | None=None):
     r,ch=db.requirements,db.change_entries
-    signed=c.execute(sa.select(signatures).where(signatures.c.project_id==pid,signatures.c.signer_role=='client_representative').order_by(signatures.c.revision.desc()).limit(1)).mappings().one_or_none()
+    signed=initial_signature(c,pid)
     initial={i['requirementId']:i for i in signed.snapshot} if signed else {}
+    stamp=origin(pid,signed)
     expected={k:(x['priority'],1,False,x['desc'],x['acceptanceCriteria'],x.get('plannedConfirmAt')) for k,x in initial.items()}
     changed=set(); refs=[f'requirement-baseline:{pid}@{signed.revision}'] if signed else []; gaps=set(); approved=0
-    decisions=c.execute(sa.text('''SELECT ch.id,ch.target_id,ch.revision,d.new_state FROM change_entries ch JOIN change_decision_records d ON d.change_id=ch.id
+    decisions=c.execute(sa.text('''SELECT ch.id,ch.target_id,ch.target_type,ch.revision,ch.base_revision,ch.before,ch.after,d.old_state,d.new_state
+        FROM change_entries ch JOIN change_decision_records d ON d.change_id=ch.id
         WHERE ch.project_id=:p AND ch.target_type='requirement' AND ch.status='applied' AND d.outcome='applied' ORDER BY d.decided_at,ch.id'''),{'p':pid}).mappings()
     for decision in decisions:
         state=decision.new_state; k=str(decision.target_id); old=expected.get(k)
-        if (state['id']!=k or state['project_id']!=str(pid) or not old or old[2] or state['baseline_version']!=old[1]+1):
+        valid=(old is None and applied_addition(decision,stamp) if addition(decision)
+               else old is not None and not old[2] and state.get('baseline_version')==old[1]+1)
+        if not valid or state.get('id')!=k or state.get('project_id')!=str(pid):
             gaps.add('BASELINE_CHAIN_INVALID'); continue
         expected[k]=(state['priority'],state['baseline_version'],state['status']=='cancelled',state['desc'],state['acceptance_criteria'],state['planned_confirm_at'])
-        changed.add(k); approved+=1; refs.append(f'change:{decision.id}@{decision.revision}')
+        if k in initial: changed.add(k)
+        approved+=1; refs.append(f'change:{decision.id}@{decision.revision}')
     pending=set()
     for i in c.execute(sa.select(ch.c.target_id,ch.c.id,ch.c.revision).where(ch.c.project_id==pid,ch.c.target_type=='requirement',ch.c.status.in_(('draft','pending','approved'))).order_by(ch.c.id)):
         pending.add(str(i.target_id)); refs.append(f'change:{i.id}@{i.revision}')
     signoffs={(str(i.requirement_id),i.baseline_version,i.revision) for i in c.execute(sa.text('''SELECT rt.requirement_id,rt.baseline_version,rt.revision FROM requirement_transitions rt
         JOIN requirements r ON r.id=rt.requirement_id WHERE r.project_id=:p AND rt.status='customer_confirmed' AND rt.actor_type='human' '''),{'p':pid})}
     current={str(i.id):i for i in c.execute(sa.select(r).where(r.c.project_id==pid)).mappings()}; active=weight=confirmed=p0=confirmed_p0=frozen=0
-    if not initial: gaps.add('INITIAL_BASELINE_MISSING')
+    if signed is None: gaps.add('INITIAL_BASELINE_MISSING')
     if any(i.baseline_version and k not in expected for k,i in current.items()): gaps.add('BASELINE_CHAIN_INVALID')
     for k,(priority,version,cancelled,desc,criteria,day) in expected.items():
         row=current.get(k); valid=row is not None and (row.priority,row.baseline_version,row.status=='cancelled',row['desc'],row.acceptance_criteria,

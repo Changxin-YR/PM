@@ -11,6 +11,7 @@ from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .change_history import Entry
 from .change_intents import authority, payload, snapshot
+from .requirement_additions import Fields as AdditionFields, addition, initial_signature, origin, valid_origin
 from .change_requests import OPEN, TARGETS, changes, entry
 from .charters import COLUMNS
 from .contracts import RULE_VERSION, Result, Strict
@@ -31,6 +32,11 @@ class Verdict(Strict):
 
 def apply(c,p,actor,i,old):
     kind=i.target_type; t=TARGETS[kind]; fields={}; after=i.after
+    if addition(i):
+        f=AdditionFields.model_validate(after)
+        return c.execute(t.insert().values(id=i.target_id,project_id=p.id,created_by=i.requested_by,desc=f.desc,
+            acceptance_criteria=f.acceptanceCriteria,priority=f.priority,planned_confirm_at=f.plannedConfirmAt,
+            status='baseline',baseline_version=1).returning(t)).mappings().one()
     if kind=='requirement':
         baseline_evidence_time(c,p.id,old)
         keys={'acceptanceCriteria':'acceptance_criteria','plannedConfirmAt':'planned_confirm_at'}
@@ -70,13 +76,23 @@ def decide(auth,approve,cid,command,key,rev):
         intent=c.execute(sa.select(ar).where(ar.c.id==cid,ar.c.project_id==project.id,ar.c.action=='baseline_change').with_for_update()).mappings().one_or_none()
         if intent and (intent.delegated_by==a.person or intent.requested_by==a.person): raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
         table=TARGETS[i.target_type]; old=c.execute(sa.select(table).where(table.c.id==i.target_id,table.c.project_id==project.id).with_for_update()).mappings().one_or_none()
-        if not old: raise Failure(409,'APPROVAL_STALE')
+        added=addition(i)
+        if (added and old is not None) or (not added and old is None): raise Failure(409,'APPROVAL_STALE')
+        frozen=i.before if added else snapshot(old)
         result=None
         if approve:
-            if (not intent or intent.status!='pending' or intent.rule_version!=RULE_VERSION or intent.expected_revision!=old.revision or i.base_revision!=old.revision
-                or intent.payload_hash!=payload(i) or intent.snapshot_hash!=fingerprint(snapshot(old)) or intent.requested_by!=project.pm_id
+            if (not intent or intent.status!='pending' or intent.rule_version!=RULE_VERSION or intent.expected_revision!=i.base_revision
+                or intent.payload_hash!=payload(i) or intent.snapshot_hash!=fingerprint(frozen) or intent.requested_by!=project.pm_id
                 or not active_member(c,project,i.requested_by,'pm')): raise Failure(409,'APPROVAL_STALE')
-            try: before,after=changes(i.target_type,old,i.after)
+            try:
+                if added:
+                    stamp=origin(project.id,initial_signature(c,project.id))
+                    if not valid_origin(i.before,stamp) or i.base_revision!=stamp['initialBaselineRevision']:
+                        raise Failure(409,'APPROVAL_STALE')
+                    before,after=stamp,AdditionFields.model_validate(i.after).model_dump(mode='json')
+                else:
+                    if i.base_revision!=old.revision: raise Failure(409,'APPROVAL_STALE')
+                    before,after=changes(i.target_type,old,i.after)
             except ValidationError: raise Failure(409,'APPROVAL_STALE') from None
             if fingerprint(before)!=fingerprint(i.before) or fingerprint(after)!=fingerprint(i.after): raise Failure(409,'APPROVAL_STALE')
             c.execute(ch.update().where(ch.c.id==cid).values(status='approved',approved_by=a.person,revision=rev+1))
@@ -88,7 +104,7 @@ def decide(auth,approve,cid,command,key,rev):
         if intent: c.execute(ar.update().where(ar.c.id==cid).values(status='approved' if approve else 'rejected',decided_by=a.person,decided_at=at,reason=reason,updated_at=at))
         c.execute(sa.text('''INSERT INTO change_decision_records(change_id,approver_id,authority_ref,rationale,outcome,old_state,new_state,request_id,decided_at)
             VALUES(:id,:who,:grant,:reason,:outcome,CAST(:old AS jsonb),CAST(:new AS jsonb),:rid,:at)'''),dict(id=cid,who=a.person,grant=grant,reason=reason,
-            outcome=status,old=json.dumps(snapshot(old)),new=json.dumps(snapshot(result)) if result else None,rid=UUID(rid),at=at))
+            outcome=status,old=json.dumps(frozen),new=json.dumps(snapshot(result)) if result else None,rid=UUID(rid),at=at))
         scope_event(c,saved,False); refs=[f'change:{cid}@{saved.revision}']
         if result: refs.append(f'{i.target_type}:{result.id}@{result.revision}')
         receipt=entry(saved).model_copy(update={'decidedBy':a.person,'decisionReason':reason,'decidedAt':at})

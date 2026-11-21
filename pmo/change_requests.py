@@ -1,5 +1,5 @@
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
@@ -17,6 +17,7 @@ from .materials import finish, replay
 from .materials import project_access
 from .projects import fingerprint, meta, run
 from .requirement_delivery import can_deliver
+from .requirement_additions import Addition, OP as ADD_REQUIREMENT, initial_signature, origin
 
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
 OPEN=('designing','executing','on_hold','delivering')
@@ -39,6 +40,7 @@ class Ledger(Page):
     canPropose: bool
     decidableIds: list[UUID]
     policyPending: bool
+    additionProjectRevision: int | None = None
 
 
 def entry(i):
@@ -53,6 +55,7 @@ def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int
     def read(c,a,_):
         p=project_access(c,a,projectId); t=db.change_entries
         targets=[sa.and_(t.c.target_type==kind,sa.exists(sa.select(1).select_from(table).where(table.c.id==t.c.target_id,table.c.project_id==projectId))) for kind,table in TARGETS.items()]
+        targets.append(sa.and_(t.c.target_type=='requirement',t.c.before.contains({'present':False})))
         matched=with_decision(t).where(t.c.project_id==projectId,sa.or_(*targets)).cte('matched')
         total=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
         rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset((page-1)*pageSize).limit(pageSize).subquery()
@@ -60,7 +63,10 @@ def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int
         items=[entry(r) for r in records if r.id]; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items])
         from .requirement_delivery import synthetic_confirmation
         scopes={kind for kind in {i.targetType for i in items if i.status=='pending' and i.requestedBy!=a.person} if authority(c,a,p,kind)}
-        return Result[Ledger](data=Ledger(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=info.asOf,canPropose=p.stage in OPEN and can_deliver(c,a,p),
+        permitted=p.stage in OPEN and can_deliver(c,a,p)
+        can_add=permitted and a.kind=='human' and origin(p.id,initial_signature(c,p.id)) is not None
+        return Result[Ledger](data=Ledger(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=info.asOf,canPropose=permitted,
+            additionProjectRevision=p.revision if can_add else None,
             decidableIds=[i.changeId for i in items if i.targetType in scopes and i.status=='pending' and i.requestedBy!=a.person and p.stage in OPEN],policyPending=not synthetic_confirmation(c)),meta=info)
     return run(authorization,op,read)
 
@@ -113,3 +119,32 @@ def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:
         capture(c,a,i,row); scope_event(c,i,True); result=entry(i)
         return finish(c,a,op,key,rid,projectId,sig,Result[Entry](data=result,meta=meta(op,[f'change:{i.id}@{i.revision}'])))
     return run(authorization,op,write)
+
+
+@router.post('/projects/{projectId}/changes/requirement-additions',operation_id=ADD_REQUIREMENT,
+    response_model_exclude_none=True,openapi_extra={'x-actorTypes':['human'],'x-forbidAgentEvenViaHttp':True})
+def propose_requirement_addition(projectId:UUID,command:Addition,authorization:Auth,key:Key,expected:Revision)->Result[Entry]:
+    rev=int(expected); sig=fingerprint([str(projectId),rev,command.model_dump(mode='json')])
+
+    def write(c,a,rid):
+        projects=db.projects
+        p=c.execute(sa.select(projects).where(projects.c.id==projectId,visible(a)).with_for_update()).mappings().one_or_none()
+        if p is None: raise Failure(404,'RESOURCE_NOT_FOUND')
+        if a.kind!='human' or not can_deliver(c,a,p): raise Failure(403,'FORBIDDEN',project_id=p.id)
+        if prior:=replay(c,a,ADD_REQUIREMENT,key,sig,Result[Entry]): return prior
+        if p.revision!=rev: raise Failure(409,'VERSION_CONFLICT',project_id=p.id)
+        before=origin(p.id,initial_signature(c,p.id))
+        if p.stage not in OPEN or before is None: raise Failure(422,'NO_ACTIVE_BASELINE',project_id=p.id)
+        ch=db.change_entries; x=ch.c; after=command.model_dump(mode='json',exclude={'reason'})
+        if c.scalar(sa.select(x.id).where(x.project_id==p.id,x.target_type=='requirement',x.before==before,x.after==after,
+                x.status.in_(('pending','approved'))).limit(1)):
+            raise Failure(409,'CHANGE_ALREADY_PENDING',project_id=p.id)
+        row=c.execute(ch.insert().values(project_id=p.id,target_id=uuid4(),target_type='requirement',before=before,after=after,
+            base_revision=before['initialBaselineRevision'],reason=command.reason,status='pending',requested_by=a.person,
+            created_by=a.person).returning(ch)).mappings().one()
+        capture(c,a,row,before); scope_event(c,row,True)
+        result=Result[Entry](data=entry(row),meta=meta(ADD_REQUIREMENT,[f'change:{row.id}@{row.revision}',
+            f'requirement-baseline:{p.id}@{row.base_revision}']))
+        return finish(c,a,ADD_REQUIREMENT,key,rid,p.id,sig,result)
+
+    return run(authorization,ADD_REQUIREMENT,write)

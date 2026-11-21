@@ -224,6 +224,20 @@ def test_browser_model_free_weekly_draft_and_publish(live, team):
     assert state['isCurrentConfirmed'] and state['revision']==4
 
 
+def test_browser_independent_requirement_addition(live, team):
+    from test_lifecycle import begin_execution
+    from test_requirement_additions import grant_reviewers
+    from test_reports import data
+
+    _, _, users, _ = team
+    project, _, _ = begin_execution(live,team)
+    grant_reviewers(live,team)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'requirement-additions', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users,'pm','reviewer'))})
+    quality=data(users['pm'].get(project+'/requirement-metrics'))
+    assert (quality['initialCount'],quality['activeCount'],quality['approvedChangeCount'])==(1,2,1)
+
+
 def test_browser_independent_termination_confirmation(live, team):
     from test_lifecycle import start_feasibility
 
