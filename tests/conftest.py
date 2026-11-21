@@ -25,7 +25,7 @@ def live_stack(tmp_path_factory):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     env={**os.environ,'DATABASE_URL':url,'PYTHONUTF8':'1','PMO_LOCAL_HTTP':'1','PMO_EVIDENCE_DIR':str(tmp_path_factory.mktemp('private_evidence')),
-         'PMO_REPORT_ANALYSIS':'0'}
+         'PMO_REPORT_ANALYSIS':'0','PMO_ASSISTANT_PREVIEWS':'0'}
     proc=None
     env['PMO_SYNTHETIC_POLICY_SCHEMA']=schema
     try:

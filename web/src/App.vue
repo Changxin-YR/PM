@@ -62,6 +62,7 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
       MILESTONE_COMPLETION_REQUIRED:'全部有效里程碑须完成并附核验凭证。',
       RETROSPECTIVE_ANSWERS_REQUIRED:'请先保存完整的复盘四问。',CONFIRMED_LESSON_REQUIRED:'归档须有至少一条经独立人工确认的教训。',
       REVIEW_SNAPSHOT_STALE:'已冻结的评审材料发生变化，请撤回后重送。',
+      ASSISTANT_SOURCE_CHANGED:'预览依据已变化，请重新读取后生成。',REQUEST_IN_PROGRESS:'上一份请求仍在处理，请稍后重试。',
       CUSTOMER_DISPUTE_OPEN:'本版本存在未处理的正式客户争议。',
       REQUIREMENT_DISPUTE_LOCKED:'当前阶段或需求版本不接受争议写入。',
       DISPUTE_ALREADY_WITHDRAWN:'该争议已撤回。',

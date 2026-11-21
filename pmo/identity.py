@@ -67,7 +67,7 @@ def browser_actor(conn,identity):
         'human_health_history','human_health_refresh','human_health_zero_budget','human_appeal_health','human_review_health_appeal',
         'human_report_fact_list','human_fact_verify','human_fact_clarify','human_fact_history',
         'human_report_analyze','human_report_analysis_list',
-        'human_assistant_charter','human_assistant_process','human_assistant_closing','human_assistant_ledger',
+        'human_assistant_charter','human_assistant_process','human_assistant_closing','human_assistant_ledger','human_assistant_preview',
         'admin_members_list','admin_users_list','admin_user_update_status',
         'admin_user_invite','admin_user_invitation_list','admin_user_invitation_revoke',
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',

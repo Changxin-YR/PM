@@ -24,6 +24,8 @@
 
 从 0025 起，报告分析默认 `PMO_REPORT_ANALYSIS=0`。要启用，在 API 和 `python -m pmo.report_analysis_worker --watch` 同步设 `PMO_REPORT_ANALYSIS=1`；只给独立分析进程注入 API 运行账号的 `DATABASE_URL`、显式 `PMO_REPORT_MODEL_URL`（HTTPS，隔离测试允许回环 HTTP）及可选的网关密钥 `PMO_REPORT_MODEL_TOKEN`。地址对应工具禁用的 JSON 转发网关；不是任一厂商的聊天接口地址，真实适配另验。该进程不挂附件卷、不持迁移或 Outbox 凭据。需先审批报告文字的外发范围和网络 ACL。作业租约 40 秒，单次调用最长 12 秒；退出码 1 或作业长期排队应报警。开启/关闭无需重写报告或补做人工签核。
 
+立项、结项和问答的结构化预览独立默认关闭 (`PMO_ASSISTANT_PREVIEWS=0`)。只有在批准该部署内有权限人员所读片段的外发、网关具体模型版本和出口 ACL 后，才在 API 进程设 `PMO_ASSISTANT_PREVIEWS=1`、`PMO_ASSISTANT_MODEL_URL`（HTTPS；隔离测试可用回环 HTTP）和可选 `PMO_ASSISTANT_MODEL_TOKEN`。不继承报告开关或密钥，不跟随重定向，不在普通读取时自动外发。受限 API 账号只能完成本操作的 pending 幂等记录；更新部署或由备份恢复后须按本手册重验角色、列权限及保护触发器。细节见 [ADR 0018](../adr/0018-source-bound-assistant-previews.md)。
+
 该命令在同一事务内撤销专用库和 `public` 对 `PUBLIC`、两个运行账号的既有授权（含列级权限），按白名单重授。保留不属于这三个主体的已有授权；同一实例中其他数据库的访问仍需 DBA 控制。从备份恢复后不继承原库 ACL，必须对应新环境重新应用并验证。新迁移新增的表默认不授予运行账号权限；开发人员需更新白名单和回归后才可启用。
 
 PostgreSQL 的行锁要求一定的列级 UPDATE 权限。对仅供并发核验的授权表，ACL 只使一列满足锁权限，并由迁移所有者控制的语句触发器拒绝运行账号实际 UPDATE。审计可读及追加，不能覆盖、删行或截断；查询 API 仍按应用权限裁剪。数据库隔离不替代 API 项目 RBAC，也不把 API 连接凭据当成普通用户的凭据。泄漏 API 凭据仍可能读到服务可处理的数据并发起被许可的数据库写入，须单独保护和轮换。

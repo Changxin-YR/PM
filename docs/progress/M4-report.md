@@ -150,3 +150,16 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_postings.py --tb=short --junitxml=.local/rc0029-cost-atomic.xml` | 0 | PASS：2 项 / 10.70 秒（金额、人天），`.local/rc0029-cost-atomic.log`。Outbox 故障下核验仍 pending、actual 不变、无成功审计、事件或幂等回执；恢复后两个独立核验者并发仅一人成功，回读 `cost-posting` 版本和响应哈希。 |
 
 首轮后端 `.local/rc0029-backend.log` 退出 1：LR-01 两例误以为 PM 在草稿/立项评审中可签发阶段请求动作，客户确认用例的读取路径未定义。修复测试：明确检查签发拒绝、正常 scoped 读工具与阶段请求分别验证；构造实际资源 URL，保留客户本人 Agent 对直接 HTTP 的拒绝和人工正例。工作树启动后曾因并行开发给既有抽取网关增加 `tools` 字段而失败（`.local/rc0029-backend-verified.log`，退出 1）；旧契约保留，审计批以固定源码树独立复跑。规格与类型 `.local/rc0029-spec.log` PASS；候选 Web 构建 `.local/rc0029-build.log` PASS，保留体积告警。Q1–Q8、T01～T08/T10 是合成产品证据；T09、试点、真实签核及生产放行不计入。
+
+## 0029 四模式网关与人工降级
+
+源条款：§8.5–8.6、§20.3、Q1/Q2/Q5/Q6/Q7、T06/T08。基准 `e5752ad564f8360b5a7c4647cc24842528c6ce5a`，被测源码树 `c02013cea625d52c130d8f20ef1aaa721d6f2a24`（不含补录文档）。实现及接口见 [ADR 0018](../adr/0018-source-bound-assistant-previews.md)：`pmo/assistant.py`、`pmo/assistant_model.py`、`pmo/assistant_preview.py`、`pmo/model_gateway.py`、`web/src/ProjectAssistant.vue`。Windows、本机 Edge、真实回环 HTTP/stdio、PostgreSQL 16.14 隔离合成 schema/专库、回环模拟网关；不使用外部模型或真实业务资料。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/assistant-model-mcp-final.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/assistant-model-backend-final.xml` | 0 | PASS：264 项 / 384.53 秒，`.local/assistant-model-backend-final.log`；包含恶意提示、Schema 附加字段、未知来源、矛盾、超时、并发重放、失权、旧材料与人工降级；MCP 逐工具 JSON 与既有 `mcp-stdio-0029.json` 字节一致。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/assistant-model-edge-final.xml` | 0 | PASS：18 项 / 197.06 秒，`.local/assistant-model-edge-final.log`。模型关时同一项目全生命周期；开启模拟网关时，三个预览与正式数值呈现分离，过程模式仍走原异步提取。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_database_roles.py tests/test_recovery.py tests/test_operational_checks.py --tb=short --junitxml=.local/assistant-model-recovery.xml` | 0 | PASS：6 项 / 39.46 秒，`.local/assistant-model-recovery.log`。受限账号预览收据更新不能覆盖正式业务回执；带数据升级、联合恢复及就绪探针。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：三套规格静态检查、Python 87 文件及 Vue 类型，`.local/assistant-model-check-final.log`。运行 `app.openapi()` 按方法、路径、operationId 比对：基线 95/95、工程 42；40 MCP 不变。 |
+
+隔离 Compose `pmo104-rc-0c3c7df1` 用 `docker @stack build` 构建候选镜像（PASS，`.local/rc0029-compose-build.log`，保留 Web 体积告警）；与同一已备份停写的隔离库升级配套。`0028→0029` 后保留 15 项目、30 条消费回执、33 条旧审计；就绪/存活均 200，匿名预览 401，两个模型关闭。最初从 Nginx 入口探测内部 OpenAPI 未找到；改从 API 容器内复核，未向代理增加公开路由（PASS，`.local/rc0029-compose-verify.log`）。真实模型版本及批准外发、目标 Host、两试点和签核各自仍 BLOCKED_EXTERNAL。

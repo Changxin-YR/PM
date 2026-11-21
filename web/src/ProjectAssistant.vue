@@ -1,23 +1,24 @@
 <script setup lang="ts">
 import {computed,onBeforeUnmount,shallowRef,ref,watch} from 'vue'
-import {ArrowRight,RefreshCw,Search} from 'lucide-vue-next'
+import {ArrowRight,ClipboardList,RefreshCw,Search} from 'lucide-vue-next'
 import AssistantLines from './AssistantLines.vue'
 
 type Mode='charter'|'process'|'closing'|'ledger'
 type Topic='health'|'cost'|'requirements'|'fact'|'lesson'
 type Cited={text:string;sourceRefs:string[];observedAt?:string|null}
+type Preview={status:'ready'|'manual'|'empty';items:(Cited & {prompt?:string})[];errorCode?:string}
 type Gap={code:string;message:string;sourceRefs:string[]}
 type LessonRef=Cited & {lessonId:string;projectId:string;category:string}
 type Charter={completeness:{eligible:boolean;missing:Gap[]};scoreSummary:null|{total:string|null;means:Record<string,string>;sourceRefs:string[];decidedAt:string};
-  weaknesses:Cited[];lessonRefs:LessonRef[];reviewDraft:Cited[]}
+  weaknesses:Cited[];lessonRefs:LessonRef[];reviewDraft:Cited[];previewEnabled:boolean}
 type Process={reportId:string|null;modelEnabled:boolean;analysis:null|{status:string;errorCode:string|null};
   factCandidates:{subject:string;quote:string;sourceRef:string;asOf:string}[];conflicts:Cited[];
   health:{health:string;dataTrust:string;gaps:string[];timeLine:string|null;costLine:string|null;qualityLine:string|null};alerts:(Cited & {ruleId:string})[];
   weeklyDraft:{period:string;verifiedPersonDays:string|null;structuredFields:{milestone_progress:{summary:string}[];
     requirement_progress:{summary:string}[];risks_and_blockers:{summary:string}[]}}}
 type Closing={gateEligible:boolean|null;gateGaps:Gap[];retrospectiveKind:'normal'|'terminated'|null;
-  retrospectiveQuestions:string[];lessonDrafts:Cited[]}
-type Ledger={answer:Cited[];asOf:string;sourceRefs:string[];unknowns:string[]}
+  retrospectiveQuestions:string[];lessonDrafts:Cited[];previewEnabled:boolean}
+type Ledger={answer:Cited[];asOf:string;sourceRefs:string[];unknowns:string[];previewEnabled:boolean}
 type Data={charter:Charter;process:Process;closing:Closing;ledger:Ledger}
 type Packet={ [K in Mode]:{mode:K;data:Data[K];meta:{asOf:string;sourceRefs:string[];ruleVersion:string}} }[Mode]
 type Destination='reviews'|'reports'|'retrospective'|'health'
@@ -30,40 +31,71 @@ const topics:{value:Topic;label:string}[]=[{value:'health',label:'当前三线'}
   {value:'requirements',label:'需求满足率'},{value:'fact',label:'核验事实'},{value:'lesson',label:'已确认教训'}]
 const healthNames:Record<string,string>={green:'绿',yellow:'黄',red:'红',untrusted:'不可信',unavailable:'不可用'}
 const analysisNames:Record<string,string>={queued:'正在排队',running:'分析中',ready:'候选已生成',manual:'待人工处理',stale:'来源已变更'}
+const previewReasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MODEL_UNAVAILABLE:'模型网关不可用',MODEL_TIMEOUT:'模型响应超时',
+  MODEL_SCHEMA_INVALID:'模型输出格式不合规',MODEL_SOURCE_INVALID:'模型输出无法追溯到本次来源',MODEL_INTERRUPTED:'预览请求已中断'}
 const scores:Record<string,string>={strategicAlignment:'战略对齐',customerAttractiveness:'客户／市场吸引力',
   financialResourceReturn:'财务／资源回报',riskControllability:'风险可控度'}
 const mode=ref<Mode>('charter'),topic=ref<Topic>('health'),keyword=ref(''),category=ref('')
 const packet=shallowRef<Packet|null>(null),loading=ref(false),error=ref('')
+const suggestion=shallowRef<Preview|null>(null),suggesting=ref(false),suggestionError=ref(''),loadedQuery=ref('')
 const charter=computed(()=>packet.value?.mode==='charter'?packet.value.data:null)
 const process=computed(()=>packet.value?.mode==='process'?packet.value.data:null)
 const closing=computed(()=>packet.value?.mode==='closing'?packet.value.data:null)
 const ledger=computed(()=>packet.value?.mode==='ledger'?packet.value.data:null)
 const useKeyword=computed(()=>mode.value==='charter'||(mode.value==='ledger'&&['fact','lesson'].includes(topic.value)))
 const useCategory=computed(()=>mode.value==='charter'||(mode.value==='ledger'&&topic.value==='lesson'))
-let request:AbortController|undefined
-
-async function load(){
-  request?.abort()
-  const next=new AbortController(),current=mode.value
-  request=next;loading.value=true;error.value='';packet.value=null
+const enabled=computed(()=>charter.value?.previewEnabled||closing.value?.previewEnabled||ledger.value?.previewEnabled)
+const query=computed(()=>{
   const params=new URLSearchParams()
-  if(current==='ledger')params.set('topic',topic.value)
+  if(mode.value==='ledger')params.set('topic',topic.value)
   if(useKeyword.value&&keyword.value.trim())params.set('keyword',keyword.value.trim())
   if(useCategory.value&&category.value.trim())params.set('category',category.value.trim())
+  return params.toString()
+})
+let request:AbortController|undefined,previewRequest:AbortController|undefined
+let attempt:{body:string;key:string}|undefined
+
+function clearSuggestion(){
+  previewRequest?.abort();previewRequest=undefined;attempt=undefined
+  suggesting.value=false;suggestion.value=null;suggestionError.value=''
+}
+
+async function load(){
+  request?.abort();clearSuggestion()
+  const next=new AbortController(),current=mode.value
+  request=next;loading.value=true;error.value='';packet.value=null
+  const params=query.value
   try{
-    const query=params.size?`?${params.toString()}`:''
-    const response=await props.api(`projects/${props.projectId}/assistant/${current}${query}`,{signal:next.signal})
-    if(request===next)packet.value={mode:current,...response}
+    const response=await props.api(`projects/${props.projectId}/assistant/${current}${params?`?${params}`:''}`,{signal:next.signal})
+    if(request===next){packet.value={mode:current,...response};loadedQuery.value=params}
   }catch(e){
     if(request===next&&!next.signal.aborted)error.value=e instanceof Error?e.message:'暂时无法读取助理结果。'
   }finally{
     if(request===next)loading.value=false
   }
 }
+
+async function suggest(){
+  if(!enabled.value||loading.value||suggesting.value||loadedQuery.value!==query.value)return
+  const filters:Record<string,string>={}
+  new URLSearchParams(loadedQuery.value).forEach((value,key)=>{filters[key]=value})
+  const body=JSON.stringify({mode:mode.value,...filters})
+  if(attempt?.body!==body)attempt={body,key:crypto.randomUUID()}
+  const next=new AbortController()
+  previewRequest=next;suggesting.value=true;suggestion.value=null;suggestionError.value=''
+  try{
+    const {data}:{data:Preview}=await props.api(`projects/${props.projectId}/assistant/suggestions`,{
+      method:'POST',signal:next.signal,body,headers:{'If-Match':String(props.revision),'Idempotency-Key':attempt.key}})
+    if(previewRequest===next){suggestion.value=data;attempt=undefined}
+  }catch(e){
+    if(previewRequest===next&&!next.signal.aborted)suggestionError.value=e instanceof Error?e.message:'暂时无法生成建议。'
+  }finally{if(previewRequest===next)suggesting.value=false}
+}
 function changeContext(){keyword.value='';category.value='';void load()}
 watch([mode,topic,()=>props.projectId],changeContext,{immediate:true})
+watch([keyword,category],clearSuggestion)
 watch(()=>props.revision,()=>void load())
-onBeforeUnmount(()=>request?.abort())
+onBeforeUnmount(()=>{request?.abort();previewRequest?.abort()})
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
 </script>
 
@@ -150,6 +182,23 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       <p v-for="unknown in ledger.unknowns" :key="unknown" class="meta">{{unknown}}</p>
     </template>
 
+    <section v-if="enabled" class="suggestions" aria-label="模型建议预览" :aria-busy="suggesting">
+      <div class="assistant-row">
+        <h3>{{ledger?'模型整理 · 来源摘录':'模型建议 · 待人工核对'}}</h3>
+        <el-button size="small" :loading="suggesting" :disabled="loading||loadedQuery!==query" @click="suggest">
+          <ClipboardList :size="15"/>生成预览
+        </el-button>
+      </div>
+      <el-alert v-if="suggestionError" type="warning" :title="suggestionError" :closable="false"/>
+      <template v-if="suggestion">
+        <p v-if="suggestion.status==='manual'" role="status" class="meta">
+          {{previewReasons[suggestion.errorCode??'']??'模型建议不可用'}}，仍可使用以上台账和人工流程。
+        </p>
+        <p v-else-if="suggestion.status==='empty'" role="status" class="meta">没有可引用的建议。</p>
+        <AssistantLines v-else :items="suggestion.items"/>
+      </template>
+    </section>
+
     <details v-if="packet" class="packet-sources">
       <summary>截至 {{time(packet.meta.asOf)}} · 依据</summary>
       <small>{{packet.meta.ruleVersion}}</small>
@@ -175,5 +224,6 @@ dt{color:var(--el-text-color-secondary);font-size:12px}dd{margin:3px 0}
 .health-swatch[data-state=red]{background:var(--el-color-danger)}
 .sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:8px 16px}
 .packet-sources{margin-top:12px;color:var(--el-text-color-secondary);border-top:1px solid var(--el-border-color-light);padding:8px 0}
+.suggestions{border-top:1px solid var(--el-border-color-light);margin-top:10px}
 summary{cursor:pointer}code{display:block;font-size:12px;margin:3px 0}
 </style>

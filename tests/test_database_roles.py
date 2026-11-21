@@ -54,7 +54,7 @@ def serve(url, tmp_path, *, evidence_dir=None, extra_env=None):
         port = sock.getsockname()[1]
     env = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False),
            'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(evidence_dir or (tmp_path / 'private')),
-           'PMO_REPORT_ANALYSIS': '0', **(extra_env or {})}
+           'PMO_REPORT_ANALYSIS': '0', 'PMO_ASSISTANT_PREVIEWS': '0', **(extra_env or {})}
     proc = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'pmo.api:app', '--host', '127.0.0.1',
                              '--port', str(port), '--no-access-log'], env=env)
     try:
@@ -114,6 +114,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE audit_logs SET action=action', 'DELETE FROM audit_logs',
                 "INSERT INTO user_roles(user_id,role) SELECT id,'finance_verifier' FROM user_accounts",
                 'UPDATE user_roles SET id=id', 'UPDATE persons SET id=id',
+                'UPDATE idempotency_keys SET request_hash=request_hash', 'DELETE FROM idempotency_keys',
                 'UPDATE appointment_authorities SET org_id=org_id',
                 'UPDATE change_approval_grants SET project_id=project_id',
                 'UPDATE user_accounts SET password_hash=password_hash',
@@ -150,6 +151,14 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             assert api.get(path).status_code == 200
             patch = api.patch(path, headers=key(), json={'fields': {'name': 'Restricted revision'}})
             assert patch.status_code == 200, patch.text
+            preview_key = key(patch.json()['data']['revision'])
+            preview_path = path + '/assistant/suggestions'
+            first = api.post(preview_path, headers=preview_key, json={'mode': 'charter'})
+            assert data(first)['errorCode'] == 'MODEL_DISABLED'
+            assert api.post(preview_path, headers=preview_key, json={'mode': 'charter'}).json() == first.json()
+            with psycopg.connect(**connection_args(urls['api']), autocommit=True) as api_db:
+                denied(api_db, ["UPDATE idempotency_keys SET response_body='{}' WHERE operation='pmo_project_create'",
+                               "UPDATE idempotency_keys SET status='pending' WHERE operation='human_assistant_preview'"])
             stale = api.patch(path, headers=key(), json={'fields': {'name': 'Stale revision'}})
             assert stale.status_code == 409 and stale.json()['code'] == 'VERSION_CONFLICT'
             audit = api.get('admin/audits', params={'requestId': stale.headers['X-Request-ID']})

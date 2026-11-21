@@ -60,6 +60,7 @@ API_EDIT = {
     'tasks': 'status due_at completed_at revision updated_at',
     'user_accounts': 'last_login_at is_active status_revision updated_at', 'web_sessions': 'revoked_at',
     'login_windows': 'started_at attempt_count',
+    'idempotency_keys': 'status completed_at response_body response_hash response_status',
     'agent_credentials': 'status revoked_at allowed_project_ids',
     'agent_collection_versions': 'revision', 'agent_token_versions': 'revision',
     'projects': 'name description revision updated_at pm_id sponsor_id stage',
@@ -177,6 +178,19 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
             END $$''')
         conn.execute('''CREATE OR REPLACE TRIGGER pmo_zero_legacy_actual BEFORE INSERT ON public.cost_entries
             FOR EACH ROW EXECUTE FUNCTION public.pmo_zero_legacy_actual()''')
+        conn.execute('''CREATE OR REPLACE FUNCTION public.pmo_complete_preview_receipt() RETURNS trigger
+            LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+            BEGIN
+                IF current_user = pg_get_userbyid((SELECT relowner FROM pg_class WHERE oid=TG_RELID)) OR
+                   (OLD.actor_type='human' AND OLD.operation='human_assistant_preview' AND OLD.status='pending' AND
+                    NEW.status='completed' AND NEW.completed_at IS NOT NULL AND NEW.response_status=200 AND
+                    NEW.response_body IS NOT NULL AND NEW.response_hash IS NOT NULL) THEN
+                    RETURN NEW;
+                END IF;
+                RAISE insufficient_privilege USING MESSAGE = 'Only pending assistant previews may be completed';
+            END $$''')
+        conn.execute('''CREATE OR REPLACE TRIGGER pmo_complete_preview_receipt BEFORE UPDATE ON public.idempotency_keys
+            FOR EACH ROW EXECUTE FUNCTION public.pmo_complete_preview_receipt()''')
         for table, column in LOCKS.items():
             target = sql.Identifier('public', table)
             conn.execute(sql.SQL('CREATE OR REPLACE TRIGGER pmo_lock_only_guard BEFORE UPDATE ON {} '

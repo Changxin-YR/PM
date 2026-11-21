@@ -29,6 +29,10 @@ def enabled() -> bool:
     return os.getenv('PMO_REPORT_ANALYSIS', '0') == '1'
 
 
+def previews_enabled() -> bool:
+    return os.getenv('PMO_ASSISTANT_PREVIEWS', '0') == '1'
+
+
 def _fields(pairs):
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -49,25 +53,36 @@ class Gateway:
 
     @classmethod
     def from_env(cls):
-        if not enabled():
-            return None
+        return cls._configured('PMO_REPORT_MODEL') if enabled() else None
+
+    @classmethod
+    def for_previews(cls):
+        return cls._configured('PMO_ASSISTANT_MODEL') if previews_enabled() else None
+
+    @classmethod
+    def _configured(cls, prefix: str):
         try:
-            uri = httpx.URL(os.getenv('PMO_REPORT_MODEL_URL', ''))
+            uri = httpx.URL(os.getenv(f'{prefix}_URL', ''))
         except (ValueError, httpx.InvalidURL):
             return None
-        # Only an explicit operator setting can authorize outbound report text. No URL in a report is used here.
+        # No URL or credentials are ever selected from project data.
         if (uri.scheme != 'https' and not (uri.scheme == 'http' and uri.host in ('127.0.0.1', '::1'))
                 or not uri.host or uri.username or uri.password or uri.query or uri.fragment):
             return None
-        return cls(uri, os.getenv('PMO_REPORT_MODEL_TOKEN', ''))
+        return cls(uri, os.getenv(f'{prefix}_TOKEN', ''))
 
     def candidates(self, source: dict[str, Any], schema: dict[str, Any], *, retry: bool) -> object:
-        return asyncio.run(self._extract(source, schema, retry=retry))
+        return self.generate(MODE, INSTRUCTION, source, schema, retry=retry)
 
-    async def _extract(self, source, schema, *, retry):
+    def generate(self, mode: str, instruction: str, source: dict[str, Any], schema: dict[str, Any], *, retry: bool) -> object:
+        return asyncio.run(self._extract(mode, instruction, source, schema, retry=retry))
+
+    async def _extract(self, mode, instruction, source, schema, *, retry):
         headers = {'Authorization': f'Bearer {self.key}'} if self.key else {}
-        payload = {'mode':MODE, 'instruction':INSTRUCTION, 'source':source, 'outputSchema':schema,
+        payload = {'mode':mode, 'instruction':instruction, 'source':source, 'outputSchema':schema,
                    'retryReason':'previous output failed validation' if retry else None}
+        if mode != MODE:
+            payload['tools'] = []  # Existing report-extraction gateways use absence to mean no tools.
         try:
             async with asyncio.timeout(DEADLINE_SECONDS), httpx.AsyncClient(
                     timeout=httpx.Timeout(DEADLINE_SECONDS, connect=3.0), trust_env=False, follow_redirects=False) as client:

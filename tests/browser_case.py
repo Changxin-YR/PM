@@ -161,6 +161,17 @@ def test_browser_read_only_project_assistant_without_model(live, team):
         run_browser(root, url, 'assistant', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(team[2], 'pm'))})
 
 
+def test_browser_separates_model_previews_from_official_results(live, team, tmp_path):
+    from test_assistant_preview import enabled_api
+
+    execution_fixture(live, team)
+    with enabled_api(live, tmp_path, {'reviewDraft': [{'sourceId': 's1', 'lens': 'test_success'}]},
+                     {'answer': [{'sourceId': 's24'}]}, {'answer': [{'sourceId': 's24'}]}) as (api, calls):
+        with vite(api.base_url.port) as (root, url):
+            run_browser(root, url, 'assistant-model', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(team[2], 'pm'))})
+    assert [call['mode'] for call in calls] == ['charter_review_assistant', 'ledger_qa', 'ledger_qa']
+
+
 def test_browser_customer_dispute_has_independent_and_persistent_history(live, team):
     _, _, users, _ = team
     execution_fixture(live, team)

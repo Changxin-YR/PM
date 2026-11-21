@@ -5,11 +5,12 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
+from . import assistant_model as model, assistant_preview as preview
 from . import fact_store, gates, health, model_gateway, report_analysis, reports, retrospectives, review_outcomes, reviews
 from . import schema_v1 as db
-from .access import Auth
+from .access import Auth, Key, Revision
 from .contracts import Result, Strict
 from .costs import cost_basis, summary_line
 from .fact_sources import verified_source
@@ -31,10 +32,7 @@ Topic = Literal['health', 'cost', 'requirements', 'fact', 'lesson']
 HITS = 6
 
 
-class Cited(Strict):
-    text: str
-    sourceRefs: list[str]
-    observedAt: datetime | None = None
+Cited = model.Excerpt
 
 
 class LessonRef(Cited):
@@ -54,6 +52,7 @@ class CharterMode(Strict):
     weaknesses: list[Cited]
     lessonRefs: list[LessonRef]
     reviewDraft: list[Cited]
+    previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
 
 
 class ProcessAlert(Cited):
@@ -85,6 +84,7 @@ class ClosingMode(Strict):
     retrospectiveKind: retrospectives.Kind | None
     retrospectiveQuestions: list[str]
     lessonDrafts: list[Cited]
+    previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
 
 
 class LedgerMode(Strict):
@@ -92,6 +92,7 @@ class LedgerMode(Strict):
     asOf: datetime
     sourceRefs: list[str]
     unknowns: list[str]
+    previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
 
 
 def _project_ref(project) -> str:
@@ -104,11 +105,16 @@ def _meta(op, p, at, refs):
     return info
 
 
+def _project(c, a, pid, mode):
+    p = gates.lock_project(c, a, pid)
+    if not p.materials_visible and not (mode == 'charter' and p.stage == 'charter_review'):
+        raise Failure(404, 'RESOURCE_NOT_FOUND')
+    return p
+
+
 def _read(auth, op, pid, read):
     def query(c, a, _):
-        p = gates.lock_project(c, a, pid)
-        if not p.materials_visible and not (op == CHARTER and p.stage == 'charter_review'):
-            raise Failure(404, 'RESOURCE_NOT_FOUND')
+        p = _project(c, a, pid, 'charter' if op == CHARTER else None)
         return read(c, a, p, c.scalar(sa.select(sa.func.clock_timestamp())))
     return run(auth, op, query)
 
@@ -213,20 +219,11 @@ def process(projectId: UUID, authorization: Auth) -> Result[ProcessMode]:
 @router.get('/closing', operation_id=CLOSING, openapi_extra=HUMAN)
 def closing(projectId: UUID, authorization: Auth) -> Result[ClosingMode]:
     def read(c, a, p, at):
-        check, materials = gates.evaluate(c, a, p, 'closing', pending=p.stage == 'closing_review')
-        origin = retrospectives._origin(c, p)
+        check, materials, origin, answers = _closing_sources(c, a, p)
         kind = retrospectives._kind(origin)
         if kind is None and p.stage in ('closed', 'terminated'):
             kind = 'normal' if p.stage == 'closed' else 'terminated'
-        retro = retrospectives._retrospective(c, p.id) if origin else None
-        drafts = []
-        if retro is not None:
-            try:
-                answers = retrospectives.Save(answers=retro.answers).answers
-            except ValidationError as exc:
-                raise Failure(422, 'RETROSPECTIVE_ANSWERS_REQUIRED', project_id=p.id) from exc
-            drafts.append(Cited(text=answers[-1][:600], sourceRefs=[retrospectives._retro_ref(retro)],
-                                observedAt=retro.completed_at))
+        drafts = [answers[-1].model_copy(update={'text': answers[-1].text[:600]})] if answers else []
         applicable = p.stage in ('delivering', 'closing_review')
         refs = [*materials.refs, *(ref for draft in drafts for ref in draft.sourceRefs)]
         if origin:
@@ -235,6 +232,20 @@ def closing(projectId: UUID, authorization: Auth) -> Result[ClosingMode]:
             gateEligible=check.eligible if applicable else None, retrospectiveKind=kind,
             retrospectiveQuestions=list(retrospectives.QUESTIONS), lessonDrafts=drafts), meta=_meta(CLOSING, p, at, refs))
     return _read(authorization, CLOSING, projectId, read)
+
+
+def _closing_sources(c, a, p):
+    check, materials = gates.evaluate(c, a, p, 'closing', pending=p.stage == 'closing_review')
+    origin = retrospectives._origin(c, p)
+    retro = retrospectives._retrospective(c, p.id) if origin else None
+    if retro is None:
+        return check, materials, origin, []
+    try:
+        answers = retrospectives.Save(answers=retro.answers).answers
+    except ValidationError as exc:
+        raise Failure(422, 'RETROSPECTIVE_ANSWERS_REQUIRED', project_id=p.id) from exc
+    refs = [retrospectives._retro_ref(retro)]
+    return check, materials, origin, [Cited(text=answer, sourceRefs=refs, observedAt=retro.completed_at) for answer in answers]
 
 
 def _ledger_fact(c, p, at, keyword):
@@ -280,34 +291,103 @@ def _ledger_health(c, a, p, at):
 @router.get('/ledger', operation_id=LEDGER, openapi_extra=HUMAN)
 def ledger(projectId: UUID, authorization: Auth, topic: Topic = 'health', keyword: Keyword = None,
            category: Category = None) -> Result[LedgerMode]:
-    def read(c, a, p, at):
-        answer, unknowns = [], []
-        if topic == 'fact':
-            answer = _ledger_fact(c, p, at, keyword)
-        elif topic == 'lesson':
-            answer = [Cited(text=f'{item.category}：{item.text}', observedAt=item.observedAt, sourceRefs=item.sourceRefs)
-                      for item in _lesson_references(c, a, p, at, keyword, category)]
-        elif topic == 'health':
-            answer, unknowns, at = _ledger_health(c, a, p, at)
-        elif topic == 'requirements':
-            quality, refs = metrics(c, p.id)
-            if quality.satisfaction is not None:
-                answer.append(Cited(text=f'加权满足率：{quality.satisfaction}；P0：{quality.confirmedP0}/{quality.activeP0}',
-                                    sourceRefs=refs[:100]))
-            else:
-                unknowns.append('需求满足率不可用：' + '、'.join(quality.gaps))
+    return _read(authorization, LEDGER, projectId, lambda c, a, p, at: _ledger(c, a, p, at, topic, keyword, category))
+
+
+def _ledger(c, a, p, at, topic, keyword, category):
+    answer, unknowns = [], []
+    if topic == 'fact':
+        answer = _ledger_fact(c, p, at, keyword)
+    elif topic == 'lesson':
+        answer = [Cited(text=f'{item.category}：{item.text}', observedAt=item.observedAt, sourceRefs=item.sourceRefs)
+                  for item in _lesson_references(c, a, p, at, keyword, category)]
+    elif topic == 'health':
+        answer, unknowns, at = _ledger_health(c, a, p, at)
+    elif topic == 'requirements':
+        quality, refs = metrics(c, p.id)
+        if quality.satisfaction is not None:
+            answer.append(Cited(text=f'加权满足率：{quality.satisfaction}；P0：{quality.confirmedP0}/{quality.activeP0}',
+                                sourceRefs=refs[:100]))
         else:
-            basis = cost_basis(c, p.id, at)
-            for unit, kind in [('金额（CNY）', 'money'), ('人天', 'effort')]:
-                refs = basis.refs(kind)[:100]
-                if refs:
-                    result = summary_line(c, basis, kind, at)
-                    answer.append(Cited(text=f'{unit}：已核验净额 {result.actual}；剩余预测 {result.forecastRemaining}；'
-                        f'偏差率 {result.varianceRate or "不可用"}', sourceRefs=refs))
-                else:
-                    unknowns.append(f'{unit}无可核验记录。')
-        if not answer and not unknowns:
-            unknowns.append('没有匹配的可核验来源，无法回答。')
-        info = _meta(LEDGER, p, at, [ref for item in answer for ref in item.sourceRefs])
-        return Result[LedgerMode](data=LedgerMode(answer=answer, asOf=at, sourceRefs=info.sourceRefs, unknowns=unknowns), meta=info)
-    return _read(authorization, LEDGER, projectId, read)
+            unknowns.append('需求满足率不可用：' + '、'.join(quality.gaps))
+    else:
+        basis = cost_basis(c, p.id, at)
+        for unit, kind in [('金额（CNY）', 'money'), ('人天', 'effort')]:
+            refs = basis.refs(kind)[:100]
+            if refs:
+                result = summary_line(c, basis, kind, at)
+                answer.append(Cited(text=f'{unit}：已核验净额 {result.actual}；剩余预测 {result.forecastRemaining}；'
+                    f'偏差率 {result.varianceRate or "不可用"}', sourceRefs=refs))
+            else:
+                unknowns.append(f'{unit}无可核验记录。')
+    if not answer and not unknowns:
+        unknowns.append('没有匹配的可核验来源，无法回答。')
+    info = _meta(LEDGER, p, at, [ref for item in answer for ref in item.sourceRefs])
+    return Result[LedgerMode](data=LedgerMode(answer=answer, asOf=at, sourceRefs=info.sourceRefs, unknowns=unknowns), meta=info)
+
+
+class CharterPreview(Strict):
+    mode: Literal['charter']
+    keyword: retrospectives.QueryText | None = Field(default=None, max_length=160)
+    category: retrospectives.QueryText | None = Field(default=None, max_length=80)
+
+
+class ClosingPreview(Strict):
+    mode: Literal['closing']
+
+
+class LedgerPreview(Strict):
+    mode: Literal['ledger']
+    topic: Topic = 'health'
+    keyword: retrospectives.QueryText | None = Field(default=None, max_length=160)
+    category: retrospectives.QueryText | None = Field(default=None, max_length=80)
+
+
+PreviewCommand = Annotated[CharterPreview | ClosingPreview | LedgerPreview, Field(discriminator='mode')]
+
+
+def _gaps(p, rows):
+    return [model.Part(kind='gap', text=gap.message, sourceRefs=gap.sourceRefs or [_project_ref(p)]) for gap in rows]
+
+
+def _charter_parts(c, a, p, at, keyword, category):
+    check, _ = gates.evaluate(c, a, p, 'charter', pending=p.stage == 'charter_review')
+    parts = _gaps(p, [gap for gap in check.missing if gap.code != 'GATE_STAGE_MISMATCH'])
+    if p.materials_visible:
+        table = db.charters
+        row = c.execute(sa.select(table).where(table.c.project_id == p.id)).mappings().one_or_none()
+        if row is not None:
+            refs = [f'charter:{row.id}@{row.revision}']
+            fields = [('价值主张', row.value_prop), ('吸引力', row.attractiveness),
+                      ('预期收益', row.expected_benefit), ('验收标准', row.success_criteria)]
+            parts.extend(model.Part(kind='charter', text=f'{label}：{value}', sourceRefs=refs)
+                         for label, value in fields if value)
+        score = _published_assessment(c, p, at)
+        if score is not None:
+            parts.extend(model.Part(kind='score', text=f'{item.label}：{score.means[item.key]}',
+                         sourceRefs=score.sourceRefs, observedAt=score.decidedAt)
+                         for item in rubric('charter') if item.key in score.means)
+        parts.extend(model.Part(kind='history', text=item.text, sourceRefs=item.sourceRefs, observedAt=item.observedAt)
+            for item in _lesson_references(c, a, p, at, keyword, category, history_only=True))
+    return check.snapshotHash, parts
+
+
+def _preview_basis(c, a, p, at, command):
+    if command.mode == 'charter':
+        scope, parts = _charter_parts(c, a, p, at, command.keyword, command.category)
+    elif command.mode == 'closing':
+        check, _, origin, answers = _closing_sources(c, a, p)
+        scope = [check.snapshotHash, retrospectives._kind(origin)]
+        parts = _gaps(p, check.missing) if p.stage in ('delivering', 'closing_review') else []
+        parts.extend(model.Part(kind='retro', text=f'{question}：{answer.text}', sourceRefs=answer.sourceRefs,
+                     observedAt=answer.observedAt) for question, answer in zip(retrospectives.QUESTIONS, answers))
+    else:
+        data = _ledger(c, a, p, at, command.topic, command.keyword, command.category).data
+        scope = [command.topic, data.sourceRefs, data.unknowns]
+        parts = [model.Part(kind='ledger', **item.model_dump()) for item in data.answer]
+    return preview.Basis.from_parts(parts, p.id, p.revision, [p.materials_visible, scope], at)
+
+
+@router.post('/suggestions', operation_id=preview.OP, openapi_extra=HUMAN, response_model_exclude_none=True)
+def suggestions(projectId: UUID, command: PreviewCommand, authorization: Auth, key: Key, expected: Revision) -> Result[preview.Preview]:
+    return preview.execute(authorization, projectId, key, int(expected), command, _project, _preview_basis)

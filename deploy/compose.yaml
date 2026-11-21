@@ -11,6 +11,7 @@ x-runtime: &runtime
 x-api-env: &api-env
   DATABASE_URL: postgresql+psycopg://pmo_api:${PMO_DEPLOY_API_PASSWORD:?set API password}@db:5432/pmo
   PMO_REPORT_ANALYSIS: "0"
+  PMO_ASSISTANT_PREVIEWS: "0"
 
 services:
   db:
