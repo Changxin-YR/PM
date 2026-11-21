@@ -31,9 +31,21 @@ def test_human_and_agent_share_project_and_session_revocation(live,actor):
             assert c.execute(sa.select(db.audit_logs.c.result,db.audit_logs.c.actor_id).where(db.audit_logs.c.request_id==rid)).one()==('denied',uid)
         assert human.patch(path,headers={**keys,**csrf},json=changes).json()['data']['revision']==2
         assert agent_api.get('/api/v1/'+path,headers=h).json()['data']['project']['name']=='Human edit'
-        assert human.post('auth/logout',headers=csrf).status_code==204
+        invalid = human.post('auth/logout',headers=csrf,json={'allSessions':True})
+        assert (invalid.status_code,invalid.json()['code'])==(422,'VALIDATION_FAILED')
+        assert human.post('auth/logout').json()['code']=='CSRF_INVALID'
+        assert agent_api.post('/api/v1/auth/logout',headers=h,json={}).status_code==403
+        assert human.get('auth/me').is_success
+        signed_out = human.post('auth/logout',headers=csrf,json={})
+        assert signed_out.status_code==200 and signed_out.json()['data']=={'loggedOut':True}
+        assert signed_out.json()['meta']['operationId']=='auth_logout'
+        assert 'Max-Age=0' in signed_out.headers['Set-Cookie'] and cookie not in signed_out.text
+        assert human.get('auth/me').status_code==401
         assert human.get('auth/me',headers={'Cookie':'pmo_session='+cookie}).status_code==401
     with engine.connect() as c:
+        logged = c.execute(sa.select(db.audit_logs.c.result,db.audit_logs.c.actor_id).where(
+            db.audit_logs.c.request_id==signed_out.headers['X-Request-ID'])).one()
+        assert logged==('success',uid)
         assert c.scalar(sa.select(db.audit_logs.c.actor_type).where(db.audit_logs.c.project_id==project['projectId'],db.audit_logs.c.action=='pmo_project_draft_update'))=='human'
 
 

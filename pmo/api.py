@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 from time import perf_counter
 import os
@@ -13,7 +13,7 @@ from .contracts import CreateProject, ProjectView, ProjectDetail, Page, Result, 
 from .identity import Browser, Failure
 from .contracts import Strict
 from . import projects, sessions
-from .access import Auth
+from .access import Auth, DEEP_OBJECT_FILTERS, Filters
 from .milestone_routes import router as milestone_router
 from .requirement_routes import router as requirement_router
 from .charter_routes import router as charter_router
@@ -177,19 +177,32 @@ def me(authorization:Auth)->CurrentUser:
 
 def deny_agent(): raise Failure(403,'FORBIDDEN')
 
-@app.post('/api/v1/auth/logout',operation_id='auth_logout',status_code=204)
-def logout(response:Response,authorization:Auth):
-    if not isinstance(authorization,Browser): raise Failure(403,'FORBIDDEN')
-    projects.run(authorization,'auth_logout',lambda c,a,r:sessions.signout(c,a,r,authorization.cookie))
-    response.delete_cookie('pmo_session',path='/api/v1')
+class Logout(Strict):
+    pass
+
+
+class LogoutResult(Strict):
+    loggedOut: Literal[True]
+
+
+@app.post('/api/v1/auth/logout',operation_id='auth_logout')
+def logout(response:Response,authorization:Auth,command:Logout|None=None)->Result[LogoutResult]:
+    def write(c,a,r):
+        if not isinstance(authorization,Browser):
+            raise Failure(403,'FORBIDDEN')
+        sessions.signout(c,a,r,authorization.cookie)
+        return Result[LogoutResult](data=LogoutResult(loggedOut=True),meta=projects.meta('auth_logout',[]))
+    result = projects.run(authorization,'auth_logout',write)
+    response.delete_cookie('pmo_session',path='/api/v1',httponly=True,samesite='strict')
+    return result
 
 @app.exception_handler(Failure)
 async def failure(_:Request,e:Failure):
     return error(e.status,e.code)
 
-@app.get('/api/v1/projects',operation_id='pmo_project_list')
-def listing(authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),stage:str|None=Query(None,alias='filters[stage]'),keyword:str|None=Query(None,alias='filters[keyword]',max_length=160))->Result[Page]:
-    return projects.listing(authorization,page,pageSize,stage,keyword)
+@app.get('/api/v1/projects',operation_id='pmo_project_list',openapi_extra=DEEP_OBJECT_FILTERS)
+def listing(authorization:Auth,filters:Filters,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100))->Result[Page]:
+    return projects.listing(authorization,page,pageSize,filters.stage,filters.keyword)
 
 @app.get('/api/v1/projects/{projectId}',operation_id='pmo_project_get',response_model_exclude_none=True)
 def detail(projectId:UUID,authorization:Auth)->Result[ProjectDetail]:

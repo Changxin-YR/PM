@@ -231,7 +231,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             saved = data(api.patch(f"admin/users/{account['userId']}/status", headers=key(1),
                 json={'isActive':False, 'reason':'Independent least privilege test'}))
             assert not saved['isActive'] and saved['revision']==2
-            assert api.post('auth/logout').status_code == 204
+            assert api.post('auth/logout').raise_for_status().json()['data'] == {'loggedOut': True}
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:
             denied(runtime, ["""INSERT INTO cost_entries(project_id,created_by,type,category,period_start,period_end,budget,actual,forecast_remaining,baseline_version)

@@ -151,3 +151,16 @@ REST 与 stdio 共用服务，新增关口检查、准备材料、评审列表�
 | `scripts/dev.ps1 migrate` / 本地预览 | `0016 (head)`；8006 实际 OpenAPI 58/95 基线 + 6 工程操作；注册 30/40 MCP；经 5179 代理匿名预检 401 |
 
 本批只验收到进入待评审；无正式对账记录时结项不能送审。未据此标记 Q1、Q5、T03、T04、T09 或完整 LR-07 通过，见 ADR 0010。
+
+## 0030 REST 传输契约核对
+
+依据：主方案 §7、§20.3，冻结 OpenAPI `/auth/logout`、项目及需求列表，FND-006。基准 SHA `fdbf5cf133d7dbc08d0448b54d8ba252365c30a9`，被测暂存源码树 `c295616a2b69683747678d5cc3dce8a84aa863cd`（不含本节证据文档）。Windows、回环 HTTP、Edge、PostgreSQL 16.14 隔离 schema，合成账号、模型关闭。
+
+项目、需求列表共用 `pmo/access.py` 的封闭 `deepObject` 解析，保留 Web/MCP 的 `filters[stage]`、`filters[keyword]`，拒绝未知、重复或超长筛选字段；不改变服务端组织、项目授权及分页。`pmo/api.py` 的登出按基线返回 `200` 及 `data.loggedOut=true` 的闭合 DTO，仍允许无正文登出、校验 CSRF 并撤销实际会话。运行中的 OpenAPI 检查 95 项冻结操作的必需传输参数、正文媒介和具体成功响应形状；未穷举嵌套约束和主体授权组合。
+
+| 命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_runtime.py::test_rest_baseline_transport_has_concrete_success_dtos tests/test_runtime.py::test_deep_object_filters_are_closed_and_project_scoped tests/test_human.py::test_human_and_agent_share_project_and_session_revocation --tb=short --junitxml=.local/rest-contract-first.xml` | 1 | FAIL，4 项；`.local/rest-contract-first.log`。识别未声明的 `deepObject`、静默忽略非法筛选和登出 `204`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_runtime.py tests/test_human.py tests/test_requirements.py tests/test_agent_tokens.py tests/test_error_contract.py tests/test_database_roles.py tests/test_assistant_preview.py tests/test_report_analysis.py --tb=short --junitxml=.local/rest-contract-verified.xml` | 0 | PASS，31 项 / 70.63 秒；`.local/rest-contract-verified.log`。包括闭合筛选、跨项目拒绝、分页及真实会话撤销。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'draft_workflow or same_snapshot_and_private_resources' --tb=short --junitxml=.local/rest-contract-edge.xml` | 0 | PASS，2 项 / 49.72 秒；`.local/rest-contract-edge.log`。人工作台和浏览器与 stdio 同时点双入口。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS，三套规格检查与 mypy 87 文件；`.local/rest-contract-check.log`。 |

@@ -35,6 +35,96 @@ def test_runtime_has_all_baseline_methods_paths_and_tool_mappings(live):
     assert len(expected)==95 and {op:actual.get(op) for op in expected}==expected
     assert len(tools)==40 and set(tools)==set(ROUTES) and set(tools)<=actual.keys()
 
+
+def test_rest_baseline_transport_has_concrete_success_dtos(live):
+    frozen = yaml.safe_load(next(Path('docs/spec').glob('12_*.yaml')).read_text(encoding='utf-8'))
+    response = live[1].get('/openapi.json')
+    response.raise_for_status()
+    actual = response.json()
+
+    def model(schema):
+        return actual['components']['schemas'][schema['$ref'].rsplit('/', 1)[1]] if '$ref' in schema else schema
+
+    checked = set()
+    for path, entries in frozen['paths'].items():
+        for method, expected in entries.items():
+            if method not in {'get', 'post', 'patch', 'put', 'delete'}:
+                continue
+            op = expected['operationId']
+            route = actual['paths'][path][method]
+            params = {(p['in'], p['name'].lower()): p for p in route.get('parameters', [])}
+            for param in expected.get('parameters', []):
+                key = (param['in'], param['name'].lower())
+                assert key in params, (op, key)
+                assert params[key].get('required', False) == param.get('required', False), (op, key)
+                if param.get('style') == 'deepObject':
+                    assert params[key]['style'] == 'deepObject' and params[key]['explode'] is True
+                    assert set(params[key]['schema']['properties']) == set(param['schema']['properties'])
+                    assert params[key]['schema']['additionalProperties'] is False
+            if 'requestBody' in expected:
+                assert 'requestBody' in route, op
+                assert set(expected['requestBody']['content']) <= set(route['requestBody']['content']), op
+                assert route['requestBody'].get('required', False) == expected['requestBody'].get('required', False), op
+            for status in (key for key in expected['responses'] if key.startswith('2')):
+                root = model(route['responses'][status]['content']['application/json']['schema'])
+                assert root['additionalProperties'] is False, op
+                fields = root['properties']
+                # Authentication bootstrap DTOs predate the normal service envelope.
+                if op == 'auth_login':
+                    assert set(fields) == {'csrfToken'}
+                elif op == 'auth_me':
+                    assert set(fields) == {'accountId', 'personId', 'orgId', 'isSystemAdmin'}
+                else:
+                    assert set(fields) == {'data', 'meta'}, op
+                    data_schema = model(fields['data'])
+                    if op == 'human_my_role_invitations':
+                        assert data_schema['type'] == 'array'
+                        data_schema = model(data_schema['items'])
+                    assert data_schema['properties'] and data_schema['additionalProperties'] is False, op
+                    assert set(model(fields['meta'])['properties']) >= {'asOf', 'operationId', 'sourceRefs', 'ruleVersion'}, op
+            checked.add(op)
+    assert len(checked) == 95
+
+
+@pytest.mark.parametrize('kind', ('project', 'requirement'))
+def test_deep_object_filters_are_closed_and_project_scoped(live, actor, kind):
+    _, api, _, _ = live
+    token, _ = actor(extra_actions=('pmo_requirement_create', 'pmo_requirement_list'))
+    other, _ = actor()
+    prefix = '/api/v1/projects'
+
+    def write(path, payload, secret=token):
+        response = api.post(path, headers={'Authorization': 'Bearer ' + secret,
+                            'Idempotency-Key': uuid4().hex}, json=payload)
+        return response.raise_for_status().json()['data']
+
+    project = write(prefix, {'code': 'FILTER-1', 'name': 'Matched timeline'})
+    other_project = write(prefix, {'code': 'FILTER-2', 'name': 'Different project'})
+    external = write(prefix, {'code': 'FILTER-3', 'name': 'Matched timeline'}, secret=other)
+    h = {'Authorization': 'Bearer ' + token}
+    if kind == 'project':
+        path, first, stage = prefix, project, 'drafting'
+    else:
+        path = f"{prefix}/{project['projectId']}/requirements"
+        fields = {'priority': 'P1', 'acceptanceCriteria': 'Validate input and preserve evidence'}
+        first = write(path, {'desc': 'Matched requirement', **fields})
+        write(path, {'desc': 'Different requirement', **fields})
+        write(f"{prefix}/{other_project['projectId']}/requirements", {'desc': 'Matched requirement', **fields})
+        stage = 'baseline'
+        assert api.get(f"{prefix}/{external['projectId']}/requirements", headers=h).status_code == 404
+    query = {'filters[stage]': stage, 'filters[keyword]': 'Matched', 'pageSize': 1}
+    page = api.get(path, params=query, headers=h).raise_for_status().json()['data']
+    assert (page['total'], page['page'], page['pageSize'], page['items']) == (1, 1, 1, [first])
+    next_page = api.get(path, params={**query, 'page': 2}, headers=h).raise_for_status().json()['data']
+    assert next_page['total'] == 1 and next_page['items'] == []
+    assert api.get(path, params={**query, 'filters[stage]': 'excluded'}, headers=h).json()['data']['total'] == 0
+    for invalid in ([('filters[orgId]', external['orgId'])], [('filters', '{}')],
+                    [('filters[keyword]', 'a'), ('filters[keyword]', 'b')], [('filters[keyword]', 'a' * 161)]):
+        error = api.get(path, params=invalid, headers=h)
+        assert (error.status_code, error.json()['code']) == (422, 'VALIDATION_FAILED')
+        assert error.json()['requestId'] == error.headers['X-Request-ID'] and 'data' not in error.json()
+
+
 def test_postgres_erd_matches_migrated_relationships(live):
     with live[0].connect() as conn:
         conn.exec_driver_sql('SET TRANSACTION READ ONLY')

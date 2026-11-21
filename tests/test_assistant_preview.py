@@ -188,7 +188,7 @@ def test_in_flight_no_duplicate_and_discard_changed_authority_or_sources(live, t
                 code(request(actor, path, rev, key=key), 409, 'REQUEST_IN_PROGRESS')
                 code(request(actor, path, rev), 409, 'REQUEST_IN_PROGRESS')
                 if invalidate == 'logout':
-                    assert owner.post('auth/logout').status_code == 204
+                    assert owner.post('auth/logout').raise_for_status().json()['data'] == {'loggedOut': True}
                 else:
                     save_charter(owner, path, {'valueProp': 'Changed proposal requiring new citations'})
                     assert stage(owner, path)['revision'] == rev

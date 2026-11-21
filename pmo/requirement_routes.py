@@ -1,16 +1,17 @@
 from uuid import UUID
 from fastapi import APIRouter, Query
 from . import requirements as svc
-from .access import Auth, Key, Revision
+from .access import Auth, DEEP_OBJECT_FILTERS, Filters, Key, Revision
 from .contracts import Result
 
 router=APIRouter(prefix='/api/v1',tags=['Requirements'])
 
 
-@router.get('/projects/{projectId}/requirements',operation_id='pmo_requirement_list',response_model_exclude_none=True)
-def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),
-            stage:str|None=Query(None,alias='filters[stage]'),keyword:str|None=Query(None,alias='filters[keyword]',max_length=160))->Result[svc.Page]:
-    return svc.listing(authorization,projectId,page,pageSize,stage,keyword)
+@router.get('/projects/{projectId}/requirements',operation_id='pmo_requirement_list',response_model_exclude_none=True,
+            openapi_extra=DEEP_OBJECT_FILTERS)
+def listing(projectId:UUID,authorization:Auth,filters:Filters,page:int=Query(1,ge=1),
+            pageSize:int=Query(20,ge=1,le=100))->Result[svc.Page]:
+    return svc.listing(authorization,projectId,page,pageSize,filters.stage,filters.keyword)
 
 
 @router.post('/projects/{projectId}/requirements',operation_id='pmo_requirement_create',response_model_exclude_none=True)

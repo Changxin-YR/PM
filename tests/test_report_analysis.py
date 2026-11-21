@@ -240,7 +240,7 @@ def test_rechecks_authorization_and_revision_after_http_without_holding_locks(te
             if change=='report':
                 assert data(pm.post(report_path(report)+'/confirm', headers=headers(1)))['revision']==2
             elif change=='logout':
-                assert user.post('auth/logout').status_code==204
+                assert user.post('auth/logout').raise_for_status().json()['data']=={'loggedOut':True}
             else:
                 m = db.project_members
                 with team.engine.begin() as c:
