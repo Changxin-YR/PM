@@ -117,6 +117,17 @@ def test_browser_health_snapshots_and_independent_appeal(live, team):
         run_browser(root, url, 'health', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm','reviewer'))})
 
 
+def test_browser_report_fact_conflict_resolution(live, team):
+    from test_facts import submit
+
+    _, _, users, _ = team
+    project, _, _ = execution_fixture(live, team)
+    submit(users['pm'], project + '/reports')
+    submit(users['pm'], project + '/reports', amount='3.80', period='2025-W02')
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'facts', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm','reviewer'))})
+
+
 def test_browser_delivery_through_archive(live, team):
     _, _, users, _ = team
     pm, reviewer, customer = (users[k] for k in ('pm', 'reviewer', 'client_representative'))

@@ -328,7 +328,7 @@ def _ref(row):
     return f'report:{row.id}@{row.revision}'
 
 
-def _view(row, a, p, pm, author_role, *, detail=False):
+def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False):
     try:
         fields = DraftFields.model_validate(row.structured_fields) if detail else None
     except ValueError:
@@ -346,6 +346,8 @@ def _view(row, a, p, pm, author_role, *, detail=False):
         item.canEdit = mutable and author_role and row.author_id == a.person
         item.canSubmit = mutable and (pm or item.canEdit)
         item.canConfirm = p.stage != 'archived' and pm and row.status == 'submitted' and row.content_hash is not None
+    if agent_excerpt:
+        item.narrative = row.narrative or ''
     return item
 
 
@@ -419,7 +421,10 @@ def get(reportId: UUID, authorization: Auth) -> Result[Report]:
     def read(c, a, _):
         p, row, pm = _context(c, a, report_id=reportId)
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)
-        return Result[Report](data=_view(row, a, p, pm, author_role, detail=True), meta=meta(GET, [_ref(row)]))
+        # Only a scoped Process Manager can see the report text to quote it in a proposal.
+        excerpt = a.kind == 'agent' and 'pmo_fact_propose' in a.actions and _is_pm(c, a, p) and _content(row) is not None
+        return Result[Report](data=_view(row, a, p, pm, author_role, detail=True, agent_excerpt=excerpt),
+                              meta=meta(GET, [_ref(row)]))
     return run(authorization, GET, read)
 
 

@@ -6854,6 +6854,11 @@
                   "structuredFields": {
                     "type": "object"
                   },
+                "narrative": {
+                  "type": "string",
+                  "maxLength": 20000,
+                  "description": "仅持本项目显式 Fact 候选权限且委托人仍为 PM 时返回原报告正文"
+                },
                   "revision": {
                     "type": "integer"
                   },
@@ -7233,13 +7238,15 @@
           "typedValue": {
             "oneOf": [
               {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 3000,
+                "pattern": "\\S"
               },
               {
-                "type": "number"
-              },
-              {
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "boolean"
@@ -7250,6 +7257,11 @@
             "type": "string",
             "minLength": 8,
             "maxLength": 128
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "subject": {
             "type": "string",
@@ -7272,6 +7284,7 @@
           "sourceRef",
           "typedValue",
           "idempotencyKey",
+          "expectedRevision",
           "subject",
           "predicate",
           "asOf"
@@ -7329,13 +7342,31 @@
                   },
                   "quote": {
                     "type": "string"
+                },
+                "typedValue": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "integer" },
+                    { "type": "boolean" }
+                  ]
+                },
+                "asOf": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
                   }
                 },
                 "required": [
                   "factId",
                   "reportId",
                   "validationStatus",
-                  "sourceRef"
+                "sourceRef",
+                "typedValue",
+                "asOf",
+                "revision"
                 ],
                 "additionalProperties": false
               },

@@ -23,6 +23,8 @@ UPDATE = 'pmo_task_update'
 Source = Literal['review', 'rule_event', 'remediation']
 Status = Literal['todo', 'in_progress', 'blocked', 'done', 'cancelled']
 SOURCES = {'review': db.reviews, 'rule_event': db.rule_events, 'remediation': db.risks}
+SYSTEM_SOURCES = ('fact_clarification',)
+VISIBLE_SOURCES = (*SOURCES, *SYSTEM_SOURCES)
 t = db.tasks
 router = APIRouter(prefix='/api/v1', tags=['Strengthening tasks'])
 
@@ -82,7 +84,7 @@ class Task(Strict):
     assigneeId: UUID | None = None
     dueAt: datetime | None = None
     # Only browser sessions receive provenance, completion time and UI permissions.
-    sourceType: Source | None = None
+    sourceType: Source | Literal['fact_clarification'] | None = None
     sourceId: UUID | None = None
     completedAt: datetime | None = None
     canUpdate: bool | None = None
@@ -104,7 +106,7 @@ def _project(c: Connection, a: Actor, project_id: UUID | None = None, *, task_id
     if task_id is None:
         stmt = stmt.where(p.c.id == project_id)
     else:
-        stmt = stmt.join(t, t.c.project_id == p.c.id).where(t.c.id == task_id, t.c.source_type.in_(SOURCES))
+        stmt = stmt.join(t, t.c.project_id == p.c.id).where(t.c.id == task_id, t.c.source_type.in_(VISIBLE_SOURCES))
     row = c.execute(stmt.with_for_update(of=p, read=not write)).mappings().one_or_none()
     if row is None:
         raise Failure(404, 'RESOURCE_NOT_FOUND')
@@ -166,14 +168,15 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         pm = _pm(p, a, roles)
         project_wide = pm or bool(roles & {'reviewer', 'client_representative'}) or (
             'sponsor' in roles and p.sponsor_id == a.person)
-        cond = [t.c.project_id == p.id, t.c.source_type.in_(SOURCES)]
+        cond = [t.c.project_id == p.id, t.c.source_type.in_(VISIBLE_SOURCES)]
         if not project_wide:
             cond.append(t.c.assignee_id == a.person)
         total = c.execute(sa.select(sa.func.count()).select_from(t).where(*cond)).scalar_one()
         rows = c.execute(sa.select(t).where(*cond).order_by(t.c.created_at.desc(), t.c.id)
                          .limit(pageSize).offset((page - 1) * pageSize)).mappings()
         human, writable = a.kind == 'human', p.stage != 'archived'
-        items = [_task(r, can_update=writable and (pm or r.assignee_id == a.person) if human else None) for r in rows]
+        items = [_task(r, can_update=writable and r.source_type not in SYSTEM_SOURCES
+            and (pm or r.assignee_id == a.person) if human else None) for r in rows]
         result = TaskPage(items=items, page=page, pageSize=pageSize, total=total,
                           canCreate=writable and pm if human else None, projectRevision=p.revision if human else None)
         return Result[TaskPage](data=result, meta=meta(LIST, [f'task:{i.taskId}@{i.revision}' for i in items]))
@@ -241,12 +244,14 @@ def update(taskId: UUID, command: Update, authorization: Auth, key: Key, expecte
     def write(c, a, rid):
         p = _project(c, a, task_id=taskId, write=True)
         row = c.execute(sa.select(t).where(t.c.id == taskId, t.c.project_id == p.id,
-                        t.c.source_type.in_(SOURCES)).with_for_update()).mappings().one_or_none()
+                        t.c.source_type.in_(VISIBLE_SOURCES)).with_for_update()).mappings().one_or_none()
         if row is None:
             raise Failure(404, 'RESOURCE_NOT_FOUND')
         roles = _roles(c, p, a.person)
         if not (_pm(p, a, roles) or (roles and row.assignee_id == a.person)):
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
+        if row.source_type in SYSTEM_SOURCES:
+            raise Failure(422, 'TASK_SOURCE_CONTROLLED', project_id=p.id)
         old = _prior(c, a, p, UPDATE, key, sig)
         if old is not None:
             return old

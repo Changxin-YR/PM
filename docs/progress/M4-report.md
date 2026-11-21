@@ -19,3 +19,18 @@
 ## 2026-11-21 0023 数据升级、角色与联合恢复
 
 见 [0023 源码树、环境与命令](M2-report.md)。`tests/test_recovery.py` 在 0016 保留原项目、旧报告、旧健康条目及里程碑附件，带数据升至 0023，通过独立人工会话核验原件、实名提交和发布周报、采样健康；真实 `pg_dump/pg_restore` 后以 API 回读原快照、报告内容哈希、作者/确认身份和附件哈希，旧无回执报告不补签。最终部署候选仍另验。`tests/test_database_roles.py` 用 API 账号运行独立扫描进程并验证重跑无额外任务和投递，Outbox 账号只消费通知且无权读取快照/文件。没有修改开发库的版本、现有 ACL 或建立后台计划任务。
+
+## 2026-11-21 0024 Fact 原话、核验与澄清
+
+源条款：§8.4–8.6、§17.3、§20.4、T06，见 [ADR 0012](../adr/0012-fact-source-and-clarification.md)。基准 SHA `00c1d6193c9966dce7a730830e19c95f0522ae74`，最终被测源码树 `b97068706675bddc5054c490f1b93279ed2957ee`（不含后补证据文档）。实现：`pmo/facts.py`、`pmo/fact_sources.py`、`pmo/fact_store.py`、`migrations/versions/0024_fact_source_receipts.py`、`web/src/ReportFacts.vue`。环境：Windows、真实回环 HTTP 与 stdio、PostgreSQL 16.14 随机隔离 schema/专用数据库、真实 Edge，合成账号和带已知数值的原件；无外部模型、真实数据、试点或业务签核。
+
+| 实际命令 | 结果 | 证据 |
+|---|---|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_database_roles.py tests/test_recovery.py tests/test_facts.py tests/test_reports.py tests/test_runtime.py --tb=short` | PASS，退出 0；17 项 / 41.76 秒 | `.local/fact-0024-integration.log`。原话、无出处、跨项目、模型式文本、Agent 权限、原件损坏、冲突、幂等与 Outbox 故障回滚；专用库用受限 API 写入今次回执，Outbox 无权读 Fact；带 0016 数据升级、拒绝丢 Fact 的降级，真联合恢复后核对高可信 Fact、作者/核验记录与原件。该定向验证先于任务列表接入，最终回归包含任务闭合。 |
+| `scripts/dev.ps1 test` | PASS，退出 0；100 项 / 147.57 秒 | `.local/fact-0024-full.log`。维护会话、冻结、关口、任务、快照等既有用例；新验 PM 只能随真实澄清关闭对应任务。仍有一项 Alembic 配置弃用警告。 |
+| `scripts/dev.ps1 browser` | PASS，退出 0；真实 Edge 7 项 / 121.99 秒 | `.local/fact-0024-edge.log`；新增 `web/e2e/facts.mjs`，PM 提报、独立 Reviewer 核验、冲突、PM 澄清和完整刷新，覆盖移动/桌面视口。 |
+| `scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | PASS，分别退出 0 | `.local/fact-0024-final-check.log`、`.local/fact-0024-build.log`。静态规格、mypy、Vue 类型与 Vite 构建通过；仍有主包体积警告。 |
+
+失败记录：初次回归 `.local/fact-0024-targeted.log`（11 通过、3 失败，退出 1），修复 Meta 不含 revision 的异常与 UUID 测试序列化；初次静态加固脚本拒绝不认识的 `type` 数组，改用等价封闭 `oneOf`；首次 Vue 类型检查报告隐式分页参数，明示数值类型后按上表验证。未删失败断言。
+
+`app.openapi()`/`ROUTES`/工具注册对表 PASS：90/95 基线 + 25 工程接口，40/40 注册且真实 stdio 枚举。剩 1 项报告分析和 4 项组织管理；不将注册等同所有调用或目标 Host 实验。四模式和全套 T06 仍待验收，人工事实工作区不受模型开关影响。

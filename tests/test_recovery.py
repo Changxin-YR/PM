@@ -19,6 +19,7 @@ from pmo import evidence_storage, recovery, schema_v1 as db
 from pmo.health_calculation import TZ, week_key
 from test_database_roles import serve
 from test_evidence import binary
+from test_facts import fact_path, post, report_path, worksheet
 from test_reports import body, data, headers, sections
 from test_reviews import data_login, member
 
@@ -74,6 +75,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         old_snapshot = conn.scalar(db.health_snapshots.insert().values(project_id=project, as_of=datetime(2026, 10, 5, tzinfo=UTC),
             data_trust='trusted', input_hash='a'*64, input_revisions={}, results={'health': 'green'},
             rule_version='legacy-synthetic', source_refs=[f'report:{legacy_report}@1']).returning(db.health_snapshots.c.id))
+        old_fact = conn.scalar(db.facts.insert().values(project_id=project, report_id=legacy_report, created_by=owner,
+            subject='Legacy synthetic fact', predicate='time', value='unknown', as_of=datetime(2026, 10, 5, tzinfo=UTC),
+            quote='Legacy source', source_ref=f'report:{legacy_report}@1', trust='low', validation_status='candidate').returning(db.facts.c.id))
 
     def upload(content=png, resource='milestone', resource_id=milestone, name='record.png', mime='image/png'):
         key = uuid4().hex
@@ -93,6 +97,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True,
                    env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
     path = f'projects/{project}'
+    sheet = worksheet()
     with engine.begin() as c:
         c.execute(db.projects.update().where(db.projects.c.id == project).values(stage='executing'))
         original_id = c.scalar(sa.select(db.evidence_files.c.id).where(db.evidence_files.c.storage_key == original))
@@ -106,11 +111,26 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             narrative='Synthetic source trail retained after recovery', structuredFields=sections(milestone_progress=[{
                 'milestoneId':str(milestone), 'claim':'progress', 'evidenceRefs':[proof['evidenceRef']]}]))))
         published = data(pm.post(f"reports/{report['reportId']}/confirm", headers=headers(report['revision'])))
+        candidate = data(post(pm, published))
+        att = data(pm.post(path + '/evidence', headers=headers(2), files={'file':('worksheet.png',sheet,'image/png')},
+            data={'linkedResourceType':'report','linkedResourceId':report['reportId']}))
+        with httpx.Client(base_url=pm.base_url, trust_env=False) as reviewer:
+            reviewer.headers['X-CSRF-Token'] = data_login(reviewer, 'fixture-reviewer', password)
+            data(reviewer.post(f"evidence/{att['evidenceId']}/verify", headers=headers(att['revision']),
+                json={'reason':'Compared the worksheet bytes', 'sha256':sha256(sheet).hexdigest()}))
+            fact = data(reviewer.post(fact_path(candidate)+'/verify', headers=headers(candidate['revision']),
+                json={'trust':'high','evidenceRef':att['evidenceRef'],'reason':'Row 3 of the synthetic worksheet records 2.50.'}))
+        assert fact['validationStatus'] == 'verified' and fact['trust'] == 'high'
         snapshot = data(pm.post(path + '/health/refresh', headers=headers(1)))
         weekly = snapshot['inputs']['weekly']
         assert weekly['receipts'][0]['hash'] == published['contentHash']
         assert weekly['claims'][0]['evidence'][0]['sha256'] == sha256(png).hexdigest()
         assert not weekly['missingEvidence'] and snapshot['snapshotId'] != str(old_snapshot)
+    with engine.connect() as c:
+        fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
+    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0023'], capture_output=True, text=True,
+        env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
+    assert failed.returncode != 0 and 'Refusing to discard Fact source and verification history' in failed.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -128,9 +148,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     output = tmp_path / 'points'
     targets = tmp_path / 'drill'
     point, manifest = recovery.backup(source, originals, output, tools)
-    assert {obj.key for obj in manifest.objects} == {original, external}
+    assert {obj.key for obj in manifest.objects} == {original, external, fact_attachment}
     assert manifest.unreferencedCandidates == 2 and recovery.daily_points(output) == 1
-    assert {entry.name for entry in (point / 'evidence').iterdir()} == {original, external}
+    assert {entry.name for entry in (point / 'evidence').iterdir()} == {original, external, fact_attachment}
 
     # Run the operator command end to end, not an in-process stand-in for pg_restore.
     cmd = [sys.executable, '-m', 'pmo.recovery']
@@ -141,7 +161,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     receipt = json.loads(result.stdout)
-    assert receipt['result'] == 'verified' and receipt['objects'] == 2 and receipt['revision'] == manifest.revision
+    assert receipt['result'] == 'verified' and receipt['objects'] == 3 and receipt['revision'] == manifest.revision
     name = receipt['database']
     assert name.startswith('pmo_restore_') and name != source.database
     try:
@@ -150,21 +170,27 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert restored.execute('SELECT count(*) FROM public.evidence_links WHERE resource_id = %s', (milestone,)).fetchone() == (1,)
             rows = restored.execute('''SELECT f.storage_key, f.sha256, f.size_bytes, l.resource_type, l.resource_id
                 FROM public.evidence_files f JOIN public.evidence_links l ON l.evidence_id=f.id''').fetchall()
-            assert {(r[0],r[3],r[4]) for r in rows} == {(original,'milestone',milestone), (external,'project',project)}
+            assert {(r[0],r[3],str(r[4])) for r in rows} == {(original,'milestone',str(milestone)), (external,'project',str(project)),
+                (fact_attachment,'report',report['reportId'])}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
             assert restored.execute('''SELECT narrative, content_hash, submitted_by, confirmed_by, confirmed_at
                 FROM public.reports WHERE id=%s''', (legacy_report,)).fetchone() == ('Preserve legacy report text', None, None, None, None)
             assert restored.execute('SELECT results FROM health_snapshots WHERE id=%s', (old_snapshot,)).fetchone() == ({'health':'green'},)
+            assert restored.execute('SELECT quote FROM facts WHERE id=%s', (old_fact,)).fetchone() == ('Legacy source',)
             assert restored.execute('''SELECT content_hash,submitted_by,confirmed_by,revision FROM reports WHERE id=%s''',
                 (published['reportId'],)).fetchone() == (published['contentHash'], owner, owner, published['revision'])
             monkeypatch.setenv('PMO_EVIDENCE_DIR', str(targets / receipt['evidenceDirectory']))
-            assert {r[0]: evidence_storage.checked_bytes(*r[:3]) for r in rows} == {original: png, external: book}
+            assert {r[0]: evidence_storage.checked_bytes(*r[:3]) for r in rows} == {original: png, external: book, fact_attachment: sheet}
         with serve(admin.set(database=name), tmp_path, evidence_dir=targets / receipt['evidenceDirectory']) as pm:
             pm.headers['X-CSRF-Token'] = data_login(pm, 'fixture-pm', password)
             readback = data(pm.get(path + '/health', params={'asOf':snapshot['asOf']}))
             assert readback['historical'] and readback['snapshotId'] == snapshot['snapshotId']
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
-        assert {p.name for p in originals.iterdir()} == {original, external, orphan, late[0]}
+            assert data(pm.get(report_path(report)+'/facts'))['items'] == [fact]
+            assert data(pm.get(fact_path(fact)+'/history'))['items'][0]['actorId'] == str(verifier)
+            assert data(pm.get(f'reports/{legacy_report}/facts'))['items'] == []
+            assert pm.get(f"evidence/{att['evidenceId']}?download=true").content == sheet
+        assert {p.name for p in originals.iterdir()} == {original, external, fact_attachment, orphan, late[0]}
     finally:
         control.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
         monkeypatch.setenv('PMO_EVIDENCE_DIR', str(originals))

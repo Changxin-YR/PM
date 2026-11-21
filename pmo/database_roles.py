@@ -30,7 +30,8 @@ API_READ = frozenset('''organizations user_accounts user_roles persons projects
     review_decision_snapshots review_strengthening_tasks cost_reconciliation_grants cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
-    health_appeal_decisions health_zero_budgets project_rule_scan_state'''.split())
+    health_appeal_decisions health_zero_budgets project_rule_scan_state
+    facts fact_clarifications fact_source_receipts fact_history'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders reports
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures
@@ -41,7 +42,8 @@ API_ADD = frozenset('''projects project_members charters charter_versions milest
     review_appeals review_confirmations review_decision_snapshots review_strengthening_tasks cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
-    health_appeal_decisions health_zero_budgets project_rule_scan_state'''.split())
+    health_appeal_decisions health_zero_budgets project_rule_scan_state
+    facts fact_clarifications fact_source_receipts fact_history'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
@@ -74,6 +76,8 @@ API_EDIT = {
     'milestone_delay_episodes': 'closing_revision',
     'rule_events': 'status updated_at',
     'project_rule_scan_state': 'dirty last_daily_slot last_scanned_at',
+    'facts': 'validation_status trust revision updated_at',
+    'fact_clarifications': 'status source_ref resolved_by resolved_at',
 }
 WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbox', 'rule_events'})
 WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'notifications'})

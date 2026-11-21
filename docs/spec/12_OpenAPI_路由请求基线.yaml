@@ -2480,6 +2480,13 @@ paths:
           type: string
           minLength: 8
           maxLength: 128
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+          pattern: ^[1-9][0-9]{0,18}$
+        description: 作为候选出处的已提交报告 revision
       requestBody:
         required: true
         content:
@@ -2498,9 +2505,13 @@ paths:
                 typedValue:
                   oneOf:
                   - type: string
-                  - type: number
+                    minLength: 1
+                    maxLength: 3000
                   - type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
                   - type: boolean
+                  description: 小数用精确十进制字符串传输，不接收二进制浮点数
                 subject:
                   type: string
                   minLength: 1
@@ -4283,6 +4294,11 @@ paths:
                   - low
                 evidenceRef:
                   type: string
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 2000
+                  description: 高可信时必填，说明已核验的附件页码/位置与客观事实
               required:
               - trust
               - evidenceRef

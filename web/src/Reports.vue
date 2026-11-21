@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,watch} from 'vue'
 import {Check,FileText,Pencil,Plus,RefreshCw,Save,Send,Trash2,X} from 'lucide-vue-next'
+import ReportFacts from './ReportFacts.vue'
 
 type Kind='weekly'|'daily'
 type Status='draft'|'submitted'|'confirmed'
@@ -9,7 +10,7 @@ type Entry={summary?:string;milestoneId?:string;claim?:'progress'|'completion';e
 type Fields=Record<Section,Entry[]>&{effort_person_days?:string}
 type Report={reportId:string;type:Kind;period:string;periodStart:string;periodEnd:string;versionNo:number;revision:number;
   status:Status;authorId:string;submittedAt?:string;confirmedAt?:string;structuredFields?:Fields;narrative?:string;
-  isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean}
+  isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean;contentHash?:string}
 type Editor={item?:Report;type:Kind;day:string;effort:string;fields:Record<Section,Entry[]>;narrative:string}
 type Milestone={milestoneId:string;name:string;isKey:boolean}
 type Evidence={evidenceRef:string;linkedResourceType:string;linkedResourceId:string;originalName:string}
@@ -239,6 +240,8 @@ watch(()=>props.projectId,()=>{
         </section>
         <section v-if="detail.narrative"><h4>补充说明</h4><p class="report-copy">{{detail.narrative}}</p></section>
       </div>
+      <ReportFacts v-if="detail.submittedAt&&detail.contentHash" :key="detail.reportId" :project-id="projectId" :report-id="detail.reportId"
+        :revision="detail.revision" :submitted-at="detail.submittedAt" :api="api"/>
     </article>
   </section>
 </template>

@@ -122,10 +122,10 @@ def issue(command: Issue,response: Response,authorization: Auth,key: Key,expecte
         if len(actions)!=len(command.allowedActions) or len(projects)!=len(command.allowedProjectIds): raise Failure(422,'DUPLICATE_SCOPE')
         if not actions.issubset(ROUTES) or command.allowProjectCreate!=('pmo_project_create' in actions) or (command.allowProjectCreate and not a.create):
             raise Failure(403,'INVALID_GRANT')
-        if not projects and actions & {'pmo_task_update', 'pmo_report_submit'}:
+        if not projects and actions & {'pmo_task_update', 'pmo_report_submit', 'pmo_fact_propose'}:
             raise Failure(403, 'EXPLICIT_PROJECT_GRANT_REQUIRED')
         for pid in sorted(projects):
-            editing=any(ROUTES[action][0]!='GET' and action not in ('pmo_project_create','pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_milestone_forecast','pmo_requirement_deliver','pmo_change_propose','pmo_review_submit','pmo_transition_request','pmo_task_update','pmo_report_submit') for action in actions)
+            editing=any(ROUTES[action][0]!='GET' and action not in ('pmo_project_create','pmo_risk_create','pmo_risk_update','pmo_cost_forecast_save','pmo_cost_posting_propose','pmo_milestone_forecast','pmo_requirement_deliver','pmo_change_propose','pmo_review_submit','pmo_transition_request','pmo_task_update','pmo_report_submit','pmo_fact_propose') for action in actions)
             project=project_access(c,a,pid,edit=editing)
             if 'pmo_task_update' in actions:
                 from .tasks import can_grant_task_update
@@ -134,6 +134,10 @@ def issue(command: Issue,response: Response,authorization: Auth,key: Key,expecte
             if 'pmo_report_submit' in actions:
                 from .reports import can_submit_report
                 if not can_submit_report(c, a, project):
+                    raise Failure(403, 'FORBIDDEN')
+            if 'pmo_fact_propose' in actions:
+                from .fact_sources import can_propose
+                if not can_propose(c, a, project):
                     raise Failure(403, 'FORBIDDEN')
             if 'pmo_transition_request' in actions:
                 from .project_lifecycle import APPROVED, DIRECT, can_request

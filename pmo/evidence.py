@@ -154,12 +154,14 @@ async def upload(projectId:UUID,request:Request,authorization:Auth,key:Key,expec
 
 @router.get('/projects/{projectId}/evidence',operation_id='human_evidence_list',response_model_exclude_none=True)
 def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),
-            requirementId:UUID|None=None,verifiedOnly:bool=False,currentBaselineOnly:bool=False)->Result[Page]:
+            requirementId:UUID|None=None,verifiedOnly:bool=False,currentBaselineOnly:bool=False,
+            reportId:UUID|None=None)->Result[Page]:
     op='human_evidence_list'
     def read(c,a,_):
         project_access(c,a,projectId); reviewer=member(c,a,projectId,'reviewer')
         query=stmt().where(e.c.project_id==projectId)
         if requirementId is not None: query=query.where(links.c.resource_type=='requirement',links.c.resource_id==requirementId)
+        if reportId is not None: query=query.where(links.c.resource_type=='report',links.c.resource_id==reportId)
         if currentBaselineOnly:
             from .requirement_delivery import baseline_evidence_time
             if requirementId is None: raise Failure(422,'REQUIREMENT_REQUIRED')

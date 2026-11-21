@@ -3,13 +3,14 @@ import {computed,ref,watch} from 'vue'
 import {Pencil,Plus,RefreshCw,Save} from 'lucide-vue-next'
 
 const sourceLabels={review:'评审',rule_event:'规则事件',remediation:'风险整改'}
+const displaySources={...sourceLabels,fact_clarification:'Fact 澄清'}
 const endpoints={review:'reviews',rule_event:'alerts',remediation:'risks'}
 const statusLabels={todo:'待办',in_progress:'进行中',blocked:'阻塞',done:'已完成',cancelled:'已取消'}
 const statusTone={todo:'info',in_progress:'primary',blocked:'danger',done:'success',cancelled:'info'} as const
 const reviewLabels:Record<string,string>={charter:'立项评审',feasibility:'落地评审',closing:'结项评审'}
 type Source=keyof typeof sourceLabels
 type Status=keyof typeof statusLabels
-type Task={taskId:string;projectId:string;title:string;status:Status;revision:number;sourceType:Source;sourceId:string;
+type Task={taskId:string;projectId:string;title:string;status:Status;revision:number;sourceType:keyof typeof displaySources;sourceId:string;
   assigneeId?:string;dueAt?:string;completedAt?:string;canUpdate:boolean}
 type Page={items:Task[];page:number;pageSize:number;total:number;canCreate:boolean;projectRevision:number}
 type Member={personId:string;name:string}
@@ -184,7 +185,7 @@ watch(()=>props.projectId,()=>{
         </template>
       </el-table-column>
       <el-table-column label="来源" min-width="104">
-        <template #default="scope"><span :title="scope.row.sourceId">{{sourceLabels[(scope.row as Task).sourceType]}}<small>{{scope.row.sourceId?.slice(0,8)}}</small></span></template>
+        <template #default="scope"><span :title="scope.row.sourceId">{{displaySources[(scope.row as Task).sourceType]}}<small>{{scope.row.sourceId?.slice(0,8)}}</small></span></template>
       </el-table-column>
       <el-table-column label="操作" width="64">
         <template #default="{row}">

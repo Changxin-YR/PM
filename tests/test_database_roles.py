@@ -19,6 +19,7 @@ from pmo.database_roles import apply_roles, RoleError
 from pmo.health_calculation import TZ, week_key
 from pmo.recovery import connection_args, database_url
 from test_evidence import binary
+from test_facts import fact_path, medium, post, report_path
 from test_reports import body, data, sections
 
 
@@ -118,6 +119,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE cost_entries SET actual=actual', 'UPDATE alembic_version SET version_num=version_num',
                 'UPDATE requirement_exception_events SET fingerprint=fingerprint', 'TRUNCATE requirement_exception_events',
                 'UPDATE health_snapshots SET input_hash=input_hash', 'DELETE FROM health_appeals',
+                'UPDATE facts SET quote=quote', 'UPDATE fact_history SET reason=reason', 'DELETE FROM fact_source_receipts',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
             ])
@@ -126,6 +128,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM evidence_files', 'SELECT * FROM audit_logs', 'UPDATE projects SET name=name',
                                'SELECT * FROM requirement_exception_events', 'SELECT * FROM health_snapshots',
                                'SELECT * FROM project_rule_scan_state',
+                               'SELECT * FROM facts', 'SELECT * FROM fact_history',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 
         with serve(urls['api'], tmp_path) as api:
@@ -174,7 +177,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 owner.execute('''INSERT INTO project_members(project_id,person_id,assigned_by,role,assignment_status,accepted_at)
                     SELECT id,initiator_id,initiator_id,'pm','accepted',now() FROM projects WHERE id=%s''', (pid,))
             milestone = ms.json()['data']['milestoneId']
-            data(api.post(path + '/reports', headers=key(), json=body(period=week_key(datetime.now(TZ).date()),
+            report = data(api.post(path + '/reports', headers=key(), json=body(period=week_key(datetime.now(TZ).date()),
                 structuredFields=sections(milestone_progress=[{'milestoneId': milestone, 'claim': 'progress'}]))))
             scan_env = {**os.environ, 'DATABASE_URL': urls['api'].render_as_string(hide_password=False)}
             command = [sys.executable, '-m', 'pmo.rule_scan']
@@ -185,6 +188,10 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             assert snapshot['health'] == 'untrusted' and 'LR06_CLAIM_WITHOUT_EVIDENCE' in snapshot['gaps']
             refreshed = data(api.post(path + '/health/refresh', headers=key(snapshot['projectRevision'])))
             assert refreshed['snapshotId'] == snapshot['snapshotId']
+            fact = data(post(api, report))
+            assert data(medium(api, fact))['validationStatus'] == 'verified'
+            assert data(api.get(fact_path(fact) + '/history'))['total'] == 2
+            assert data(api.get(report_path(report) + '/facts'))['items'][0]['quote'] == '2.50'
             assert api.post('auth/logout').status_code == 204
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:

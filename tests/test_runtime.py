@@ -26,7 +26,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     assert result.returncode and any(f'RuntimeError: {reason}' in result.stderr for reason in (
         'Refusing destructive downgrade', 'Refusing to discard written acceptance history',
         'Refusing to discard report receipts', 'Refusing to discard review termination history',
-        'Refusing to discard health and rule scan history'))
+        'Refusing to discard health and rule scan history', 'Refusing to discard Fact source and verification history'))
     head = ScriptDirectory.from_config(Config('alembic.ini')).get_current_head()
     with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))==head
 
@@ -58,7 +58,7 @@ def test_mcp_stdio(live,actor):
         params=StdioServerParameters(command=sys.executable,args=['-m','pmo.mcp_server'],env=env)
         async with stdio_client(params) as streams, ClientSession(*streams) as session:
             await session.initialize(); tools={t.name:t for t in (await session.list_tools()).tools}
-            assert set(tools)=={*cost_ops,'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update','pmo_gate_check','pmo_review_prepare','pmo_review_list','pmo_review_submit','pmo_decision_get','pmo_transition_request','pmo_lessons_search','pmo_task_list','pmo_task_update','pmo_report_list','pmo_report_get','pmo_report_submit','pmo_health_get'}
+            assert set(tools)=={*cost_ops,'pmo_project_create','pmo_project_list','pmo_project_get','pmo_project_draft_update','pmo_milestone_create','pmo_milestone_list','pmo_milestone_draft_update','pmo_requirement_create','pmo_requirement_list','pmo_requirement_draft_update','pmo_charter_save','pmo_role_assignment_propose','pmo_stakeholder_create','pmo_risk_create','pmo_risk_list','pmo_risk_update','pmo_gate_check','pmo_review_prepare','pmo_review_list','pmo_review_submit','pmo_decision_get','pmo_transition_request','pmo_lessons_search','pmo_task_list','pmo_task_update','pmo_report_list','pmo_report_get','pmo_report_submit','pmo_health_get','pmo_fact_propose'}
             async def call(op,args):
                 r=await session.call_tool(op,args); assert not r.isError,r.content
                 jsonschema.validate(r.structuredContent,tools[op].outputSchema); return r.structuredContent['data']

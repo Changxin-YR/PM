@@ -7,3 +7,5 @@
 2026-11-21（0022）：实际注册 38/40；`tests/test_reports.py` 和 `tests/test_tasks.py` 用显式项目委托的真实 stdio 进程实测报告和任务五项工具及副作用，PM 发布保留人工专用。源码树、命令和退出码见 [M2 实测记录](M2-report.md)。健康、Fact 工具尚未注册；没有任何目标 Host 已通过 T09 的证据。
 
 2026-11-21（0023）：实际注册 39/40；最后一项为 `pmo_fact_propose`。`tests/test_health.py::test_live_snapshot_appeal_and_stdio_scope` 通过真实 stdio 按闭合 Schema 读取健康，核心字段同一时点与 REST 相同；不输出人工复核和输入明细。见 [M2 验证](M2-report.md)。Codex、DSH 等实际目标 Host 版本与互操作证据各自未提供，分别为 BLOCKED_EXTERNAL；SDK 通过不替代目标 Host。
+
+2026-11-21（0024）：`app.openapi()`、`ROUTES` 和 SDK 实际 `list_tools` 对表，40 项注册无多余或漏项。`tests/test_facts.py::test_stdio_candidate_and_human_only_boundaries` 调用最后一项并按封闭 Schema 校验结果，对照 REST 和 Web 同一记录，校验跨项目、非法高信任字段、Agent 直调核验/澄清拒绝及同键重放。见 [M4 测试记录](M4-report.md)。所有既有工具的完整输入、输出、权限、副作用、并发和目标 Host 覆盖仍分别追踪。
