@@ -65,7 +65,7 @@ def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), firs
     return project, requirement, risk
 
 
-def execution_fixture(live, team, *, effort_budget='10', extra_priorities=()):
+def grant_closure_roles(live, team):
     engine, _, _, _ = live
     pid, people, users, _ = team
     with engine.begin() as c:
@@ -74,6 +74,10 @@ def execution_fixture(live, team, *, effort_budget='10', extra_priorities=()):
         for who in ('reviewer', 'outsider'):
             account = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people[who]))
             c.execute(db.user_roles.insert().values(user_id=account, role='finance_verifier'))
+
+
+def execution_fixture(live, team, *, effort_budget='10', extra_priorities=()):
+    grant_closure_roles(live, team)
     return begin_execution(live, team, effort_budget=effort_budget, extra_priorities=extra_priorities)
 
 

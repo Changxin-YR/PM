@@ -203,22 +203,41 @@ def test_browser_report_analysis(live, team, model_on, tmp_path):
         assert task['sourceType']=='report_analysis' and task['sourceId']==report['reportId']
 
 
-def test_browser_delivery_through_archive(live, team):
-    _, _, users, _ = team
+def test_browser_drafting_through_archive_without_model(live, team):
+    from datetime import datetime, timedelta
+
+    from pmo.reports import TZ
+    from test_lifecycle import grant_closure_roles
+    from test_reviews import data
+
+    pid, _, users, _ = team
     pm, reviewer, customer = (users[k] for k in ('pm', 'reviewer', 'client_representative'))
-    project, requirement, risk = execution_fixture(live, team)
-    complete_milestones(pm, reviewer, project)
-    # Before any UI stage write, prepare the remaining independent materials using HTTP.
-    # The customer signs only after the UI has reached the delivering stage.
-    sessions = browser_sessions(users, 'pm', 'reviewer', 'outsider')
+    project = f'projects/{pid}'
+    assert live[3]['PMO_REPORT_ANALYSIS'] == '0' and stage(pm, project)['stage'] == 'drafting'
+    grant_closure_roles(live, team)
+    sessions = browser_sessions(users, 'pm', 'initiator', 'reviewer', 'client_representative', 'outsider')
     with vite(live[2]) as (root, url):
+        today = datetime.now(TZ).date()
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(sessions), 'PMO_TEST_PHASE':'launch',
+            'PMO_TEST_PLANNED_DATES':json.dumps([(today + timedelta(days=days)).isoformat() for days in (7, 8, 9)])})
+        assert stage(pm, project)['stage'] == 'executing'
+        requirement, = data(pm.get(project + '/requirements'))['items']
+        risk, = data(pm.get(project + '/risks'))['items']
+        assert requirement['baselineVersion'] == 1 and risk['isBlocking']
+        # Independent evidence and actuals are prepared through the public HTTP services.
+        complete_milestones(pm, reviewer, project)
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(sessions), 'PMO_TEST_PHASE':'delivery'})
         assert stage(pm, project)['stage'] == 'delivering'
-        _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk)
+        _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement['requirementId'], risk['riskId'])
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(sessions), 'PMO_TEST_PHASE':'closing',
             'PMO_TEST_RISK_PROOF':risk_proof['evidenceRef'], 'PMO_TEST_COST_PROOF':cost_proof['evidenceRef'],
             'PMO_TEST_ANSWERS':json.dumps(ANSWERS)})
     assert stage(pm, project)['stage'] == 'archived'
+    with live[0].connect() as c:
+        steps = c.execute(sa.text('SELECT to_stage FROM project_stage_transitions WHERE project_id=:p ORDER BY to_revision'),
+                          {'p': pid}).scalars().all()
+    assert steps == ['charter_review', 'designing', 'feasibility_review', 'executing', 'delivering',
+                     'closing_review', 'closed', 'retrospective', 'archived']
 
 
 def test_browser_customer_exception_and_conditional_decision(live, team):

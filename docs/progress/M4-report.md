@@ -100,3 +100,14 @@
 | `.venv/Scripts/python.exe scripts/reference_vector_evidence.py .local/reference-vectors-all.xml docs/acceptance/reference-vectors-0028.csv --require-complete` | 0 | [逐项结果](../acceptance/reference-vectors-0028.csv)：PASS 102、FAIL 0、NOT_RUN 0。缺项、跳过或失败无法满足完整性检查。 |
 
 中间 FAIL（退出 1）：治理 3 项修正审计请求号文本比较和 ADR 0010 约定的无承诺整改日期（合法条件通过任务的未来期限另有测试）；`.local/reference-governance-signals-first.xml` 两项误用未公开里程碑 ordinal；`.local/reference-closing-first.xml` 一项误用报告字段；`.local/reference-permissions-first.xml` 一项在送审后用已失去材料可见性的发起人签发令牌，改用有合法授权的 PM 并先证明令牌确实可读该评审。保留拒绝和无副作用的断言。上述结果只覆盖冻结输入，不代替 A/Q/T 端到端组合、真实 Host、模型或试点。
+
+## 0028 补充验收 A01–A16 与 Q3
+
+依据：`22_最小业务验收基准样例.md`、§12.1 Q3、§14 第 1 项。基准 SHA `bf3b0e2d68c0d0ba6147c24813db3deb257715d8`，被测源码树 `97e286aa9cb89d540ccac23136767068795021be`（不含本报告）。Windows、PostgreSQL 16 隔离 schema、真实回环 HTTP/stdio、Edge；合成身份、原件及入账数值，关闭模型。每条样例映射到实际测试节点，见[追踪矩阵](../acceptance/traceability.csv)。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_acceptance_baseline.py tests/test_forecast_governance.py tests/test_reviews.py::test_charter_veto_appeal_preserves_opinions_fast_confirmation tests/test_postings.py::test_verified_cost_cycle tests/test_reference_vectors_signals.py::test_due_week_threshold tests/test_health.py::test_live_snapshot_appeal_and_stdio_scope tests/test_runtime.py::test_concurrent_replay_scope_and_denial tests/test_lifecycle.py::test_termination_and_rejected_resubmission_use_separate_histories --tb=short --junitxml=.local/acceptance-supplemental-final.xml` | 0 | PASS：17 项 / 40.16 秒。覆盖 A15 外的 15 个样例，并验证一周期缺报对照以及 Q3：待审变更不更改计划，批准后预警解决，旧时间线与正式账簿、当前 MCP 读数均可查。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_drafting_through_archive_without_model --tb=short --junitxml=.local/acceptance-model-off-edge.xml` | 0 | PASS：1 项 / 45.00 秒。A15，同一项目在真实 Edge 办理立项卡、独立评审、里程碑、P0、客户与 PM 基线双签、双口径预算、落地关口，明确显示模型关闭；独立附件、凭证和验收材料通过真实 HTTP，Web 风险关闭、对账、结项评审、复盘、Lesson 及归档。PostgreSQL 回读九条阶段历史。 |
+
+初次定向 FAIL（退出 1，`.local/acceptance-supplemental-retest.xml`，16 项通过）：A05 误断言不可变已核验凭证的健康引用含 `@2`，改为匹配当前契约的精确 `cost-posting:<id>`；仍强制检查 70/50/120、成本红和零重估任务。这批补充样例 PASS 16/16，仅为合成验证、不代表真实签核、目标 Host 或整体验收。

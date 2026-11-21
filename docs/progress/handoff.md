@@ -16,7 +16,7 @@
 
 ## 续接顺序
 
-1. 冻结参考向量 PASS 102/102（[逐项证据](../acceptance/reference-vectors-0028.csv)）；Q4 已用正式条件立项 Decision 回归并处理时点边界，继续 Q/T 和补充样例。真实模型环境另验。
+1. 冻结参考向量 PASS 102/102（[逐项证据](../acceptance/reference-vectors-0028.csv)）；合成补充样例 A01–A16 以及 Q3/Q4 已实测（[追踪](../acceptance/traceability.csv)）。继续 Q7 和 T01～T10 的组合验收。真实模型环境另验。
 2. 补 MCP 逐项权限/副作用验证，分别核对目标 Host。
 3. 最终候选补带数据升级及联合恢复、部署和性能。目标 Host、真实模型、签核和试点分开验收。
 

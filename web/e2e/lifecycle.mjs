@@ -66,9 +66,104 @@ async function directStage(page, reason, next, label) {
   await expect(panel.getByLabel('项目生命周期').getByText('当前阶段：'+label,{exact:true})).toBeVisible()
 }
 
+async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) {
+  const gate = await open(sender,'关口送审')
+  await button(gate,'重读阶段与材料').click()
+  await expect(gate.getByText(`${label}预检 · 材料齐备`,{exact:true})).toBeVisible()
+  await button(gate,`提交${label}评审`).click()
+  const receipt = await write(sender,'POST','/projects/[^/]+/reviews',button(dialog(sender,'确认送审'),'确认送审'))
+  await reviewer.reload()
+  const panel = await open(reviewer,'关口送审')
+  const row = panel.getByRole('row').filter({has:reviewer.getByRole('cell',exact(receipt.reviewId))})
+  const loaded = reviewer.waitForResponse(r=>new URL(r.url()).pathname.endsWith(`/reviews/${receipt.reviewId}/workbench`))
+  await button(row,'打开评审工作台').click()
+  const state = (await (await loaded).json()).data
+  const workbench = dialog(reviewer,'关口人工工作台')
+  await button(workbench,'填写评分').click()
+  for (const dimension of state.dimensions) {
+    const fields = workbench.getByRole('group',exact(dimension.label))
+    await fields.getByLabel('评分',{exact:true}).selectOption(points)
+    await fields.getByLabel('评分锚点',{exact:true}).selectOption(anchor)
+    await fields.getByLabel('评分理由',{exact:true}).fill(`独立复核合成材料：${dimension.label}。`)
+    await fields.getByText(/^材料引用（至少一项）/).click()
+    await fields.getByRole('checkbox',exact(state.materialRefs.find(ref=>ref.startsWith(kind+':')))).check()
+  }
+  await write(reviewer,'POST','/reviews/[^/]+/scores',button(workbench,'提交评分'))
+  await button(workbench,'登记裁决').click()
+  await workbench.getByLabel('裁决',{exact:true}).selectOption('pass')
+  const rationale = `独立复核${label}材料，合成验证通过。`
+  await workbench.getByLabel('裁决理由',{exact:true}).fill(rationale)
+  const result = await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
+  expect(result.decision).toMatchObject({stage,rationale})
+  await expect(workbench.getByText(rationale,{exact:true})).toBeVisible()
+}
+
+async function launch(pm) {
+  const initiator = await actor('initiator'), reviewer = await actor('reviewer')
+  const charter = (await open(initiator,'立项卡')).getByRole('tabpanel',exact('立项卡'))
+  for (const [name, value] of Object.entries({'价值主张':'交付完整归档清单','目标客户':'合成验收客户',
+    '客户或市场吸引力':'已确认演练范围','预期收益':'交付可独立核验','成功标准':'导出包含来源编号',
+    '粗估金额（元）':'100','粗估人天':'10','预计工期（天）':'12'})) {
+    await charter.getByLabel(name,{exact:true}).fill(value)
+  }
+  await button(charter,'添加风险').click()
+  await charter.getByLabel('风险描述',{exact:true}).fill('检查交付来源完整性')
+  await charter.getByLabel('应对措施',{exact:true}).fill('在项目工作台核验原件')
+  await write(initiator,'PUT','/charter',button(charter,'保存立项卡'))
+  await reviewGate(initiator,reviewer,'立项','designing','4','between_3_5','charter')
+
+  await pm.reload()
+  const dates = JSON.parse(process.env.PMO_TEST_PLANNED_DATES)
+  const milestones = (await open(pm,'里程碑')).getByRole('tabpanel',exact('里程碑'))
+  for (const [index,date] of dates.entries()) {
+    await button(milestones,'新增里程碑').click()
+    await milestones.getByLabel('里程碑名称',{exact:true}).fill(`验收步骤 ${index+1}`)
+    await milestones.getByLabel('计划日期',{exact:true}).fill(date)
+    await milestones.getByLabel('关键里程碑',{exact:true}).check()
+    await write(pm,'POST','/projects/[^/]+/milestones',button(milestones,'保存里程碑'),false)
+  }
+  const requirements = (await open(pm,'需求')).getByRole('tabpanel',exact('需求'))
+  await button(requirements,'新增需求').click()
+  await requirements.getByLabel('需求描述',{exact:true}).fill('导出完整交付清单和验收回执编号')
+  await requirements.getByLabel('验收标准',{exact:true}).fill('逐条对照原件与回执')
+  await requirements.getByLabel('优先级',{exact:true}).selectOption('P0')
+  await requirements.getByLabel('计划确认日期',{exact:true}).fill(dates.at(-1))
+  await write(pm,'POST','/projects/[^/]+/requirements',button(requirements,'保存需求'),false)
+
+  const costs = (await open(pm,'成本')).getByRole('tabpanel',exact('成本'))
+  for (const [name, budget] of [['金额（元）','100'],['人天','10']]) {
+    await button(costs.getByRole('region',exact(name)),'修改预算草稿').click()
+    await costs.getByLabel(`${name} · 预算草稿`,{exact:true}).fill(budget)
+    await write(pm,'PUT','/cost-budgets',button(costs,'保存成本'))
+  }
+  const risks = (await open(pm,'风险')).getByRole('tabpanel',exact('风险'))
+  await button(risks,'登记风险').click()
+  await risks.getByLabel('风险描述',{exact:true}).fill('交付原件须由独立人工核验')
+  await risks.getByLabel('应对措施',{exact:true}).fill('取得核验证据后由 Reviewer 复核关闭')
+  await risks.getByLabel('阻塞风险',{exact:true}).check()
+  await write(pm,'POST','/projects/[^/]+/risks',button(risks,'保存风险'),false)
+
+  const customer = await actor('client_representative')
+  for (const [page, name, result] of [[pm,'PM 确认基线','awaiting_customer'],[customer,'客户确认并冻结基线','frozen']]) {
+    const basis = (await open(page,'需求基线')).getByRole('tabpanel',exact('需求基线'))
+    await basis.getByLabel('确认说明',{exact:true}).fill('已逐条核对合成需求和验收标准。')
+    await basis.getByLabel('已核对本版本的全部需求和验收标准',{exact:true}).check()
+    const signed = await write(page,'POST','/requirement-baseline/sign',button(basis,name))
+    expect(signed.status).toBe(result)
+  }
+  await reviewGate(pm,reviewer,'落地','executing','3','score_3','milestone')
+
+  await pm.reload()
+  const assistant = (await open(pm,'项目助理')).getByRole('region',exact('项目助理'))
+  await assistant.getByText('过程管家',{exact:true}).click()
+  await expect(assistant.getByText('模型关闭',{exact:true})).toBeVisible()
+}
+
 try {
   const pm=await actor('pm')
-  if(process.env.PMO_TEST_PHASE==='delivery') {
+  if(process.env.PMO_TEST_PHASE==='launch') {
+    await launch(pm)
+  } else if(process.env.PMO_TEST_PHASE==='delivery') {
     await directStage(pm,'有效里程碑均已完工，并已核验交付凭证。','delivering','交付验收')
   } else if(process.env.PMO_TEST_PHASE==='exception') {
     const command=JSON.parse(process.env.PMO_TEST_REQUIREMENT_EXCEPTION)
