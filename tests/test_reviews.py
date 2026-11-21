@@ -501,6 +501,50 @@ def test_review_expired_material_requires_withdraw_and_fresh_submission(live, te
     assert data(decide(reviewer, new_path))['tasks'] == []
 
 
+@pytest.mark.parametrize('via_agent', (False, True), ids=('human', 'agent'))
+def test_pending_charter_cannot_be_decided_after_submitter_loses_authority(live, team, via_agent):
+    engine, api, _, _ = live
+    pid, people, users, _ = team
+    pm, initiator, reviewer = (users[k] for k in ('pm', 'initiator', 'reviewer'))
+    project = f'projects/{pid}'
+    if via_agent:
+        charter = data(initiator.get(project + '/charter'))
+        data(initiator.put(project + '/charter', headers=headers(charter['expectedRevision']), json={'fieldsCharter': CHARTER}))
+        token = issue(initiator, pid, actions=('pmo_review_submit',))
+        submitted = data(api.post('/api/v1/' + project + '/reviews',
+            headers={**headers(), 'Authorization': f'Bearer {token}'}, json={'reviewType': 'charter'}))
+        path = f"reviews/{submitted['reviewId']}"
+    else:
+        path = start_charter(pid, users)
+    rated = score(reviewer, path, [4] * 4)
+    assert rated['canDecide']
+    m = db.project_members
+    with engine.begin() as c:
+        revoked = c.execute(m.update().where(m.c.project_id == pid, m.c.person_id == people['initiator'],
+            m.c.role == 'initiator').values(revoked_at=sa.func.now()).returning(m.c.id)).scalar_one()
+        before = result_counts(c, pid)
+    denied = reviewer.post(path + '/decisions', headers=headers(rated['review']['revision']), json=outcome(rated))
+    assert (denied.status_code, denied.json().get('code')) == (409, 'REVIEW_SNAPSHOT_STALE')
+    state = bench(reviewer, path)
+    assert state['stale'] and not state['canDecide'] and 'decision' not in state
+    with engine.connect() as c:
+        assert result_counts(c, pid) == before == ('charter_review', 0, 0, 1, 0, 0, 0, 0)
+        log = db.audit_logs
+        assert c.execute(sa.select(log.c.result, log.c.error_code, log.c.decision_id).where(
+            log.c.request_id == denied.headers['X-Request-ID'])).one() == ('denied', 'REVIEW_SNAPSHOT_STALE', None)
+        assert c.scalar(sa.select(m.c.revoked_at).where(m.c.id == revoked)) is not None
+
+    # A current PM can discard the invalid request and submit a new one independently.
+    assert data(pm.post(path + '/withdraw', headers=headers(rated['review']['revision']),
+        json={'reason': 'Submitting authority is no longer valid.'}))['review']['verdict'] == 'withdrawn'
+    revision = data(pm.get(project))['project']['revision']
+    new_review = data(pm.post(project + '/reviews', headers=headers(revision), json={'reviewType': 'charter'}))
+    new_path = f"reviews/{new_review['reviewId']}"
+    assert new_path != path
+    score(reviewer, new_path, [4] * 4)
+    assert data(decide(reviewer, new_path))['decision']['stage'] == 'designing'
+
+
 def test_feasibility_shortfall_and_conditional_pass_real_previous_gate(live, team):
     engine, _, _, _ = live
     pid, people, users, _ = team

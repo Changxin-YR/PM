@@ -73,7 +73,7 @@ def preview(auth, pid, gate, *, prepare, operation=None):
         sources = refs(p, materials)[:PAGE_SIZE]
         metadata = meta(op, sources, project_id=p.id)
         if prepare:
-            can_submit = check.eligible and SUBMIT in a.actions and submitter(c, a, p, gate)
+            can_submit = check.eligible and SUBMIT in a.actions and submitter(c, p, a.person, gate)
             result = Result[Preparation](data=Preparation(gateCheck=check, draftMaterials=sources[1:]), meta=metadata)
             return result, can_submit, p.revision
         return Result[Check](data=check, meta=metadata)
@@ -109,11 +109,11 @@ def transition_project(c, a, p, review, destination, rid, *, verdict=None, inten
         from .project_lifecycle import permit_transition
         allowed = intent_id is not None and permit_transition(c, a, p, destination, intent_id)
     elif p.stage == ENTRY[gate] and destination == REVIEW[gate]:
-        allowed = SUBMIT in a.actions and submitter(c, a, p, gate)
+        allowed = SUBMIT in a.actions and submitter(c, p, a.person, gate)
     elif p.stage == REVIEW[gate] and review.status == 'pending' and a.kind == 'human':
         from .review_outcomes import reviewer_assignment
         if verdict == 'withdrawn':
-            allowed = destination == withdrawal_stage(gate) and submitter(c, a, p, gate)
+            allowed = destination == withdrawal_stage(gate) and submitter(c, p, a.person, gate)
         else:
             recorded = c.scalar(sa.select(db.decisions.c.id).where(db.decisions.c.review_id == review.id,
                 db.decisions.c.project_id == p.id, db.decisions.c.decided_by == a.person, db.decisions.c.option == verdict))
@@ -147,7 +147,7 @@ def submit_review(c, a, pid, gate: Gate, expected, key, rid):
     if SUBMIT not in a.actions:
         raise Failure(403, 'FORBIDDEN')
     p = lock_project(c, a, pid, write=True)
-    if not submitter(c, a, p, gate):
+    if not submitter(c, p, a.person, gate):
         raise Failure(403, 'FORBIDDEN', project_id=pid)
     signature = fingerprint([str(pid), gate, expected])
     try:

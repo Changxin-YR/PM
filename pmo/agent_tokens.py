@@ -143,7 +143,7 @@ def issue(command: Issue,response: Response,authorization: Auth,key: Key,expecte
                 from .project_lifecycle import APPROVED, DIRECT, can_request
                 if not any(edge[0]==project.stage and can_request(c,project,a.person,edge) for edge in DIRECT | APPROVED):
                     raise Failure(403,'FORBIDDEN')
-            if 'pmo_review_submit' in actions and not any(project.stage==stage and can_submit_review(c,a,project,gate)
+            if 'pmo_review_submit' in actions and not any(project.stage==stage and can_submit_review(c,project,a.person,gate)
                                                          for gate,stage in GATE_STAGES.items()):
                 raise Failure(403,'FORBIDDEN')
             if 'pmo_change_propose' in actions and (project.stage not in CHANGE_STAGES or not can_deliver(c,a,project)):

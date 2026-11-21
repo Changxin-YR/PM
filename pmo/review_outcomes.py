@@ -188,6 +188,7 @@ def current(c, a, p, review, frozen, intent):
           or entry.from_stage != ENTRY[review.type] or entry.from_revision != intent.expected_revision
           or intent.status != 'pending' or intent.rule_version != RULE_VERSION or frozen.rule_version != RULE_VERSION
           or intent.requested_by != review.created_by or intent.delegated_by != (entry.actor_id if entry.actor_type == 'agent' else None)
+          or not submitter(c, p, intent.requested_by, review.type)
           or intent.payload_hash != approval_hash(review, entry.from_revision, entry.actor_type)
           or intent.snapshot_hash != frozen.snapshot_hash or review.snapshot_hash != frozen.snapshot_hash
           or fingerprint(frozen.materials) != frozen.snapshot_hash):
@@ -290,7 +291,7 @@ def workbench(c, a, p, review, frozen):
     pending = review.status == 'pending' and p.stage == REVIEW[review.type]
     stale = pending and not current(c, a, p, review, frozen, intent)
     reviewer = bool(reviewer_assignment(c, a, p, review, frozen))
-    owner = submitter(c, a, p, review.type)
+    owner = submitter(c, p, a.person, review.type)
     sponsor = confirmation_eligible(c, a, p, 'sponsor')
     initiator = confirmation_eligible(c, a, p, 'initiator')
     rows = all_scores(c, review)
@@ -505,7 +506,7 @@ def write_action(auth, op, review_id, command, key, expected):
         elif op == CONFIRM:
             if not confirmation_eligible(c, a, p, command.role):
                 raise Failure(403, 'CONFIRMATION_ROLE_REQUIRED', project_id=p.id)
-        elif not submitter(c, a, p, review.type):
+        elif not submitter(c, p, a.person, review.type):
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
         prior = replay(c, a, op, key, signature, Result[Workbench])
         if prior:

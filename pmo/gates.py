@@ -55,10 +55,10 @@ def lock_project(c, a, pid, *, write=False):
     return row
 
 
-def submitter(c, a, p, gate):
-    if gate == 'charter' and a.person == p.initiator_id and active_member(c, p, a.person, 'initiator'):
+def submitter(c, p, person: UUID, gate: Gate) -> bool:
+    if gate == 'charter' and person == p.initiator_id and active_member(c, p, person, 'initiator'):
         return True
-    return p.pm_id == a.person and active_member(c, p, a.person, 'pm')
+    return p.pm_id == person and active_member(c, p, person, 'pm')
 
 
 def roster(c, p):

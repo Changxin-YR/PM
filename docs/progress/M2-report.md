@@ -184,3 +184,13 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_admin_audit.py tests/test_mcp_transition.py tests/test_requirement_disputes.py tests/test_requirement_exceptions.py tests/test_runtime.py --tb=short --junitxml=.local/decision-audit-verified.xml` | 0 | PASS：37 项 / 62.67 秒，`.local/decision-audit-verified.log`。挡住 PM 自批、Reviewer 和同项目管理员批准暂停与恢复；独立 Sponsor 正例；回读 Decision/审计/Outbox 同号，失败未留下半条业务记录。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_draft_workflow tests/browser_case.py::test_browser_drafting_through_archive_without_model --tb=short --junitxml=.local/decision-audit-edge-retest.xml` | 0 | PASS：2 项 / 75.85 秒，`.local/decision-audit-edge-retest.log`。立项后重登和刷新仍可经请求号查裁决 ID；正常无模型归档回归。初次同组选例 1 FAIL / 1 PASS（`.local/decision-audit-edge.log`，退出 1）：新增检查使用已经正常登出的管理员页；显式重新登录后保留原断言。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格、Python 和 Vue 类型检查；`.local/decision-audit-check.log`、`.local/decision-audit-vue.log`。 |
+
+## 待审申请的发起权限复核
+
+源条款：主方案 §20.4–20.5、领域不变量 §4、LR-01。基准 SHA `eb3121c20eddaadc6f6a6d7f73e2c81dd23146f2`，修复前新增反例文件 blob `5d82cacc790a5f2b727e8a85f83674aff2f4e1f4`，被测修复源码树 `9044fc9f438e3961285210f74b747e3e7c6a8fbc`（不含证据文档）。Windows、PostgreSQL 16.14 隔离 schema、回环 HTTP 和 stdio；合成账户，模型关闭。`pmo/gates.py` 的送审资格以实际项目/组织内的自然人查有效任命，供 `pmo/agent_tokens.py`、`pmo/reviews.py` 和 `pmo/review_outcomes.py` 共用。终裁重查已存申请人，Agent 送审则重查其委托人；失权判原轮次过期。由现任 PM 撤回并重新送审，保持旧评分与撤回历史。没有新增审批权或更改迁移。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py -k pending_charter_cannot_be_decided --tb=short --junitxml=.local/review-submitter-first.xml` | 1 | FAIL：2 项，`.local/review-submitter-first.log`。发起人任命撤销后，人工及 Agent 提交的旧 Review 均被错误终裁，返回 200。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_mcp_transition.py tests/test_reference_vectors_permissions.py tests/test_requirement_exceptions.py --tb=short --junitxml=.local/review-submitter-verified.xml` | 1 | FAIL：3 项 / 47 PASS，`.local/review-submitter-verified.log`。资格函数重构后令牌签发别名仍用旧参数，修正调用点。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_mcp_transition.py tests/test_reference_vectors_permissions.py tests/test_requirement_exceptions.py tests/test_agent_tokens.py --tb=short --junitxml=.local/review-submitter-retested.xml` | 0 | PASS：52 项 / 93.33 秒，`.local/review-submitter-retested.log`。两路失权均 `409 REVIEW_SNAPSHOT_STALE`；不创建 Decision、终裁快照、迁移、成功审计、Outbox 或幂等记录，拒绝审计单独可核；有效 PM 撤回重送、独立 Reviewer 裁决到 `designing`。 |
