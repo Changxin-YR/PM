@@ -25,9 +25,12 @@ import TerminationConfirmations from './TerminationConfirmations.vue'
 import Reports from './Reports.vue'
 import Tasks from './Tasks.vue'
 import Health from './Health.vue'
+import OrgDirectory from './OrgDirectory.vue'
+import AcceptOrgInvite from './AcceptOrgInvite.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
+const acceptingInvite=ref(false),loginNotice=ref('')
 const dialog=ref(false),selected=ref<Project|null>(null),name=ref(''),code=ref(''),description=ref('')
 const csrf=ref(sessionStorage.getItem('pmo.csrf')||'');let sequence=0,attempt='',lastPayload=''
 const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿')
@@ -59,6 +62,9 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
       RETROSPECTIVE_ANSWERS_REQUIRED:'请先保存完整的复盘四问。',CONFIRMED_LESSON_REQUIRED:'归档须有至少一条经独立人工确认的教训。',
       REVIEW_SNAPSHOT_STALE:'已冻结的评审材料发生变化，请撤回后重送。',
       HEALTH_APPEAL_LIMIT:'该快照已申诉过一次。',ZERO_BUDGET_BASIS_STALE:'预算基线已变化，请重新读取后声明。',
+      INVITATION_INVALID:'邀请码无效、已使用、已撤销或过期。',INVITATION_ALREADY_EXISTS:'该邮箱已注册或有尚未到期的邀请。',
+      USERNAME_UNAVAILABLE:'该账号不可用，请另选账号。',ADMIN_ACCOUNT_PROTECTED:'不能在此修改管理员账号状态。',
+      ACCOUNT_STATUS_UNCHANGED:'账号状态未变化，请刷新目录。',PERSON_INACTIVE:'成员档案已停用，不能启用其账号。',
     }
     throw Error(descriptions[body.code]||(typeof body.code==='string'?`操作失败（${body.code}）`:`操作失败（${r.status}）`))
   }
@@ -67,6 +73,8 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
 function message(e:unknown){return e instanceof TypeError?'无法连接服务，请检查网络。':e instanceof Error?e.message:'操作失败。'}
 async function load(){const id=++sequence;loading.value=true;error.value='';try{const search=new URLSearchParams({page:String(page.value),pageSize:'20','filters[keyword]':keyword.value});const {data}=await api('projects?'+search);if(id===sequence){rows.value=data.items;total.value=data.total}}catch(e){if(id===sequence){error.value=message(e);rows.value=[];total.value=0}}finally{if(id===sequence)loading.value=false}}
 async function startSession(){admin.value=(await api('auth/me')).isSystemAdmin;user.value=true;await load()}
+function enrollment(show:boolean){acceptingInvite.value=show;password.value='';error.value='';loginNotice.value=''}
+function accountAccepted(name:string){enrollment(false);username.value=name;loginNotice.value='账号已开通，请登录。'}
 async function login(){busy.value=true;error.value='';try{const r=await api('auth/login',{method:'POST',body:JSON.stringify({username:username.value,password:password.value})});csrf.value=r.csrfToken;sessionStorage.setItem('pmo.csrf',csrf.value);await startSession()}catch(e){error.value=message(e)}finally{password.value='';busy.value=false}}
 async function logout(){try{await api('auth/logout',{method:'POST'});clearSession();error.value=''}catch(e){error.value=message(e)}}
 function search(){page.value=1;keyword.value=query.value.trim();void load()}
@@ -79,7 +87,18 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 </script>
 <template>
 <header><div class="brand"><Layers3 :size="21"/> PMO <b>Lite</b></div><span class="divider"></span><span>项目管理</span><el-button v-if="user" text class="logout" title="退出登录" aria-label="退出登录" @click="logout"><LogOut :size="17"/></el-button></header>
-<main v-if="ready && !user" class="login"><div class="mark"><FolderKanban :size="27"/></div><h1>登录工作台</h1><form @submit.prevent="login"><label>账号<input v-model="username" autocomplete="username" maxlength="120" required></label><label>密码<input v-model="password" autocomplete="current-password" type="password" maxlength="256" required></label><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-button type="primary" native-type="submit" :loading="busy">登录</el-button></form></main>
+<main v-if="ready && !user" class="login">
+  <AcceptOrgInvite v-if="acceptingInvite" :api="api" @back="enrollment(false)" @accepted="accountAccepted"/>
+  <template v-else><div class="mark"><FolderKanban :size="27"/></div><h1>登录工作台</h1>
+    <el-alert v-if="loginNotice" :title="loginNotice" type="success" :closable="false"/>
+    <form @submit.prevent="login"><label>账号<input v-model="username" autocomplete="username" maxlength="120" required></label>
+      <label>密码<input v-model="password" autocomplete="current-password" type="password" maxlength="256" required></label>
+      <el-alert v-if="error" :title="error" type="error" :closable="false"/>
+      <el-button type="primary" native-type="submit" :loading="busy">登录</el-button>
+      <el-button text :disabled="busy" @click="enrollment(true)">接受组织邀请</el-button>
+    </form>
+  </template>
+</main>
 <main v-else-if="user" class="ledger"><div class="crumb">工作台 / 项目</div><section class="heading"><div><h1>项目台账</h1><span class="count">已授权项目 · {{total}}</span></div><el-button type="primary" @click="open(null)"><Plus :size="16"/> 新建项目</el-button></section>
 <form class="toolbar" @submit.prevent="search"><label class="search"><Search :size="17"/><input aria-label="搜索项目名称或编号" placeholder="搜索项目名称或编号" v-model="query"></label><el-button native-type="submit">搜索</el-button><el-button title="刷新项目列表" aria-label="刷新项目列表" @click="load"><RefreshCw :size="15"/></el-button></form>
 <el-alert v-if="error" :title="error" type="error" :closable="false"/><el-table v-loading="loading" :data="rows" row-key="projectId" empty-text="没有符合条件的授权项目"><el-table-column prop="code" label="编号" min-width="120"/><el-table-column label="项目名称" min-width="190"><template #default="{row}"><button class="project-link" :aria-label="`查看 ${row.name} 的项目资料`" @click="materials(row)">{{row.name}}</button></template></el-table-column><el-table-column label="阶段" min-width="92"><template #default="{row}"><el-tag type="info" effect="plain">{{stageNames[row.stage]??row.stage}}</el-tag></template></el-table-column><el-table-column prop="revision" label="版本" width="72"/><el-table-column label="创建日期" min-width="110"><template #default="{row}">{{new Date(row.createdAt).toLocaleDateString('zh-CN')}}</template></el-table-column><el-table-column label="操作" width="72"><template #default="{row}"><el-button v-if="row.stage==='drafting'" text title="修改草稿名称" aria-label="修改草稿名称" @click="open(row)"><Pencil :size="16"/></el-button></template></el-table-column></el-table>
@@ -90,6 +109,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <IncomingRisk :api="api"/>
 <TerminationConfirmations :api="api"/>
 <AuditLog v-if="admin" :api="api"/>
+<OrgDirectory v-if="admin" :api="api"/>
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>
   <el-tabs v-if="materialProject" v-model="materialTab" :key="materialProject.projectId">

@@ -122,6 +122,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE health_snapshots SET input_hash=input_hash', 'DELETE FROM health_appeals',
                 'UPDATE facts SET quote=quote', 'UPDATE fact_history SET reason=reason', 'DELETE FROM fact_source_receipts',
                 'UPDATE report_analysis_runs SET report_hash=report_hash', 'DELETE FROM report_analysis_runs',
+                'UPDATE organization_user_invitations SET code_hash=code_hash', 'UPDATE account_status_changes SET reason=reason',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
             ])
@@ -132,6 +133,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM project_rule_scan_state',
                                'SELECT * FROM facts', 'SELECT * FROM fact_history',
                                'SELECT * FROM report_analysis_runs',
+                               'SELECT * FROM organization_user_invitations', 'SELECT * FROM account_status_changes',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 
         with serve(urls['api'], tmp_path, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as api:
@@ -203,6 +205,16 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             completed, = data(api.get(report_path(report)+'/analysis-runs'))['items']
             assert completed['runId']==analysis['runId'] and completed['errorCode']=='MODEL_DISABLED'
             assert completed['status']=='manual' and completed['fallbackTaskId']
+            invite = api.post('admin/users/invitations', headers=key(), json={'email':'synthetic@example.test','role':'sponsor'})
+            assert data(invite)['state']=='pending'
+            with httpx.Client(base_url=api.base_url, trust_env=False) as enrollee:
+                account = data(enrollee.post('auth/invitations/accept', headers=key(1), json={
+                    'invitationCode':invite.headers['X-PMO-Org-Invitation'], 'username':'roles-recruit',
+                    'displayName':'Role fixture recruit', 'password':token_urlsafe(24)}))
+                assert account['revision']==1 and not account['isSystemAdmin']
+            saved = data(api.patch(f"admin/users/{account['userId']}/status", headers=key(1),
+                json={'isActive':False, 'reason':'Independent least privilege test'}))
+            assert not saved['isActive'] and saved['revision']==2
             assert api.post('auth/logout').status_code == 204
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:
@@ -214,6 +226,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
         assert 'acknowledged' in worker_process.stdout
         assert owner.execute("SELECT count(*) FROM outbox_events WHERE status<>'sent'").fetchone() == (0,)
         assert owner.execute('SELECT count(*) FROM project_event_inbox').fetchone()[0] >= 4
+        assert owner.execute('SELECT count(*) FROM organization_event_inbox').fetchone() == (3,)
         assert owner.execute('''SELECT r.rule_id,n.delivery_status,n.recipient_person_id=p.pm_id
             FROM notifications n JOIN rule_events r ON r.id=n.rule_event_id JOIN projects p ON p.id=r.project_id
         ''').fetchall() == [('LR-06', 'delivered', True)]

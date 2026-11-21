@@ -9,6 +9,7 @@ import pytest
 import sqlalchemy as sa
 
 from pmo import outbox, schema_v1 as tables
+from pmo.org_events import INVITED
 
 
 @pytest.fixture
@@ -86,3 +87,23 @@ def test_stale_worker_backoff_and_dead_letter(queue_db):
     with db.connect() as c:
         assert c.scalar(sa.text('SELECT count(*) FROM project_event_inbox')) == 1
         assert c.scalar(sa.text("SELECT count(*) FROM outbox_attempts WHERE outcome='lease_expired'")) == 1
+
+
+def test_org_event_delivery_restarts_without_project_inbox_receipt(queue_db):
+    db, env, _, _, _ = queue_db
+    assert outbox.dispatch(db, 1) == 1
+    with db.begin() as c:
+        org = c.scalar(sa.select(tables.organizations.c.id))
+        evt = c.scalar(tables.outbox_events.insert().values(dedupe_key=uuid4().hex, event_type=INVITED,
+            payload={'orgId':str(org),'resourceId':str(uuid4()),'revision':1},status='pending')
+            .returning(tables.outbox_events.c.id))
+    lease = outbox.claim(db)
+    assert lease and lease.event_id==evt and not outbox.acknowledge(db, lease)
+    assert outbox.consume(db, lease) and outbox.consume(db, lease)
+    with db.begin() as c:
+        c.execute(sa.text("UPDATE outbox_events SET locked_until=clock_timestamp()-interval '1 second' WHERE id=:id"),{'id':evt})
+    subprocess.run([sys.executable,'-m','pmo.outbox','--limit','1'],env=env,capture_output=True,text=True,check=True)
+    with db.connect() as c:
+        assert c.execute(sa.text('SELECT org_id,event_type FROM organization_event_inbox WHERE event_id=:id'),{'id':evt}).one()==(org,INVITED)
+        assert c.scalar(sa.text('SELECT count(*) FROM project_event_inbox WHERE event_id=:id'),{'id':evt})==0
+        assert c.execute(sa.text('SELECT status,retry_count FROM outbox_events WHERE id=:id'),{'id':evt}).one()==('sent',1)

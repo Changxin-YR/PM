@@ -31,7 +31,8 @@ API_READ = frozenset('''organizations user_accounts user_roles persons projects
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
     health_appeal_decisions health_zero_budgets project_rule_scan_state
-    facts fact_clarifications fact_source_receipts fact_history report_analysis_runs'''.split())
+    facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
+    organization_user_invitations account_status_changes'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders reports
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures
@@ -43,7 +44,8 @@ API_ADD = frozenset('''projects project_members charters charter_versions milest
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
     health_appeal_decisions health_zero_budgets project_rule_scan_state
-    facts fact_clarifications fact_source_receipts fact_history report_analysis_runs'''.split())
+    facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
+    user_accounts persons organization_user_invitations account_status_changes'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
@@ -56,7 +58,7 @@ LOCKS = {
 API_EDIT = {
     'reports': 'content_hash narrative structured_fields status is_current is_current_confirmed revision submitted_at submitted_by confirmed_at confirmed_by updated_at',
     'tasks': 'status due_at completed_at revision updated_at',
-    'user_accounts': 'last_login_at', 'web_sessions': 'revoked_at',
+    'user_accounts': 'last_login_at is_active status_revision updated_at', 'web_sessions': 'revoked_at',
     'login_windows': 'started_at attempt_count',
     'agent_credentials': 'status revoked_at allowed_project_ids',
     'agent_collection_versions': 'revision', 'agent_token_versions': 'revision',
@@ -79,9 +81,10 @@ API_EDIT = {
     'facts': 'validation_status trust revision updated_at',
     'fact_clarifications': 'status source_ref resolved_by resolved_at',
     'report_analysis_runs': 'status attempts lease_id leased_until completed_at error_code candidates fallback_task_id',
+    'organization_user_invitations': 'account_id revision accepted_at revoked_at revoked_by revocation_reason',
 }
-WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbox', 'rule_events'})
-WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'notifications'})
+WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'rule_events'})
+WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'notifications'})
 WORKER_EDIT = {
     'outbox_events': 'status retry_count locked_until next_attempt_at last_error updated_at published_at',
     'outbox_attempts': 'outcome finished_at', 'rule_events': 'notified_at',

@@ -3,14 +3,32 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from uuid import uuid4
 import jsonschema
 import sqlalchemy as sa
+import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from mcp import ClientSession,StdioServerParameters
 from mcp.client.stdio import stdio_client
 from pmo import schema_v1 as db
+from pmo.mcp_server import tools
+from pmo.tool_routes import ROUTES
+
+
+def test_runtime_has_all_baseline_methods_paths_and_tool_mappings(live):
+    _, api, _, _ = live
+    catalog = yaml.safe_load(next(Path('docs/spec').glob('12_OpenAPI*')).read_text(encoding='utf-8'))
+
+    def operations(paths):
+        return {spec['operationId']:(method,path) for path,item in paths.items() for method,spec in item.items()
+                if isinstance(spec,dict) and 'operationId' in spec}
+
+    expected = operations(catalog['paths'])
+    actual = operations(api.get('/openapi.json').json()['paths'])
+    assert len(expected)==95 and {op:actual.get(op) for op in expected}==expected
+    assert len(tools)==40 and set(tools)==set(ROUTES) and set(tools)<=actual.keys()
 
 def test_postgres_contract_and_downgrade_guard(live,actor):
     actor()
@@ -18,7 +36,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     inspector=sa.inspect(engine)
     assert len(db.metadata.tables)==33
     assert sum(len(t.c) for t in db.metadata.tables.values())==421
-    extras = {'reports': {'content_hash', 'submitted_by', 'confirmed_by', 'confirmed_at'},
+    extras = {'reports': {'content_hash', 'submitted_by', 'confirmed_by', 'confirmed_at'}, 'user_accounts': {'status_revision'},
               'health_appeals': {'appealed_at'}, 'rule_events': {'input_snapshot'}}
     for name, table in db.metadata.tables.items():
         assert {column['name'] for column in inspector.get_columns(name)} == set(table.c.keys()) | extras.get(name, set())
@@ -27,7 +45,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
         'Refusing destructive downgrade', 'Refusing to discard written acceptance history',
         'Refusing to discard report receipts', 'Refusing to discard review termination history',
         'Refusing to discard health and rule scan history', 'Refusing to discard Fact source and verification history',
-        'Refusing to discard report analysis runs'))
+        'Refusing to discard report analysis runs', 'Refusing to discard account lifecycle history'))
     head = ScriptDirectory.from_config(Config('alembic.ini')).get_current_head()
     with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))==head
 

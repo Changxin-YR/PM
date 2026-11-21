@@ -130,6 +130,20 @@ def test_browser_report_fact_conflict_resolution(live, team):
         run_browser(root, url, 'facts', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm','reviewer'))})
 
 
+def test_browser_organization_account_invite_and_suspend(live, team):
+    _, _, users, _ = team
+    me = users['pm'].get('auth/me')
+    assert me.is_success
+    with live[0].begin() as c:
+        c.execute(db.user_roles.insert().values(user_id=me.json()['accountId'], role='system_admin'))
+    name = 'web-'+uuid4().hex
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'organization', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
+            'PMO_TEST_USERNAME':name, 'PMO_TEST_MEMBER_PASSWORD':secrets.token_urlsafe(24)})
+    account, = [row for row in users['pm'].get('admin/users').json()['data']['items'] if row['username']==name]
+    assert account['revision']==2 and not account['isActive'] and not account['isSystemAdmin']
+
+
 @pytest.mark.parametrize('model_on', [False, True], ids=['off', 'simulated'])
 def test_browser_report_analysis(live, team, model_on, tmp_path):
     from test_database_roles import serve

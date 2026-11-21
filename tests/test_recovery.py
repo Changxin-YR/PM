@@ -21,6 +21,7 @@ from pmo.session_schema import sessions
 from test_database_roles import serve
 from test_evidence import binary
 from test_facts import fact_path, post, report_path, worksheet
+from test_org_accounts import attend, change, command, inv_state, invite
 from test_report_analysis import answer, gateway, history, request
 from test_reports import body, data, headers, sections
 from test_reviews import data_login, member
@@ -66,6 +67,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             conn.execute(db.persons.insert().values(id=person, created_by=person, name=username, org_id=org,
                                                    is_active=True, user_id=account))
             if person == owner:
+                conn.execute(db.user_roles.insert().values(user_id=account, role='system_admin'))
                 conn.execute(sessions.insert().values(account_id=account, token_hash=sha256(preupgrade_session.encode()).hexdigest(),
                     csrf_hash=sha256(preupgrade_csrf.encode()).hexdigest(), expires_at=datetime.now(UTC)+timedelta(hours=1)))
         project = conn.scalar(db.projects.insert().values(org_id=org, code='DRILL', name='Recovery fixture', stage='drafting',
@@ -144,11 +146,18 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         analysis, = history(pm, published)['items']
         assert analysis['status']=='ready' and analysis['requestedBy']==str(owner)
         assert analysis['candidates'][0]['sourceRef']==f"report:{published['reportId']}@{published['revision']}"
+        issued = invite(pm, 'recovery-recruit@example.test')
+        invite_receipt = data(issued)
+        intake = command(issued.headers['X-PMO-Org-Invitation'])
+        with httpx.Client(base_url=pm.base_url, trust_env=False) as recruit:
+            enrollment = data(attend(recruit, intake))
+            assert recruit.post('auth/login', json={'username':intake['username'],'password':intake['password']}).is_success
+            assert not data(change(pm, enrollment['userId'], False))['isActive']
     with engine.connect() as c:
         fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
-    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0024'], capture_output=True, text=True,
+    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0025'], capture_output=True, text=True,
         env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
-    assert failed.returncode != 0 and 'Refusing to discard report analysis runs' in failed.stderr
+    assert failed.returncode != 0 and 'Refusing to discard account lifecycle history' in failed.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -206,6 +215,12 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
             assert data(pm.get(report_path(report)+'/facts'))['items'] == [fact]
             assert history(pm, published)['items']==[analysis]
+            assert inv_state(pm, invite_receipt)=='accepted'
+            restored_user, = [row for row in data(pm.get('admin/users'))['items'] if row['userId']==enrollment['userId']]
+            assert restored_user['revision']==2 and not restored_user['isActive']
+            with httpx.Client(base_url=pm.base_url, trust_env=False) as recruit:
+                assert attend(recruit, intake).status_code==403
+                assert recruit.post('auth/login', json={'username':intake['username'],'password':intake['password']}).status_code==401
             assert data(pm.get(fact_path(fact)+'/history'))['items'][0]['actorId'] == str(verifier)
             assert data(pm.get(f'reports/{legacy_report}/facts'))['items'] == []
             assert pm.get(f"evidence/{att['evidenceId']}?download=true").content == sheet

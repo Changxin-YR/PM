@@ -64,6 +64,8 @@ def browser_actor(conn,identity):
         'human_health_history','human_health_refresh','human_health_zero_budget','human_appeal_health','human_review_health_appeal',
         'human_report_fact_list','human_fact_verify','human_fact_clarify','human_fact_history',
         'human_report_analyze','human_report_analysis_list',
+        'admin_members_list','admin_users_list','admin_user_update_status',
+        'admin_user_invite','admin_user_invitation_list','admin_user_invitation_revoke',
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
         'human_termination_confirmation_inbox','human_termination_confirm',
