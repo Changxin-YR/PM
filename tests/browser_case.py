@@ -129,6 +129,15 @@ def test_browser_lr08_monthly_uses_deadline(live, team):
         })
 
 
+def test_browser_weekly_health_explains_single_yellow(live, team, tmp_path):
+    from test_weekly_health import yellow_sample
+
+    _, _, saved = yellow_sample(live, team)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'weekly-health', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(team[2], 'pm', 'outsider')),
+            'PMO_TEST_SNAPSHOT': saved['snapshotId'], 'PMO_TEST_SCREENSHOTS': str(tmp_path)})
+
+
 def test_browser_health_snapshots_and_independent_appeal(live, team):
     from datetime import datetime
     from pmo.health_calculation import TZ, week_key

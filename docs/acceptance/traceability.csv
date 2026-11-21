@@ -36,7 +36,7 @@
 "Q4","§12.1;ADR 0005","合成：立项通过前的已核验支出与正式条件通过到期边界、历史核验、候选过滤及项目隔离","Q4","PASS","pmo/spending.py;web/src/PreapprovalSpending.vue","tests/test_spending.py;tests/test_postings.py;docs/progress/M2-report.md"
 "Q5","§7.1","合成：需求、成本和风险独立结项缺口、阈值及合法补救，与正式预检一致","Q5","PASS","pmo/gates.py;pmo/assistant.py","tests/test_lifecycle.py;tests/test_requirement_exceptions.py;docs/progress/M4-report.md"
 "Q6","§7.1","合成：分类和关键词检索已确认 Lesson、出处、无来源拒答、项目可见性","Q6","PASS","pmo/retrospectives.py;pmo/assistant.py","tests/test_retrospectives.py;tests/test_assistant.py;docs/progress/M4-report.md"
-"Q7","§7.1","本周黄红及原因","Q7","NOT_TESTED","",""
+"Q7","§12.1","合成：按北京时间周界回查采样、单黄总体绿、成本红和不可信；分开显示旧异常，保留来源与时点","Q7","PASS","pmo/weekly_health.py;web/src/WeeklyHealthOverview.vue","tests/test_weekly_health.py;tests/browser_case.py::test_browser_weekly_health_explains_single_yellow;docs/progress/M4-report.md"
 "Q8","§7.1","需求变更历史","Q8","LOCAL_WEB_VERIFIED_INDEPENDENT_DECISION","pmo/change_history.py;web/src/RequirementHistory.vue","tests/test_change_history.py;tests/test_requirement_baselines.py;tests/test_runtime.py;tests/browser_case.py"
 "A01","最小验收样例 §22","满分仍须 Sponsor、发起人确认及独立 Decision（合成）","A01","PASS","pmo/review_scores.py;pmo/review_outcomes.py","tests/test_acceptance_baseline.py::test_charter_assessment_never_replaces_decision[A01];docs/progress/M4-report.md"
 "A02","最小验收样例 §22","四维均 4 分，无低分任务；保留人工裁决（合成）","A02","PASS","pmo/review_scores.py;pmo/review_outcomes.py","tests/test_acceptance_baseline.py::test_charter_assessment_never_replaces_decision[A02];docs/progress/M4-report.md"

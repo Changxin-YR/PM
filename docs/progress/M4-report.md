@@ -111,3 +111,14 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_drafting_through_archive_without_model --tb=short --junitxml=.local/acceptance-model-off-edge.xml` | 0 | PASS：1 项 / 45.00 秒。A15，同一项目在真实 Edge 办理立项卡、独立评审、里程碑、P0、客户与 PM 基线双签、双口径预算、落地关口，明确显示模型关闭；独立附件、凭证和验收材料通过真实 HTTP，Web 风险关闭、对账、结项评审、复盘、Lesson 及归档。PostgreSQL 回读九条阶段历史。 |
 
 初次定向 FAIL（退出 1，`.local/acceptance-supplemental-retest.xml`，16 项通过）：A05 误断言不可变已核验凭证的健康引用含 `@2`，改为匹配当前契约的精确 `cost-posting:<id>`；仍强制检查 70/50/120、成本红和零重估任务。这批补充样例 PASS 16/16，仅为合成验证、不代表真实签核、目标 Host 或整体验收。
+
+## Q7 每周三线及原因
+
+依据：原文 Q7、独立方案 §5、§7.2、§12.1。基准 `438da6bc937589a175609329f276265e122b7626`，被测源码树 `6bd5a2c8405364c900428aecbb7b2702dfd6113e`（不含后补文档）。`pmo/weekly_health.py` 按授权项目及北京时间自然周分页查询，只从同一采样的持久化输出、输入和事件得到三线及原因。周内最近采样与早先黄红分开；不可信不显示三线颜色，无样本不报绿。`web/src/WeeklyHealthOverview.vue` 接入预警中心。95/95 基线 REST、39 工程操作、40 注册工具；无迁移。Windows、真实 PostgreSQL/HTTP/Edge，合成同组织账户，模型关闭。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_weekly_health.py tests/test_runtime.py::test_runtime_has_all_baseline_methods_paths_and_tool_mappings tests/browser_case.py::test_browser_weekly_health_explains_single_yellow tests/browser_case.py::test_browser_lr08_monthly_uses_deadline --tb=short --junitxml=.local/weekly-health-final.xml` | 0 | PASS：4 项 / 21.09 秒。单黄总体绿、成本红、缺证据不发布、同周旧异常只作历史、固定时点分页、上周空样本、非法周、同组织无授权不泄露、Agent 直调拒绝。Edge 1280/390 像素，确认原因及快照，LR-08 按截止月归集仍通过。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格和 mypy 82 文件，`.local/weekly-health-check.log`；Vue 类型。 |
+
+首次 API FAIL（退出 1，`.local/weekly-health-api.xml`）：缺人工操作白名单；添加本操作但未加入 Agent 路由。首轮 Vue 类型 FAIL 修复分页回调类型；下一轮 `.local/weekly-health-retest.xml` 退出 1，因为用例默认历史周并非当期，改为提交实际采样对应的周并保留全部断言。
