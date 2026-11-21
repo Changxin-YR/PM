@@ -122,6 +122,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE health_snapshots SET input_hash=input_hash', 'DELETE FROM health_appeals',
                 'UPDATE facts SET quote=quote', 'UPDATE fact_history SET reason=reason', 'DELETE FROM fact_source_receipts',
                 'UPDATE report_analysis_runs SET report_hash=report_hash', 'DELETE FROM report_analysis_runs',
+                'UPDATE reports SET weekly_basis=NULL',
                 'UPDATE organization_user_invitations SET code_hash=code_hash', 'UPDATE account_status_changes SET reason=reason',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
@@ -205,6 +206,10 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             completed, = data(api.get(report_path(report)+'/analysis-runs'))['items']
             assert completed['runId']==analysis['runId'] and completed['errorCode']=='MODEL_DISABLED'
             assert completed['status']=='manual' and completed['fallbackTaskId']
+            drafts = path+'/reports/weekly-drafts'
+            basis_read = data(api.get(path+'/reports'))
+            generated = data(api.post(drafts, headers=key(basis_read['weeklyGenerationRevision']), json={'period':report['period']}))
+            assert generated['status']=='draft' and generated['weeklyBasis']['health']['health']=='untrusted'
             invite = api.post('admin/users/invitations', headers=key(), json={'email':'synthetic@example.test','role':'sponsor'})
             assert data(invite)['state']=='pending'
             with httpx.Client(base_url=api.base_url, trust_env=False) as enrollee:

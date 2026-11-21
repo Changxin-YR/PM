@@ -95,8 +95,9 @@ def test_source_conflict_revisions_and_rollback(team):
         deny(failed,500,'DATABASE_FAILURE')
         assert current(pm, report) == trusted
         with team.engine.connect() as c:
-            assert c.scalar(sa.text('SELECT count(*) FROM fact_clarifications')) == 0
-            assert c.scalar(sa.text('SELECT count(*) FROM tasks')) == 0
+            assert c.scalar(sa.text('''SELECT count(*) FROM fact_clarifications fc
+                JOIN facts f ON f.id=fc.fact_id WHERE f.project_id=:pid'''), {'pid':team.pid}) == 0
+            assert c.scalar(sa.text('SELECT count(*) FROM tasks WHERE project_id=:pid'), {'pid':team.pid}) == 0
             assert c.scalar(sa.text('SELECT count(*) FROM audit_logs WHERE request_id=:rid AND result=\'success\''),
                 {'rid':failed.headers['X-Request-ID']}) == 0
     finally:

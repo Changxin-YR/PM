@@ -213,6 +213,17 @@ def test_browser_tasks_and_reports(live, team):
     assert stage(users['pm'], project)['stage'] == 'executing'
 
 
+def test_browser_model_free_weekly_draft_and_publish(live, team):
+    from test_reports import data
+
+    _, _, users, _ = team
+    project, _, _ = execution_fixture(live, team)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'weekly', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users,'pm','reviewer'))})
+    state, = data(users['pm'].get(project+'/reports', params={'reportType':'weekly'}))['items']
+    assert state['isCurrentConfirmed'] and state['revision']==4
+
+
 def test_browser_independent_termination_confirmation(live, team):
     from test_lifecycle import start_feasibility
 

@@ -36,7 +36,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
     inspector=sa.inspect(engine)
     assert len(db.metadata.tables)==33
     assert sum(len(t.c) for t in db.metadata.tables.values())==421
-    extras = {'reports': {'content_hash', 'submitted_by', 'confirmed_by', 'confirmed_at'}, 'user_accounts': {'status_revision'},
+    extras = {'reports': {'content_hash', 'submitted_by', 'confirmed_by', 'confirmed_at', 'weekly_basis'}, 'user_accounts': {'status_revision'},
               'health_appeals': {'appealed_at'}, 'rule_events': {'input_snapshot'}}
     for name, table in db.metadata.tables.items():
         assert {column['name'] for column in inspector.get_columns(name)} == set(table.c.keys()) | extras.get(name, set())
@@ -45,7 +45,8 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
         'Refusing destructive downgrade', 'Refusing to discard written acceptance history',
         'Refusing to discard report receipts', 'Refusing to discard review termination history',
         'Refusing to discard health and rule scan history', 'Refusing to discard Fact source and verification history',
-        'Refusing to discard report analysis runs', 'Refusing to discard account lifecycle history'))
+        'Refusing to discard report analysis runs', 'Refusing to discard account lifecycle history',
+        'Refusing to discard weekly report source receipts'))
     head = ScriptDirectory.from_config(Config('alembic.ini')).get_current_head()
     with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))==head
 

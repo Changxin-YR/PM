@@ -40,6 +40,7 @@ from .project_lifecycle import router as lifecycle_router
 from .retrospectives import router as retrospective_router
 from .requirement_exceptions import router as requirement_exception_router
 from .reports import router as report_router
+from .weekly_drafts import router as weekly_draft_router
 from .tasks import router as task_router
 from .health import router as health_router
 from .facts import router as fact_router
@@ -81,6 +82,7 @@ app.include_router(lifecycle_router)
 app.include_router(retrospective_router)
 app.include_router(requirement_exception_router)
 app.include_router(report_router)
+app.include_router(weekly_draft_router)
 app.include_router(task_router)
 app.include_router(health_router)
 app.include_router(fact_router)

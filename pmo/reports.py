@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 from fastapi import APIRouter, Body, Query
 from pydantic import AfterValidator, Field, JsonValue, StrictStr, model_validator
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import TypeEngine
 
 from . import schema_v1 as db
@@ -19,6 +20,7 @@ from .identity import Failure, explicit_grants, explicit_project_scope, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_member
+from .weekly_basis import WeeklyBasis
 
 LIST = 'pmo_report_list'
 GET = 'pmo_report_get'
@@ -27,12 +29,13 @@ DRAFT = 'human_report_draft_create'
 EDIT = 'human_report_draft_update'
 SUBMIT_EXISTING = 'human_report_submit_existing'
 CONFIRM = 'human_report_confirm'
+GENERATE = 'human_weekly_report_generate'
 HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 TZ = ZoneInfo('Asia/Shanghai')
 router = APIRouter(prefix='/api/v1', tags=['Reports'])
 
 _receipts: dict[str, TypeEngine[Any]] = {'content_hash': sa.CHAR(64), 'submitted_by': sa.Uuid(),
-                                       'confirmed_by': sa.Uuid(), 'confirmed_at': sa.DateTime(timezone=True)}
+    'confirmed_by': sa.Uuid(), 'confirmed_at': sa.DateTime(timezone=True), 'weekly_basis': JSONB(none_as_null=True)}
 reports = sa.table('reports', *(sa.column(col.name, cast(TypeEngine[Any], col.type)) for col in db.reports.c if col.name not in _receipts),
                    *(sa.column(name, kind) for name, kind in _receipts.items()))
 r = reports.c
@@ -194,6 +197,7 @@ class Report(Strict):
     canEdit: bool | None = None
     canSubmit: bool | None = None
     canConfirm: bool | None = None
+    weeklyBasis: WeeklyBasis | None = None
 
 
 class Page(Strict):
@@ -203,6 +207,7 @@ class Page(Strict):
     total: int
     asOf: datetime
     canCreateDraft: bool | None = None
+    weeklyGenerationRevision: int | None = None
 
 
 @dataclass(frozen=True)
@@ -233,8 +238,10 @@ class WeeklySubmission:
         return f'report:{self.report_id}@{self.revision}'
 
 
-def _digest(pid, author, kind, period, version, fields, narrative):
-    return fingerprint(['report-v1', str(pid), str(author), kind, period, version, fields, narrative])
+def _digest(pid, author, kind, period, version, fields, narrative, basis=None):
+    if basis is None:
+        return fingerprint(['report-v1', str(pid), str(author), kind, period, version, fields, narrative])
+    return fingerprint(['weekly-report-v1', str(pid), str(author), period, version, fields, narrative, basis])
 
 
 def _content(row):
@@ -245,7 +252,8 @@ def _content(row):
     except (ValueError, OverflowError):
         return None
     if (bounds != (row.period_start, row.period_end) or row.content_hash != _digest(
-            row.project_id, row.author_id, row.type, row.period, row.version_no, row.structured_fields, row.narrative or '')):
+            row.project_id, row.author_id, row.type, row.period, row.version_no, row.structured_fields,
+            row.narrative or '', row.get('weekly_basis'))):
         return None
     return fields
 
@@ -342,6 +350,11 @@ def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False):
         item.submittedBy, item.confirmedBy, item.confirmedAt = row.submitted_by, row.confirmed_by, row.confirmed_at
         item.contentHash = row.content_hash
         item.narrative = row.narrative if detail else None
+        if detail and row.weekly_basis is not None:
+            try:
+                item.weeklyBasis = WeeklyBasis.model_validate(row.weekly_basis)
+            except ValueError:
+                raise Failure(422, 'REPORT_CONTENT_INVALID', project_id=p.id) from None
         mutable = p.stage != 'archived' and row.status == 'draft'
         item.canEdit = mutable and author_role and row.author_id == a.person
         item.canSubmit = mutable and (pm or item.canEdit)
@@ -412,7 +425,8 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)
         can_create = p.stage != 'archived' and author_role if a.kind == 'human' else None
         return Result[Page](data=Page(items=[_view(row, a, p, pm, author_role) for row in rows], page=page, pageSize=pageSize,
-            total=total, asOf=info.asOf, canCreateDraft=can_create), meta=info)
+            total=total, asOf=info.asOf, canCreateDraft=can_create,
+            weeklyGenerationRevision=p.revision if pm and p.stage != 'archived' else None), meta=info)
     return run(authorization, LIST, read)
 
 
@@ -428,6 +442,27 @@ def get(reportId: UUID, authorization: Auth) -> Result[Report]:
     return run(authorization, GET, read)
 
 
+def _insert(c, a, p, command, now, *, submitted=False, basis=None):
+    start, end = period_bounds(command.reportType, command.period)
+    if start > now.astimezone(TZ).date():
+        raise Failure(422, 'REPORT_PERIOD_IN_FUTURE', project_id=p.id)
+    _check_refs(c, p, command.structuredFields)
+    series = (r.project_id == p.id, r.type == command.reportType, r.period == command.period)
+    if basis is not None and c.scalar(sa.select(r.id).where(*series, r.author_id == a.person,
+            r.status.in_(('draft', 'submitted')), r.weekly_basis['sourceHash'].astext == basis['sourceHash']).limit(1)):
+        raise Failure(409, 'WEEKLY_DRAFT_ALREADY_CURRENT', project_id=p.id)
+    version = (c.scalar(sa.select(sa.func.max(r.version_no)).where(*series)) or 0) + 1
+    c.execute(reports.update().where(*series, r.is_current).values(is_current=False))
+    fields = command.structuredFields.model_dump(mode='json', exclude_none=True)
+    return c.execute(reports.insert().values(project_id=p.id, created_by=a.person, author_id=a.person,
+        type=command.reportType, period=command.period, period_start=start, period_end=end, version_no=version,
+        is_current=True, is_current_confirmed=False, status='submitted' if submitted else 'draft',
+        structured_fields=fields, narrative=command.narrative, updated_at=now, weekly_basis=basis,
+        content_hash=_digest(p.id, a.person, command.reportType, command.period, version, fields, command.narrative, basis),
+        submitted_at=now if submitted else None, submitted_by=a.person if submitted else None)
+        .returning(reports)).mappings().one()
+
+
 def _create(auth, op, pid, command, key):
     signature = fingerprint([str(pid), command.model_dump(mode='json', exclude_none=True)])
 
@@ -440,23 +475,8 @@ def _create(auth, op, pid, command, key):
         if prior is not None:
             return prior
         _writable(p)
-        start, end = period_bounds(command.reportType, command.period)
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
-        if start > now.astimezone(TZ).date():
-            raise Failure(422, 'REPORT_PERIOD_IN_FUTURE', project_id=p.id)
-        _check_refs(c, p, command.structuredFields)
-        series = (r.project_id == p.id, r.type == command.reportType, r.period == command.period)
-        version = (c.scalar(sa.select(sa.func.max(r.version_no)).where(*series)) or 0) + 1
-        c.execute(reports.update().where(*series, r.is_current).values(is_current=False))
-        fields = command.structuredFields.model_dump(mode='json', exclude_none=True)
-        submitted = op == SUBMIT
-        row = c.execute(reports.insert().values(project_id=p.id, created_by=a.person, author_id=a.person,
-            type=command.reportType, period=command.period, period_start=start, period_end=end, version_no=version,
-            is_current=True, is_current_confirmed=False, status='submitted' if submitted else 'draft',
-            structured_fields=fields, narrative=command.narrative, updated_at=now,
-            content_hash=_digest(p.id, a.person, command.reportType, command.period, version, fields, command.narrative),
-            submitted_at=now if submitted else None, submitted_by=a.person if submitted else None)
-            .returning(reports)).mappings().one()
+        row = _insert(c, a, p, command, now, submitted=op == SUBMIT)
         return _finish(c, a, p, pm, row, op, key, rid, signature)
     return run(auth, op, write)
 
@@ -497,12 +517,18 @@ def _mutate(auth, op, report_id, command, key, expected):
             _check_refs(c, p, command.structuredFields)
             fields = command.structuredFields.model_dump(mode='json', exclude_none=True)
             values.update(structured_fields=fields, narrative=command.narrative, content_hash=_digest(
-                p.id, row.author_id, row.type, row.period, row.version_no, fields, command.narrative))
+                p.id, row.author_id, row.type, row.period, row.version_no, fields, command.narrative, row.weekly_basis))
         else:
             fields = _content(row)
             if fields is None or (op == CONFIRM and (row.submitted_at is None or row.submitted_by is None or row.submitted_at > now)):
                 raise Failure(422, 'REPORT_SUBMISSION_INVALID' if op == CONFIRM else 'REPORT_INCOMPLETE', project_id=p.id)
             _check_refs(c, p, fields)
+            if row.weekly_basis is not None:
+                from .weekly_drafts import make_draft
+
+                _, basis = make_draft(c, p, row.period, now)
+                if basis.sourceHash != row.weekly_basis['sourceHash']:
+                    raise Failure(409, 'WEEKLY_DRAFT_SOURCE_CHANGED', project_id=p.id)
             if op == SUBMIT_EXISTING:
                 values.update(status='submitted', submitted_at=now, submitted_by=a.person)
             else:

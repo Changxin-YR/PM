@@ -20,7 +20,7 @@ from pmo.health_calculation import TZ, week_key
 from pmo.session_schema import sessions
 from test_database_roles import serve
 from test_evidence import binary
-from test_facts import fact_path, post, report_path, worksheet
+from test_facts import fact_path, post, proposal, report_path, worksheet
 from test_org_accounts import attend, change, command, inv_state, invite
 from test_report_analysis import answer, gateway, history, request
 from test_reports import body, data, headers, sections
@@ -118,11 +118,12 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             reviewer.headers['X-CSRF-Token'] = data_login(reviewer, 'fixture-reviewer', password)
             proof = data(reviewer.post(f'evidence/{original_id}/verify', headers=headers(1),
                 json={'reason':'Compared the synthetic source bytes', 'sha256':sha256(png).hexdigest()}))
-        report = data(pm.post(path + '/reports', headers=headers(), json=body(period=week_key(datetime.now(TZ).date()),
+        report_time = datetime.now(TZ)
+        report = data(pm.post(path + '/reports', headers=headers(), json=body(period=week_key(report_time.date()),
             narrative='Work took 2.50 days. Synthetic source trail retained after recovery.', structuredFields=sections(milestone_progress=[{
                 'milestoneId':str(milestone), 'claim':'progress', 'evidenceRefs':[proof['evidenceRef']]}]))))
         published = data(pm.post(f"reports/{report['reportId']}/confirm", headers=headers(report['revision'])))
-        candidate = data(post(pm, published))
+        candidate = data(post(pm, published, proposal(published, asOf=report_time.isoformat())))
         att = data(pm.post(path + '/evidence', headers=headers(2), files={'file':('worksheet.png',sheet,'image/png')},
             data={'linkedResourceType':'report','linkedResourceId':report['reportId']}))
         with httpx.Client(base_url=pm.base_url, trust_env=False) as reviewer:
@@ -146,6 +147,15 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         analysis, = history(pm, published)['items']
         assert analysis['status']=='ready' and analysis['requestedBy']==str(owner)
         assert analysis['candidates'][0]['sourceRef']==f"report:{published['reportId']}@{published['revision']}"
+        draft = data(pm.post(path+'/reports/weekly-drafts', headers=headers(1), json={'period':published['period']}))
+        weekly_basis = draft['weeklyBasis']
+        weekly_fact, = weekly_basis['verifiedFacts']
+        assert weekly_fact['evidenceRef']==att['evidenceRef'] and weekly_fact['evidenceHash']==sha256(sheet).hexdigest()
+        generated = data(pm.patch(report_path(draft), headers=headers(draft['revision']),
+            json={'structuredFields':{**draft['structuredFields'],'effort_person_days':'2.50'},'narrative':'PM verified after generation.'}))
+        submitted = data(pm.post(report_path(draft)+'/submit', headers=headers(generated['revision']), json={}))
+        weekly_published = data(pm.post(report_path(draft)+'/confirm', headers=headers(submitted['revision']), json={}))
+        assert weekly_published['weeklyBasis']==weekly_basis and weekly_published['isCurrentConfirmed']
         issued = invite(pm, 'recovery-recruit@example.test')
         invite_receipt = data(issued)
         intake = command(issued.headers['X-PMO-Org-Invitation'])
@@ -155,9 +165,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert not data(change(pm, enrollment['userId'], False))['isActive']
     with engine.connect() as c:
         fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
-    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0025'], capture_output=True, text=True,
+    failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0026'], capture_output=True, text=True,
         env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
-    assert failed.returncode != 0 and 'Refusing to discard account lifecycle history' in failed.stderr
+    assert failed.returncode != 0 and 'Refusing to discard weekly report source receipts' in failed.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -215,6 +225,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
             assert data(pm.get(report_path(report)+'/facts'))['items'] == [fact]
             assert history(pm, published)['items']==[analysis]
+            assert data(pm.get(report_path(weekly_published)))==weekly_published
             assert inv_state(pm, invite_receipt)=='accepted'
             restored_user, = [row for row in data(pm.get('admin/users'))['items'] if row['userId']==enrollment['userId']]
             assert restored_user['revision']==2 and not restored_user['isActive']

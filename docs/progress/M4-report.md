@@ -49,3 +49,18 @@
 失败修复：`.local/analysis-0025-regression-first.log`（1 通过、13 错误，退出 1）定位历史迁移共享的会话元数据导致重复列；保留原元数据，后续回归 `.local/analysis-0025-regression.log` 14 PASS。`.local/analysis-0025-worker-first.log`（6 通过、1 失败，退出 1）修正测试中 `1.40` 原件却使用 `2.50` 候选的输入，保留原话拒绝。`.local/analysis-0025-edge-targeted.log`（1 通过、1 失败，退出 1）补齐模拟模式的测试启动器导入，再按上表通过。`npm --prefix web run typecheck` 非仓库命令，正式 `build` 已执行类型检查。
 
 目录对表 PASS：OpenAPI 按 operationId、HTTP 方法、路径为 **91/95 基线、26 工程接口**，缺项 `admin_members_list`、`admin_users_list`、`admin_user_invite`、`admin_user_update_status`；`ROUTES` 与 `mcp_server.tools` 均 40。真实模型及各目标 Host `BLOCKED_EXTERNAL`。周报自动初稿、完整四模式、T06 整体和生产批准未通过验收。
+
+## 2026-11-21 0027 无模型周报初稿
+
+源条款：§5.6、§8.5–8.6、§20.3、DEC-22、SRC-069/072/074。基准 SHA `89b630830e0527136585d14c1ef17aa48749afff`，被测源码树 `1ede5adc5c35ed1af3e3ec89fd9d0e80a8a6deac`（不含证据文档）。实现：`pmo/weekly_drafts.py`、`pmo/weekly_basis.py`、`pmo/reports.py`、`web/src/Reports.vue`、迁移 `0027`，[ADR 0015](../adr/0015-weekly-report-basis.md)。环境：本机 Windows、PostgreSQL 随机 schema/专用数据库、合成会话、模型关闭的真实回环 HTTP/Edge。非业务签核。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `pwsh -NoProfile -File scripts/dev.ps1 test` | 0 | PASS：115 项 / 181.92 秒，`.local/weekly-0027-full.log`。四区块、所选周人天固定边界、冲销、候选与争议排除、过期拒绝、来源只读、Agent/跨项目拒绝、并发幂等及发布 Outbox 故障回滚见 `tests/test_weekly_drafts.py`；0016 数据升级及恢复后查回已发布周报、来源、原件和旧历史见 `tests/test_recovery.py`；受限 API/Outbox 白名单见 `tests/test_database_roles.py`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 browser` | 0 | PASS：Edge 11 项 / 143.21 秒，`.local/weekly-0027-edge.log`。新增 `web/e2e/weekly.mjs` 真实生成、编辑、提交、PM 发布、独立成员查看及刷新回读来源。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：规格三检与 mypy，`.local/weekly-0027-check.log`。 |
+| `npm.cmd --prefix web run build` | 0 | PASS：Vue 类型与 Vite build，`.local/weekly-0027-build.log`；有包体告警。 |
+
+失败和修复：首轮后端类型缺 JSON 值注解，首轮 Vue 类型缺 `projectRevision`，均修复。`.local/weekly-0027-affected-first.log`（退出 1）修正了测试的私有草稿 404 与审计编号字符串类型断言，继续断言提交后非 PM 403 和无成功审计。`.local/weekly-0027-affected.log`（27 PASS，1 FAIL，退出 1）发现旧 Fact 回滚测试跨项目计算整库数量；改为对本测试项目断言零残留，未去除失败时必须回滚的断言。全量终态按上表。
+
+基线 REST 95/95、工程接口 30、MCP 注册 40/40；周报工程接口保持人工专用，不增加 Agent 工具。独立的真实模型、各目标 Host、试点与业务签核仍 BLOCKED_EXTERNAL。

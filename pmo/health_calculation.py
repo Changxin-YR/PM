@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from . import evidence_storage, schema_v1 as db
 from .contracts import RULE_VERSION
 from .cost_math import cost_line
-from .costs import cost_basis, zero_budget_claim
+from .costs import CostBasis, cost_basis, zero_budget_claim
 from .identity import Failure
 from .projects import fingerprint
 from .reports import TZ, weekly_submissions
@@ -27,6 +27,7 @@ class Observation:
     results: dict[str, Any]
     refs: list[str]
     milestones: list[Any]
+    cost_basis: CostBasis
 
     @property
     def digest(self) -> str:
@@ -171,8 +172,7 @@ def _quality(c, pid, today):
     return _color(colors), result, details, refs, gaps
 
 
-def _costs(c, pid, at):
-    source = cost_basis(c, pid, at)
+def _costs(c, source, at):
     lines, all_refs, gaps = {}, [], set()
     for kind in ('money', 'effort'):
         budget, actual, remaining = source.amounts(kind)
@@ -246,7 +246,8 @@ def observe(c, p, at: datetime) -> Observation:
         WHERE project_id=:id AND transitioned_at<=:at ORDER BY to_revision'''), dict(id=p.id, at=at)).mappings())
     proof = MilestoneEvidence(c, p.id, at)
     timeline, time_inputs, completions, time_refs, time_gaps = _timing(rows, today, proof)
-    costs, cost_inputs, cost_refs, cost_gaps = _costs(c, p.id, at)
+    source = cost_basis(c, p.id, at)
+    costs, cost_inputs, cost_refs, cost_gaps = _costs(c, source, at)
     quality, quality_data, quality_inputs, quality_refs, quality_gaps = _quality(c, p.id, today)
     weekly, weekly_refs = _weekly(c, p, at, transitions, rows, proof, completions)
     gaps = time_gaps | cost_gaps | quality_gaps
@@ -274,4 +275,4 @@ def observe(c, p, at: datetime) -> Observation:
         *(f'project-transition:{p.id}@{i.to_revision}' for i in transitions), *time_refs, *cost_refs, *quality_refs, *weekly_refs]))
     inputs = {'day': today.isoformat(), 'stage': p.stage, 'time': time_inputs, 'cost': cost_inputs,
               'quality': {'metrics': quality_data.model_dump(mode='json'), 'schedule': quality_inputs}, 'weekly': weekly}
-    return Observation(inputs, results, refs, rows)
+    return Observation(inputs, results, refs, rows, source)
