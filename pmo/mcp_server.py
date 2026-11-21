@@ -14,7 +14,9 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 server = Server('pmo-lite')
-catalog = json.loads(next((Path(__file__).resolve().parents[1]/'docs/spec').glob('11_*.json')).read_text(encoding='utf-8'))
+packaged_catalog = Path(__file__).with_name('mcp_catalog.json')
+source_catalog = Path(__file__).resolve().parents[1] / 'docs/spec/11_MCP_工具契约.json'
+catalog = json.loads((packaged_catalog if packaged_catalog.is_file() else source_catalog).read_text(encoding='utf-8'))
 implemented = set(ROUTES)
 tools = {t['name']: types.Tool(name=t['name'],description=t['description'],inputSchema=t['inputSchema'],outputSchema={**t['outputSchema'],'type':'object'}) for t in catalog['tools'] if t['name'] in implemented}
 
@@ -22,9 +24,30 @@ tools = {t['name']: types.Tool(name=t['name'],description=t['description'],input
 async def discover():
     return list(tools.values())
 
-def failed(code):
-    payload={'ok':False,'error':{'code':code,'message':code,'retryable':code=='SERVICE_UNAVAILABLE'},'meta':{}}
+def failed(code, operation=None):
+    payload={'ok':False,'error':{'code':code,'message':code,'retryable':code=='SERVICE_UNAVAILABLE'},
+             'meta':{'operationId':operation} if operation else {}}
     return types.CallToolResult(content=[types.TextContent(type='text',text=json.dumps(payload))],structuredContent=payload,isError=True)
+
+
+def api_endpoint(path: str) -> httpx.URL | None:
+    try:
+        raw = os.getenv('PMO_API_URL')
+        if raw is None:
+            port = int(os.getenv('PMO_API_PORT', '8000'))
+            if not 1 <= port <= 65535:
+                return None
+            raw = f'http://127.0.0.1:{port}'
+        url = httpx.URL(raw)
+        loopback = url.host in ('127.0.0.1', '::1', 'localhost')
+        if (url.scheme != 'https' and not (url.scheme == 'http' and loopback) or not url.host
+                or (url.port is not None and not 1 <= url.port <= 65535)
+                or url.userinfo or url.query or url.fragment or url.path not in ('/', '/api/v1', '/api/v1/')):
+            return None
+        return url.copy_with(path=f'/api/v1{path}')
+    except (ValueError, httpx.InvalidURL):
+        return None
+
 
 @server.call_tool(validate_input=False)
 async def invoke(name,arguments):
@@ -32,17 +55,17 @@ async def invoke(name,arguments):
     try:
         jsonschema.Draft202012Validator(tools[name].inputSchema,format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER).validate(arguments)
     except jsonschema.ValidationError:
-        return failed('VALIDATION_FAILED')
-    port=int(os.environ.get('PMO_API_PORT','8000'))
+        return failed('VALIDATION_FAILED', name)
     method,template=ROUTES[name]
     body=dict(arguments)
     path=template.format(**{field:str(UUID(body.pop(field))) for _,field,_,_ in Formatter().parse(template) if field})
-    url=f'http://127.0.0.1:{port}/api/v1{path}'
+    url=api_endpoint(path)
+    if url is None: return failed('PMO_API_CONFIGURATION_INVALID', name)
     token=os.environ.get('PMO_AGENT_TOKEN')
-    if not token: return failed('UNAUTHORIZED')
+    if not token: return failed('UNAUTHORIZED', name)
     headers={'Authorization':f'Bearer {token}'}
     try:
-        async with httpx.AsyncClient(timeout=10,trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=10,trust_env=False,follow_redirects=False) as client:
             if method=='GET':
                 filters=body.pop('filters',{})
                 body.update({f'filters[{k}]':v for k,v in filters.items()})
@@ -51,8 +74,8 @@ async def invoke(name,arguments):
                 headers['Idempotency-Key']=body.pop('idempotencyKey')
                 if 'expectedRevision' in body: headers['If-Match']=str(body.pop('expectedRevision'))
                 response=await client.request(method,url,headers=headers,json=body)
-            if response.status_code>=500: return failed('SERVICE_UNAVAILABLE')
-            if not response.is_success: return failed(response.json().get('code','VALIDATION_FAILED'))
+            if response.status_code>=500: return failed('SERVICE_UNAVAILABLE', name)
+            if not response.is_success: return failed(response.json().get('code','VALIDATION_FAILED'), name)
             result={'ok':True,**response.json()}
             # REST editors need these fields; the V1 MCP output contract is closed.
             if name in {'pmo_requirement_change_history','pmo_change_propose'}:
@@ -70,10 +93,15 @@ async def invoke(name,arguments):
             jsonschema.Draft202012Validator(tools[name].outputSchema).validate(result)
             return result
     except (httpx.HTTPError,ValueError,jsonschema.ValidationError):
-        return failed('SERVICE_UNAVAILABLE')
+        return failed('SERVICE_UNAVAILABLE', name)
 
-async def main():
+async def serve():
     async with stdio_server() as (reader,writer):
         await server.run(reader,writer,server.create_initialization_options())
 
-if __name__=='__main__': asyncio.run(main())
+
+def main() -> None:
+    asyncio.run(serve())
+
+
+if __name__=='__main__': main()

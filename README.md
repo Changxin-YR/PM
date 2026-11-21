@@ -48,7 +48,9 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 
 「组织账号」可查看同组织人员和账号、一次性交付开户码、撤销未用邀请并启停普通账号。收件人在登录页「接受组织邀请」自行设置密码；职务提示不授予项目或组织权限。停用即撤销会话与委托令牌，重新启用后需要重新登录或签发。见 [ADR 0014](docs/adr/0014-organization-account-lifecycle.md)。
 
-MCP stdio 命令：项目 `.venv/Scripts/python.exe -m pmo.mcp_server`，工作目录为仓库根目录。具有 delegator 资格的人工用户通过「我的 Agent 令牌」选择项目、动作和最长 24 小时有效期，确认签发。仅将一次性交付的密钥通过受保护的环境变量 `PMO_AGENT_TOKEN` 传给 MCP 子进程；使用非默认 API 端口时设置 `PMO_API_PORT`。本人可撤销自己的令牌；管理员可从「组织令牌」撤销本组织的令牌，不可查看原密钥。详见 ADR 0004。不通过直接改库为真实用户授权。
+MCP stdio 命令：安装后使用环境中的 `pmo-mcp`（Windows 为 `.venv/Scripts/pmo-mcp.exe`），不要求以仓库为工作目录。从源码运行仍可在仓库根目录使用 `.venv/Scripts/python.exe -m pmo.mcp_server`。通过 `PMO_API_URL` 配置如 `http://127.0.0.1:8000/api/v1`；非回环应使用 HTTPS。不设置地址时回退到回环地址和 `PMO_API_PORT`（默认 8000）。可用 `uv build --out-dir .local/mcp-dist` 构建本机适配器 wheel；它不是整套系统的部署包。真实目标 Host 证据见 [M3](docs/progress/M3-report.md)。
+
+具有 delegator 资格的人工用户通过「我的 Agent 令牌」选择项目、动作和最长 24 小时有效期。一次性交付的密钥只通过受保护的进程环境变量 `PMO_AGENT_TOKEN` 注入，不写入仓库或启动参数。本人可撤销自己的令牌；管理员可从「组织令牌」撤销本组织的令牌，不可查看原密钥。详见 ADR 0004。不通过直接改库为真实用户授权。
 
 本地已有开发库可用 `.\scripts\dev.ps1 migrate` 升级，不重建卷。`.\scripts\dev.ps1 outbox` 处理一批到期项目事件并记录本地消费回执；`.\scripts\dev.ps1 dead-letters` 查询死信标识和错误码，不输出业务载荷。租约 30 秒，失败指数退避，最多 5 次尝试。没有安装后台计划任务；本地事件回执不代表已向用户发送通知或完成任何审批。
 

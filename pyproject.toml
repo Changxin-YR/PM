@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
 [project]
 name = "pmo-lite"
 version = "0.1.0"
@@ -20,8 +24,20 @@ dependencies = [
     "python-multipart>=0.0.34",
 ]
 
+[project.scripts]
+pmo-mcp = "pmo.mcp_server:main"
+
 [dependency-groups]
 dev = ["pytest>=8,<10", "mypy>=1.14,<2", "ruff>=0.9,<1", "types-jsonschema", "types-PyYAML"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/pmo", "/README.md", "/docs/spec/11_MCP_工具契约.json"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pmo"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs/spec/11_MCP_工具契约.json" = "pmo/mcp_catalog.json"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
