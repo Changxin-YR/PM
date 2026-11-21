@@ -9,3 +9,15 @@
 2026-11-21（0023）：实际注册 39/40；最后一项为 `pmo_fact_propose`。`tests/test_health.py::test_live_snapshot_appeal_and_stdio_scope` 通过真实 stdio 按闭合 Schema 读取健康，核心字段同一时点与 REST 相同；不输出人工复核和输入明细。见 [M2 验证](M2-report.md)。Codex、DSH 等实际目标 Host 版本与互操作证据各自未提供，分别为 BLOCKED_EXTERNAL；SDK 通过不替代目标 Host。
 
 2026-11-21（0024）：`app.openapi()`、`ROUTES` 和 SDK 实际 `list_tools` 对表，40 项注册无多余或漏项。`tests/test_facts.py::test_stdio_candidate_and_human_only_boundaries` 调用最后一项并按封闭 Schema 校验结果，对照 REST 和 Web 同一记录，校验跨项目、非法高信任字段、Agent 直调核验/澄清拒绝及同键重放。见 [M4 测试记录](M4-report.md)。所有既有工具的完整输入、输出、权限、副作用、并发和目标 Host 覆盖仍分别追踪。
+
+## 2026-11-22 SDK 逐工具调用及阶段申请
+
+源条款：§4.5、§8.1–8.4、§20.4–20.6。冻结定义、运行时注册和测试内真实 `list_tools` 均为 40/40，逐项成功执行均通过 Schema 校验，见[逐工具调用证据](../acceptance/mcp-stdio-0028.json)。`successfulCaseIds` 链接实际用例，`observedErrorCodes` 仅列观察到的拒绝，不代表穷尽权限或副作用。
+
+基准 SHA `1c1431819af0b83b55243eb47eeea56ec460843c`，实测源码树 `5a68370e4df7f7d3e01346b8c09c59857572e0b5`（含 LR-08 源码，不含进度文本）。Windows、隔离 PostgreSQL 16 schema、回环 HTTP、实际 Python SDK stdio 进程；合成账号，模型关闭。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/mcp-calls-0028.json -q --tb=short` | 0 | PASS：124 项 / 201.65 秒；`.local/0028-full-with-mcp.log`。源码：`scripts/mcp_test_evidence.py`、`tests/test_mcp_transition.py`、`tests/test_facts.py`。阶段申请同键并发写入一项申请、一条成功审计及一条 Outbox；HTTP/stdio 回执相同，Agent 与其委托人均不可自批，独立 Sponsor 才能推进；撤销令牌即时拒绝重放。 |
+
+首轮增量聚合 FAIL；Fact 测试的审计副作用断言未限定项目，改为只查询被测资源，未删除断言。所有 40 项的成功调用是 PASS；逐调用权限、并发及副作用的穷尽覆盖仍 NOT_RUN。Codex 目标 Host：BLOCKED_EXTERNAL，未取得实际配置、版本及全链测试证据；DSH 目标 Host：BLOCKED_EXTERNAL，未取得独立的实际配置、版本及全链测试证据。不能从本日志推断 T09 通过。`pmo-mcp` 发行入口与 `PMO_API_URL` 契约仍需补测。

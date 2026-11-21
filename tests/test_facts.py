@@ -130,8 +130,10 @@ def test_source_conflict_revisions_and_rollback(team):
     assert [r['action'] for r in rewrites]==['superseded','disputed','verified','proposed']
     deny(outsider.get(fact_path(previous) + '/history'),404,'RESOURCE_NOT_FOUND')
     with team.engine.connect() as c:
-        assert c.execute(sa.text('SELECT status FROM fact_clarifications')).scalars().all() == ['resolved']
-        assert c.execute(sa.text('SELECT status FROM tasks')).scalars().all() == ['done']
+        assert c.execute(sa.text('''SELECT fc.status FROM fact_clarifications fc JOIN facts f ON f.id=fc.fact_id
+            WHERE f.project_id=:pid'''), {'pid': team.pid}).scalars().all() == ['resolved']
+        assert c.execute(sa.text('SELECT status FROM tasks WHERE project_id=:pid'),
+                         {'pid': team.pid}).scalars().all() == ['done']
 
 
 def test_high_trust_checks_private_original_and_medium_checks_source_person(live, team):
