@@ -51,7 +51,11 @@ def listing(auth,pid,page,size,rule=None,month=None):
             .outerjoin(f,sa.and_(f.c.milestone_id==m.c.id,f.c.revision==episode.c.opening_revision))).where(visible(a))
         if pid is not None: stmt=stmt.where(p.c.id==pid)
         if rule: stmt=stmt.where(e.c.rule_id==rule)
-        if month: stmt=stmt.where(sa.func.to_char(sa.func.timezone('Asia/Shanghai',e.c.created_at),'YYYY-MM')==month)
+        if month:
+            # LR-08 belongs to the deadline month, including scans caught up in a later month.
+            created_month = sa.func.to_char(sa.func.timezone('Asia/Shanghai', e.c.created_at), 'YYYY-MM')
+            stmt = stmt.where(sa.or_(sa.and_(e.c.rule_id == 'LR-08', e.c.business_period.like(f'{month}-%')),
+                                     sa.and_(e.c.rule_id != 'LR-08', created_month == month)))
         total=c.scalar(sa.select(sa.func.count()).select_from(stmt.subquery()))
         rows=c.execute(stmt.order_by(e.c.created_at.desc(),e.c.id).offset((page-1)*size).limit(size)).mappings()
         items=[]

@@ -17,7 +17,7 @@ from .milestone_forecasts import reconcile
 from .projects import fingerprint
 from .reports import TZ
 from .requirement_baselines import active_member
-from .retrospectives import Save, _same_org_confirmation, _valid_confirmation
+from .retrospectives import SAVE, Save, _same_org_confirmation, _valid_confirmation
 from .rule_delivery import notify
 
 SCHEDULED = (*ACTIVE, 'closed', 'retrospective')
@@ -28,19 +28,23 @@ def slot(at: datetime) -> date:
     return local.date() - timedelta(days=int(local.time() < time(9)))
 
 
-def _event(c, p, rule, period, condition, refs, context, recipient) -> UUID:
+def _event(c, p, rule, period, condition, refs, context, recipient, *, open_now=True, recorded_at=None) -> UUID:
     digest = fingerprint([RULE_VERSION, condition])
+    status = 'open' if open_now else 'resolved'
+    timestamps = {} if recorded_at is None else {'created_at': recorded_at, 'updated_at': recorded_at}
     eid = c.scalar(insert(events).values(project_id=p.id, rule_id=rule, business_period=period,
         fingerprint=digest, rule_version=RULE_VERSION, source_refs=list(dict.fromkeys(refs)),
-        input_snapshot=context, status='open').on_conflict_do_nothing(index_elements=[events.c.project_id,
+        input_snapshot=context, status=status, **timestamps).on_conflict_do_nothing(index_elements=[events.c.project_id,
             events.c.rule_id, events.c.business_period, events.c.fingerprint]).returning(events.c.id))
     if eid is None:
         row = c.execute(sa.select(events.c.id, events.c.status).where(events.c.project_id == p.id,
             events.c.rule_id == rule, events.c.business_period == period, events.c.fingerprint == digest)).one()
         eid = row.id
-        if row.status == 'resolved':
-            c.execute(events.update().where(events.c.id == eid).values(status='open', updated_at=sa.func.now()))
-    notify(c, p.id, eid, recipient)
+        if row.status != status:
+            c.execute(events.update().where(events.c.id == eid).values(status=status,
+                updated_at=recorded_at if recorded_at is not None else sa.func.now()))
+    if open_now:
+        notify(c, p.id, eid, recipient)
     return eid
 
 
@@ -60,40 +64,59 @@ def _resolve_inactive(c, pid, rule, opened):
 
 
 def _retrospective(c, p, at, sponsor):
-    if p.stage not in ('closed', 'retrospective'):
+    if p.stage not in ('closed', 'retrospective', 'archived'):
         return None
     closing = c.execute(sa.text('''SELECT s.to_revision,s.transitioned_at,d.id AS decision_id FROM project_stage_transitions s
         JOIN decisions d ON d.review_id=s.review_id AND d.project_id=s.project_id AND d.option IN ('pass','conditional_pass')
         JOIN review_decision_snapshots snap ON snap.decision_id=d.id
-        WHERE s.project_id=:pid AND s.from_stage='closing_review' AND s.to_stage='closed'
-        ORDER BY s.to_revision DESC LIMIT 1'''), {'pid': p.id}).mappings().one_or_none()
+        WHERE s.project_id=:pid AND s.from_stage='closing_review' AND s.to_stage='closed' AND s.transitioned_at<=:at
+        ORDER BY s.to_revision DESC LIMIT 1'''), {'pid': p.id, 'at': at}).mappings().one_or_none()
     if not closing:
         return None
     deadline = closing.transitioned_at.astimezone(TZ).date() + timedelta(days=14)
-    if at.astimezone(TZ).date() < deadline:
+    cutoff = datetime.combine(deadline, time(), TZ)
+    if at < cutoff:
         return None
     r = db.project_retrospectives
     retro = c.execute(sa.select(r).where(r.c.project_id == p.id)).mappings().one_or_none()
-    complete = False
-    if retro and retro.completed_at:
+    completed = None
+    first = None
+    if retro and retro.completed_at and closing.transitioned_at <= retro.completed_at <= at:
         try:
             Save(answers=retro.answers)
-            complete = True
         except ValueError:
             pass
+        else:
+            # A later edit to valid answers is not the first completion. The original human save was audited.
+            audit = db.audit_logs.c
+            first = c.execute(sa.select(audit.request_id, audit.created_at).where(audit.project_id == p.id,
+                audit.action == SAVE, audit.result == 'success', audit.actor_type == 'human',
+                audit.created_at >= closing.transitioned_at, audit.created_at <= retro.completed_at)
+                .order_by(audit.created_at, audit.id).limit(1)).one_or_none()
+            completed = first.created_at if first else retro.completed_at
     l = db.lessons
-    lesson = c.execute(sa.select(l.c.id, l.c.revision).where(l.c.project_id == p.id, *_valid_confirmation(),
+    lesson = c.execute(sa.select(l.c.id, l.c.revision, l.c.confirmed_at).where(l.c.project_id == p.id,
+        l.c.confirmed_at >= closing.transitioned_at, l.c.confirmed_at <= at, *_valid_confirmation(),
         _same_org_confirmation(p.org_id)).order_by(l.c.confirmed_at, l.c.id).limit(1)).one_or_none()
-    if complete and lesson:
+    if completed and completed <= cutoff and lesson and lesson.confirmed_at <= cutoff:
         return None
+    still_missing = not (completed and lesson)
     refs = [f'decision:{closing.decision_id}', f'project-transition:{p.id}@{closing.to_revision}']
-    if retro:
+    if completed:
         refs.append(f'retrospective:{retro.id}@{retro.revision}')
+        if first:
+            refs.append(f'audit-request:{first.request_id}')
     if lesson:
         refs.append(f'lesson:{lesson.id}@{lesson.revision}')
-    return _event(c, p, 'LR-08', deadline.isoformat(), [str(closing.decision_id)], refs, {
-        'reason': '正常结项已满 14 个自然日，复盘四问或已确认教训仍缺失。', 'deadline': deadline.isoformat(),
-        'retrospectiveComplete': complete, 'confirmedLessonPresent': lesson is not None}, sponsor)
+    eid = _event(c, p, 'LR-08', deadline.isoformat(), [str(closing.decision_id)], refs, {
+        'reason': ('正常结项已满 14 个自然日，复盘四问或已确认教训仍缺失。' if still_missing
+                   else '复盘或教训逾期；首次补跑时已补齐。'),
+        'deadline': deadline.isoformat(), 'observedAt': at.isoformat(),
+        'retrospectiveComplete': completed is not None, 'confirmedLessonPresent': lesson is not None,
+        'retrospectiveCompletedAt': completed.isoformat() if completed else None,
+        'lessonConfirmedAt': lesson.confirmed_at.isoformat() if lesson else None}, sponsor,
+        open_now=still_missing, recorded_at=at)
+    return eid if still_missing else None
 
 
 def _governance_events(c, p, at, health: Observation | None):

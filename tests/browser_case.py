@@ -108,6 +108,21 @@ def test_browser_customer_dispute_has_independent_and_persistent_history(live, t
             browser_sessions(users, 'pm', 'client_representative'))})
 
 
+def test_browser_lr08_monthly_uses_deadline(live, team):
+    from datetime import timedelta
+
+    from test_health import close_for_lr08, scan_lr08
+
+    _, due = close_for_lr08(live, team)
+    resumed = due + timedelta(days=40, hours=10)
+    scan_lr08(live[0], team[0], resumed)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lr08-monthly', {
+            'PMO_TEST_SESSIONS': json.dumps(browser_sessions(team[2], 'sponsor')),
+            'PMO_TEST_LR08_MONTHS': json.dumps([due.date().isoformat(), resumed.strftime('%Y-%m')]),
+        })
+
+
 def test_browser_health_snapshots_and_independent_appeal(live, team):
     from datetime import datetime
     from pmo.health_calculation import TZ, week_key

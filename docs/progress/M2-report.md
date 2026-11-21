@@ -113,3 +113,18 @@
 | `./scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格静态三检、mypy、Vue 类型；`.local/disputes-0028-check.log`。 |
 
 目录检验由冻结 YAML 和运行代码的 `app.openapi()` 方法、路径、操作 ID 求差集，并核对注册映射：PASS，95/95 基线 REST、34 项工程接口、40/40 注册，未声称实际逐工具调用或 Host 验收。真实客户写入及 DEC-07/09 仍未放行；共享开发库未迁移。
+
+## 2026-11-22 LR-08：逾期补跑与月报
+
+源条款：§5.6 LR-08、§14 第 1 项、T10 子项。`pmo/rule_scan.py` 以正常关口裁决为起点，按上海时区第 14 个自然日归属月报并记录实际发现时点。跨月扫描时，只对仍缺四问或已确认 Lesson 的项目催办 Sponsor；若已逾期补齐，记录为已解决，不发迟到提醒。`pmo/alerts.py` 和 `web/src/Alerts.vue` 使用同一口径。不改迁移、归档门槛或政策。
+
+基准 `1c1431819af0b83b55243eb47eeea56ec460843c`；定向和浏览器测试源码树 `9cb15fc2ac58db326f72826453eadbfcb7987bab`；含 MCP 综合回归源码树 `5a68370e4df7f7d3e01346b8c09c59857572e0b5`（不含后续证据文本）。Windows、PostgreSQL 16 隔离 schema、回环 HTTP、Edge；合成账号，模型关闭。
+
+| 命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_health.py -k lr08 --tb=short` | 0 | PASS：3 项，`.local/lr08-month-retest.log`。验证提醒、归档、月界补跑、补齐后不再催办和重试去重。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 browser` | 0 | PASS：Edge 14 项 / 175.91 秒，`.local/lr08-month-edge.log`。新增 `web/e2e/lr08-monthly.mjs`，核对截止月份、实际发现时点和项目筛选。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`、`npm.cmd --prefix web run build` | 0 | PASS：规格、mypy、Vue 类型和构建，`.local/lr08-month-check.log`、`.local/lr08-month-build.log`；仍有包体积警告。 |
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/mcp-calls-0028.json -q --tb=short` | 0 | PASS：124 项 / 201.65 秒，`.local/0028-full-with-mcp.log`。不代表 T10 组合验收。 |
+
+初次全量回归 FAIL（120 通过、3 失败），修复测试使用的项目可见身份和 0028 降级保护文案后复验通过；未放宽项目隔离。共享开发库仍在 0016。

@@ -293,9 +293,9 @@ def test_zero_budget_is_explicit_and_not_absent(live, team):
     assert obs['health']=='red' and obs['effortVarianceRate']=='UNAVAILABLE'
 
 
-def test_lr08_needs_both_review_and_lesson_and_uses_calendar_day(live, team):
+def close_for_lr08(live, team):
     eng, _, _, _ = live
-    pid, people, users, _ = team
+    pid, _, users, _ = team
     pm, reviewer, customer, reconciler = (users[k] for k in ('pm','reviewer','client_representative','outsider'))
     project, requirement, risk = execution_fixture(live, team)
     complete_milestones(pm, reviewer, project)
@@ -308,11 +308,22 @@ def test_lr08_needs_both_review_and_lesson_and_uses_calendar_day(live, team):
     assert data(decide(reviewer, gate(pm, project, 'closing')))['decision']['stage']=='closed'
     with eng.connect() as c:
         closed = c.scalar(sa.text("SELECT transitioned_at FROM project_stage_transitions WHERE project_id=:p AND to_stage='closed'"),{'p':pid})
-    cut = datetime.combine(closed.astimezone(TZ).date()+timedelta(days=14), time(), TZ)
+    return project, datetime.combine(closed.astimezone(TZ).date() + timedelta(days=14), time(), TZ)
+
+
+def scan_lr08(eng, pid, at):
+    with eng.begin() as c:
+        p = c.execute(sa.select(db.projects).where(db.projects.c.id == pid).with_for_update()).mappings().one()
+        scan_locked(c, p, at, daily=slot(at))
+
+
+def test_lr08_needs_both_review_and_lesson_and_uses_calendar_day(live, team):
+    eng = live[0]
+    pid, people, users, _ = team
+    pm, reviewer = users['pm'], users['reviewer']
+    project, cut = close_for_lr08(live, team)
     def scan(at):
-        with eng.begin() as c:
-            p = c.execute(sa.select(db.projects).where(db.projects.c.id==pid).with_for_update()).mappings().one()
-            scan_locked(c,p,at)
+        scan_lr08(eng, pid, at)
     scan(cut-timedelta(seconds=1))
     assert not [r for r in data(pm.get(project+'/alerts'))['items'] if r['ruleId']=='LR-08']
     scan(cut)
@@ -330,3 +341,49 @@ def test_lr08_needs_both_review_and_lesson_and_uses_calendar_day(live, team):
     with eng.connect() as c:
         assert c.execute(sa.text('''SELECT n.recipient_person_id FROM notifications n JOIN rule_events e ON e.id=n.rule_event_id
             WHERE e.project_id=:p AND e.rule_id='LR-08' '''),{'p':pid}).scalars().all()==[people['sponsor']]
+
+
+@pytest.mark.parametrize('late_archive', [False, True])
+def test_lr08_cross_month_backfill_keeps_deadline_and_dedupes(live, team, late_archive):
+    eng = live[0]
+    pid, people, users, _ = team
+    pm, reviewer, sponsor = (users[name] for name in ('pm', 'reviewer', 'sponsor'))
+    project, cutoff = close_for_lr08(live, team)
+    scan_lr08(eng, pid, cutoff - timedelta(seconds=1))
+    resumed = cutoff + timedelta(days=40, hours=10)
+    if late_archive:
+        data(execute(pm, project, data(propose(pm, project, 'retrospective'))))
+        retro = project + '/retrospective'
+        data(pm.put(retro, headers=headers(data(pm.get(retro))['revision']), json={'answers': ANSWERS}))
+        lesson = data(pm.post(project + '/lessons', headers=headers(), json={'category': 'quality',
+            'what': 'Check test output', 'rootCause': 'Evidence delayed', 'advice': 'Collect original materials early'}))
+        confirmed = data(reviewer.post(f"lessons/{lesson['lessonId']}/confirm", headers=headers(lesson['revision']), json={}))
+        # Move only the synthetic receipt time forward to simulate human work during the scheduler outage.
+        with eng.begin() as c:
+            c.execute(db.lessons.update().where(db.lessons.c.id == confirmed['lessonId']).values(
+                confirmed_at=cutoff + timedelta(days=2)))
+        request = data(propose(pm, project, 'archived'))
+        data(reviewer.post(f"approvals/{request['requestId']}/decide", headers=headers(request['revision']),
+            json={'decision': 'approve', 'rationale': 'Verified all four answers and the confirmed Lesson.'}))
+        assert stage(pm, project)['stage'] == 'archived'
+    scan_lr08(eng, pid, resumed)
+    scan_lr08(eng, pid, resumed + timedelta(days=1))
+    dispatch(eng, 500)
+    query = {'ruleId': 'LR-08', 'month': cutoff.strftime('%Y-%m')}
+    report = data(sponsor.get('analytics/health-alerts', params=query))
+    alert, = report['items']
+    assert report['total'] == 1 and alert['projectId'] == pid
+    assert alert['businessPeriod'] == cutoff.date().isoformat()
+    assert alert['status'] == ('resolved' if late_archive else 'open')
+    assert data(sponsor.get('analytics/health-alerts', params={'month': query['month']}))['items'] == [alert]
+    assert data(sponsor.get('analytics/health-alerts', params={**query, 'month': resumed.strftime('%Y-%m')}))['total'] == 0
+    # The reconciler is a member; the original initiator can read the project summary but not its alerts.
+    code(users['initiator'].get(project + '/alerts'), 404, 'RESOURCE_NOT_FOUND')
+    assert data(users['initiator'].get('analytics/health-alerts', params=query))['total'] == 0
+    with eng.connect() as c:
+        row = c.execute(sa.text('''SELECT id,created_at,input_snapshot FROM rule_events
+            WHERE project_id=:p AND rule_id='LR-08' '''), {'p': pid}).one()
+        assert row.created_at == resumed and row.input_snapshot['deadline'] == cutoff.date().isoformat()
+        notifications = c.execute(sa.text('SELECT recipient_person_id FROM notifications WHERE rule_event_id=:e'),
+                                  {'e': row.id}).scalars().all()
+        assert notifications == ([] if late_archive else [people['sponsor']])

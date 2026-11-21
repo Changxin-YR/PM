@@ -46,7 +46,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
         'Refusing to discard report receipts', 'Refusing to discard review termination history',
         'Refusing to discard health and rule scan history', 'Refusing to discard Fact source and verification history',
         'Refusing to discard report analysis runs', 'Refusing to discard account lifecycle history',
-        'Refusing to discard weekly report source receipts'))
+        'Refusing to discard weekly report source receipts', 'Refusing to discard requirement dispute history'))
     head = ScriptDirectory.from_config(Config('alembic.ini')).get_current_head()
     with engine.connect() as c: assert c.scalar(sa.text('select version_num from alembic_version'))==head
 
