@@ -16,8 +16,10 @@ import sqlalchemy as sa
 
 from pmo.bootstrap import bootstrap
 from pmo.database_roles import apply_roles, RoleError
+from pmo.health_calculation import TZ, week_key
 from pmo.recovery import connection_args, database_url
 from test_evidence import binary
+from test_reports import body, data, sections
 
 
 @pytest.fixture
@@ -45,12 +47,12 @@ def split_roles():
 
 
 @contextmanager
-def serve(url, tmp_path):
+def serve(url, tmp_path, *, evidence_dir=None):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     env = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False),
-           'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(tmp_path / 'private')}
+           'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(evidence_dir or (tmp_path / 'private'))}
     proc = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'pmo.api:app', '--host', '127.0.0.1',
                              '--port', str(port), '--no-access-log'], env=env)
     try:
@@ -115,13 +117,15 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE user_accounts SET password_hash=password_hash',
                 'UPDATE cost_entries SET actual=actual', 'UPDATE alembic_version SET version_num=version_num',
                 'UPDATE requirement_exception_events SET fingerprint=fingerprint', 'TRUNCATE requirement_exception_events',
+                'UPDATE health_snapshots SET input_hash=input_hash', 'DELETE FROM health_appeals',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
             ])
         with psycopg.connect(**connection_args(urls['worker']), autocommit=True) as worker_db:
             denied(worker_db, ['SELECT password_hash FROM user_accounts', 'SELECT token_hash FROM agent_credentials',
                                'SELECT * FROM evidence_files', 'SELECT * FROM audit_logs', 'UPDATE projects SET name=name',
-                               'SELECT * FROM requirement_exception_events',
+                               'SELECT * FROM requirement_exception_events', 'SELECT * FROM health_snapshots',
+                               'SELECT * FROM project_rule_scan_state',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 
         with serve(urls['api'], tmp_path) as api:
@@ -162,21 +166,36 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                   json={'reason': 'Isolated role check'})
                 assert revoke.status_code == 200, revoke.text
                 assert agent.get(path, headers=auth).status_code == 401
+
+            # Only seed the project appointment/stage. The report, scan, and notification run as restricted logins.
+            pid = draft.json()['data']['projectId']
+            with owner.transaction():
+                owner.execute("UPDATE projects SET pm_id=initiator_id, stage='executing' WHERE id=%s", (pid,))
+                owner.execute('''INSERT INTO project_members(project_id,person_id,assigned_by,role,assignment_status,accepted_at)
+                    SELECT id,initiator_id,initiator_id,'pm','accepted',now() FROM projects WHERE id=%s''', (pid,))
+            milestone = ms.json()['data']['milestoneId']
+            data(api.post(path + '/reports', headers=key(), json=body(period=week_key(datetime.now(TZ).date()),
+                structuredFields=sections(milestone_progress=[{'milestoneId': milestone, 'claim': 'progress'}]))))
+            scan_env = {**os.environ, 'DATABASE_URL': urls['api'].render_as_string(hide_password=False)}
+            command = [sys.executable, '-m', 'pmo.rule_scan']
+            first_scan = subprocess.run(command, check=True, capture_output=True, text=True, env=scan_env)
+            assert '"scanned": 1' in first_scan.stdout
+            assert '"scanned": 0' in subprocess.run(command, check=True, capture_output=True, text=True, env=scan_env).stdout
+            snapshot = data(api.get(path + '/health'))
+            assert snapshot['health'] == 'untrusted' and 'LR06_CLAIM_WITHOUT_EVIDENCE' in snapshot['gaps']
+            refreshed = data(api.post(path + '/health/refresh', headers=key(snapshot['projectRevision'])))
+            assert refreshed['snapshotId'] == snapshot['snapshotId']
             assert api.post('auth/logout').status_code == 204
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:
             denied(runtime, ["""INSERT INTO cost_entries(project_id,created_by,type,category,period_start,period_end,budget,actual,forecast_remaining,baseline_version)
                 SELECT id,created_by,'money','forbidden','2020-02-01','2020-02-29',0,99,0,1 FROM projects"""])
         assert owner.execute('SELECT count(*) FROM cost_baseline_history').fetchone() == (1,)
-        with owner.transaction():
-            owner.execute('''WITH e AS (INSERT INTO rule_events(project_id,rule_id,rule_version,business_period,fingerprint,source_refs,status)
-                SELECT id,'LR-03','synthetic','2026-11',repeat('a',64),'[]','open' FROM projects RETURNING id,project_id)
-                INSERT INTO outbox_events(dedupe_key,event_type,status,payload)
-                SELECT 'scope-test:notification','rule.notify','pending',jsonb_build_object('projectId',e.project_id,'eventId',e.id,
-                       'recipientId',p.initiator_id) FROM e JOIN projects p ON p.id=e.project_id''')
         worker_process = subprocess.run([sys.executable, '-m', 'pmo.outbox'], check=True, capture_output=True, text=True,
                                        env={**os.environ, 'DATABASE_URL': urls['worker'].render_as_string(hide_password=False)})
         assert 'acknowledged' in worker_process.stdout
         assert owner.execute("SELECT count(*) FROM outbox_events WHERE status<>'sent'").fetchone() == (0,)
         assert owner.execute('SELECT count(*) FROM project_event_inbox').fetchone()[0] >= 4
-        assert owner.execute("SELECT count(*) FROM notifications WHERE delivery_status='delivered'").fetchone() == (1,)
+        assert owner.execute('''SELECT r.rule_id,n.delivery_status,n.recipient_person_id=p.pm_id
+            FROM notifications n JOIN rule_events r ON r.id=n.rule_event_id JOIN projects p ON p.id=r.project_id
+        ''').fetchall() == [('LR-06', 'delivered', True)]

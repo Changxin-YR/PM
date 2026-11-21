@@ -52,6 +52,7 @@ def browser_actor(conn,identity):
         'human_cost_reconciliation_get','human_cost_reconciliation_create',
         'human_requirement_exception_get','human_requirement_exception_sign','human_requirement_exception_revoke',
         'human_task_create','human_report_draft_create','human_report_draft_update','human_report_submit_existing','human_report_confirm',
+        'human_health_history','human_health_refresh','human_health_zero_budget','human_appeal_health','human_review_health_appeal',
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
         'human_termination_confirmation_inbox','human_termination_confirm',

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -42,7 +44,17 @@ class Quality(Strict):
 def ratio(n,d): return format(Decimal(n)/Decimal(d),'.6f') if d else None
 
 
-def metrics(c,pid):
+@dataclass(frozen=True)
+class Schedule:
+    requirement_id: str
+    revision: int | None
+    priority: str
+    planned: date | None
+    confirmed: bool
+    frozen: bool
+
+
+def metrics(c,pid,*,schedule: list[Schedule] | None=None):
     r,ch=db.requirements,db.change_entries
     signed=c.execute(sa.select(signatures).where(signatures.c.project_id==pid,signatures.c.signer_role=='client_representative').order_by(signatures.c.revision.desc()).limit(1)).mappings().one_or_none()
     initial={i['requirementId']:i for i in signed.snapshot} if signed else {}
@@ -70,9 +82,13 @@ def metrics(c,pid):
         if not valid: gaps.add('BASELINE_CHAIN_INVALID')
         if cancelled: continue
         active+=1; w=WEIGHTS[priority]; weight+=w; p0+=priority=='P0'; frozen+=k in pending
-        if valid and row.status=='customer_confirmed':
+        counted=False
+        if row is not None and valid and row.status=='customer_confirmed':
             if (k,version,row.revision) not in signoffs: gaps.add('CONFIRMATION_RECEIPT_MISSING')
-            elif k not in pending: confirmed+=w; confirmed_p0+=priority=='P0'
+            elif k not in pending:
+                confirmed+=w; confirmed_p0+=priority=='P0'; counted=True
+        if schedule is not None:
+            schedule.append(Schedule(k,row.revision if row else None,priority,date.fromisoformat(day) if day else None,counted,k in pending))
         if row: refs.append(f'requirement:{k}@{row.revision}')
     available=not gaps
     if not active: gaps.add('NO_ACTIVE_REQUIREMENTS')

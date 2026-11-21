@@ -59,3 +59,19 @@
 初次报告组合 FAIL（18 通过、1 失败），降级保护错误的断言未匹配新保护文案，已修正。浏览器回归 FAIL（1 失败、4 通过）：先捕获阶段文字重名，后发现随阶段插入「需求例外」会重排隐式标签 ID；修复选择器、稳定标签名及打开默认项，重验 PASS。未把周期扫描或真实放行写成已验。
 
 目录通过实际 `app.openapi()` 与冻结 OpenAPI 的方法和规格化路径求差集，并与 `pmo.tool_routes.ROUTES` 对表：83/95 基线、21 项工程接口、38/40 工具。基线缺项为健康 GET/历史/申诉（3）、报告分析及 Fact 枚举/候选/核验/澄清（5）、管理员组织成员/用户列表/邀请/状态（4）；未注册 `pmo_health_get`、`pmo_fact_propose`。目录和单项调用证据分开，不代表目标 Host 兼容性。
+
+## 2026-11-21 三线、独立申诉与规则补跑（0023）
+
+源条款：§5.1–5.6、§8.4，LR-03/04/06/08。基准 `e4fc1e55039b8043e6196840393355e4ee320f07`；被测源码树 `35e0a6da0057c2372fc33ebccec259a771a2d1b6`（不含后补证据文档）。实现：`pmo/health_calculation.py`、`pmo/health.py`、`pmo/rule_scan.py`、`migrations/versions/0023_health_and_rule_scans.py`、`web/src/Health.vue`。环境：Windows、回环 HTTP/stdio、PostgreSQL 16.14 随机隔离 schema 或隔离专用数据库、真实 Edge；合成账号和证据，无模型、真实签核或生产修改。
+
+| 实际命令 | 结果 | 证据 |
+|---|---|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_health.py tests/test_runtime.py --tb=short` | PASS，退出 0；13 项 / 32.93 秒 | `.local/health-0023-targeted.log`。三线与单黄总体绿；>15% 预警、严格 >20% 重估；零预算声明和 `UNAVAILABLE`；快照与独立申诉；LR-06 连续漏报和当期进展/完成证据；LR-08 第 14 日、复盘四问与 Lesson；扫描并发去重和事务回滚；SDK 与 REST 对表。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_database_roles.py tests/test_recovery.py --tb=short` | PASS，退出 0；3 项 / 25.81 秒 | `.local/health-0023-roles-recovery.log`。非所有者扫描单次生成 LR-06 通知，Outbox 独立投递，权限和历史防改；升级与联合恢复见 [M4](M4-report.md)。 |
+| `scripts/dev.ps1 test` | PASS，退出 0；97 项 / 182.74 秒 | `.local/health-0023-full.log`。共有一项 Alembic `path_separator` 弃用警告。 |
+| `scripts/dev.ps1 browser` | PASS，退出 0；真实 Edge 6 项 / 121.30 秒 | `.local/health-0023-edge.log`；新增 `web/e2e/health.mjs`，两个独立会话申诉/复核，刷新和移动视口切换，另五条既有路径回归。 |
+| `scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | PASS，分别退出 0 | `.local/health-0023-check.log`、`.local/health-0023-build.log`。规格、mypy、Vue 和 Vite；仍有主包体积警告。 |
+
+初次定向回归 FAIL（退出 1；旧降级保护、工具集合断言未同步），与首轮 Edge FAIL（退出 1；新增用例夹具缺 `data` 和 `headers` 导入）原日志 `.local/health-0023-first.log`、`.local/health-0023-browser.log`；修正后按上表重验。
+
+目录校验（`app.openapi()` 与冻结 YAML 的方法、路径和 ID；`pmo.mcp_server.tools` 与 `ROUTES`）：PASS，退出 0，**86/95 基线 REST + 24 工程接口；39/40 注册工具**。缺报告分析与 Fact 5 项、组织管理 4 项，唯一未注册 `pmo_fact_propose`。逐项调用及目标 Host 验收另记。获批新增需求、客户正式争议入账、零预算结项仍未验证；本次不标记 Q/T、八规则全部组合或政策为通过。

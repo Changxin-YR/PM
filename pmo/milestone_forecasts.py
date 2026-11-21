@@ -7,10 +7,12 @@ from pydantic import Field
 from . import schema_v1 as db
 from .contracts import RULE_VERSION, Result, Strict
 from .identity import Failure, visible
+from .health_schema import events
 from .materials import finish, replay
 from .milestones import View, refs, view
 from .projects import fingerprint, meta, run
 from .risks import WRITABLE, can_manage
+from .rule_delivery import notify
 
 
 class Forecast(Strict):
@@ -19,21 +21,29 @@ class Forecast(Strict):
 
 
 def reconcile(c,p,row):
-    if p.stage not in ('executing','on_hold','delivering'): return
-    e=db.rule_events
+    e=events
     active=c.scalar(sa.text('SELECT event_id FROM milestone_delay_episodes WHERE milestone_id=:mid AND closing_revision IS NULL'),{'mid':row.id})
-    late=row.is_key and row.actual_date is None and not row.is_cancelled and row.forecast_date is not None and row.forecast_date>row.planned_date
+    late=(p.stage in ('executing','on_hold','delivering','closing_review') and row.is_key and row.actual_date is None
+          and not row.is_cancelled and row.forecast_date is not None and row.forecast_date>row.planned_date)
     if active and not late:
         c.execute(sa.text('UPDATE milestone_delay_episodes SET closing_revision=:rev WHERE event_id=:id'),{'rev':row.revision,'id':active})
         c.execute(e.update().where(e.c.id==active).values(status='resolved',updated_at=sa.func.now()))
-    if active or not late: return
+    if active and late:
+        notify(c,p.id,active,p.pm_id)
+        return active
+    if not late: return None
     source=f'milestone:{row.id}@{row.revision}'
+    journal=c.execute(sa.text('''SELECT revision,reason FROM milestone_forecasts WHERE milestone_id=:mid AND revision=:rev
+        AND planned_date=:planned AND new_date=:forecast'''),dict(mid=row.id,rev=row.revision,planned=row.planned_date,
+                                                                   forecast=row.forecast_date)).mappings().one_or_none()
     eid=c.scalar(e.insert().values(project_id=p.id,rule_id='LR-03',rule_version=RULE_VERSION,business_period=row.planned_date.isoformat(),
-        fingerprint=fingerprint([source,RULE_VERSION]),status='open',source_refs=[source]).returning(e.c.id))
+        fingerprint=fingerprint([source,RULE_VERSION]),status='open',source_refs=[source],
+        input_snapshot={'milestoneName':row.name,'plannedDate':row.planned_date.isoformat(),
+                        'forecastDate':row.forecast_date.isoformat(),'reason':journal.reason if journal else None}).returning(e.c.id))
     c.execute(sa.text('INSERT INTO milestone_delay_episodes(event_id,milestone_id,opening_revision) VALUES(:id,:mid,:rev)'),
-              {'id':eid,'mid':row.id,'rev':row.revision})
-    c.execute(db.outbox_events.insert().values(event_type='rule.notify',dedupe_key=f'notify:{eid}:{p.pm_id}',status='pending',
-        payload={'projectId':str(p.id),'eventId':str(eid),'recipientId':str(p.pm_id)}))
+              {'id':eid,'mid':row.id,'rev':journal.revision if journal else None})
+    notify(c,p.id,eid,p.pm_id)
+    return eid
 
 
 def save(auth,mid,expected,key,command):

@@ -187,17 +187,18 @@ def test_charter_read_only_submit_replay_and_rollback(live, team, actor):
     assert owner.post(path + '/reviews', headers=key, json=body).status_code == 404
 
 
-def planning_setup(engine, pid, people, users, *, seed_stage=True):
+def planning_setup(engine, pid, people, users, *, seed_stage=True, priority='P0', first_day=None, effort_budget='10'):
     if seed_stage:
         with engine.begin() as c:
             c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='designing'))
     path = f'projects/{pid}'
     pm = users['pm']
     req = data(pm.post(path + '/requirements', headers=headers(), json={'desc': 'Export results', 'acceptanceCriteria': 'Contains IDs',
-               'priority': 'P0', 'plannedConfirmAt': '2026-12-01'}))
+               'priority': priority, 'plannedConfirmAt': first_day.isoformat() if first_day else '2026-12-01'}))
     for i in range(1, 4):
-        data(pm.post(path + '/milestones', headers=headers(), json={'name': f'Step {i}', 'ordinal': i, 'plannedDate': f'2026-12-0{i}', 'isKey': True}))
-    for rev, kind, budget in [(1, 'money', '100'), (2, 'effort', '10')]:
+        day = (first_day + timedelta(days=i-1)).isoformat() if first_day else f'2026-12-0{i}'
+        data(pm.post(path + '/milestones', headers=headers(), json={'name': f'Step {i}', 'ordinal': i, 'plannedDate': day, 'isKey': True}))
+    for rev, kind, budget in [(1, 'money', '100'), (2, 'effort', effort_budget)]:
         data(pm.put(path + '/cost-budgets', headers=headers(rev), json={'type': kind, 'budget': budget}))
     risk = data(pm.post(path + '/risks', headers=headers(), json={'statement': 'Unresolved delivery risk', 'response': 'Documented response',
                 'prob': 2, 'impact': 3, 'isBlocking': True}))

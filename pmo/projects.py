@@ -11,6 +11,7 @@ from .charter_models import summary as charter_summary
 from .stakeholder_models import ContactSummary
 from .tool_routes import ROUTES
 from .request_context import correlation_id
+from .health_schema import SCAN_SOURCE_WRITES, request_scan
 
 def view(row):
     return ProjectView(projectId=row.id, code=row.code, name=row.name, stage=row.stage, revision=row.revision, orgId=row.org_id, createdAt=row.created_at)
@@ -95,6 +96,8 @@ def create(header,command,key):
 def record_receipt(c,a,key,op,request_id,resource_id,pid,payload_hash,response,digest,before=None):
     c.execute(db.idempotency_keys.insert().values(actor_id=a.credential,actor_type=a.kind,org_id=a.org,delegated_by=a.person if a.kind=='agent' else None,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=90),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=resource_id))
     c.execute(db.audit_logs.insert().values(action=op,actor_type=a.kind,actor_id=a.credential,delegated_by=a.account if a.kind=='agent' else None,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION))
+    if pid is not None and op in SCAN_SOURCE_WRITES:
+        request_scan(c, pid)
 
 def record_write(c,a,key,op,request_id,pid,payload_hash,response,digest,event,before=None):
     record_receipt(c,a,key,op,request_id,pid,pid,payload_hash,response,digest,before)

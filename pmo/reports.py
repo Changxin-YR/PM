@@ -225,6 +225,8 @@ class WeeklySubmission:
     submitted_by: UUID
     content_hash: str
     milestone_claims: tuple[MilestoneClaim, ...]
+    confirmed_at: datetime | None
+    confirmed_revision: int | None
 
     @property
     def source_ref(self) -> str:
@@ -276,8 +278,10 @@ def weekly_submissions(c, project_id: UUID, *, as_of: datetime, start: date, end
             if kind == 'progress' or kind == 'completion':
                 claims.append(MilestoneClaim(_uuid(item['milestoneId']), kind,
                                              tuple(f'evidence:{eid}' for eid in _evidence_ids(item)), index))
+        published = (row.status == 'confirmed' and row.is_current_confirmed and row.confirmed_at <= as_of)
         submissions.append(WeeklySubmission(row.id, revision, row.version_no, row.period, row.period_start,
-            row.period_end, row.submitted_at, row.submitted_by, row.content_hash, tuple(claims)))
+            row.period_end, row.submitted_at, row.submitted_by, row.content_hash, tuple(claims),
+            row.confirmed_at if published else None, row.revision if published else None))
     return submissions
 
 

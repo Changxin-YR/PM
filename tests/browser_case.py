@@ -98,6 +98,25 @@ def browser_sessions(users, *roles):
     return {role: {'cookie': users[role].cookies['pmo_session'], 'csrf': users[role].headers['X-CSRF-Token']} for role in roles}
 
 
+def test_browser_health_snapshots_and_independent_appeal(live, team):
+    from datetime import datetime
+    from pmo.health_calculation import TZ, week_key
+    from test_health import prepare, sample
+    from test_reports import body, sections
+    from test_reviews import data, headers
+
+    _, _, users, _ = team
+    project, _ = prepare(live, team)
+    pm = users['pm']
+    snapshot = sample(pm, project)
+    assert snapshot['health'] == 'green' and snapshot['publication']=='official'
+    milestone = data(pm.get(project + '/milestones'))['items'][0]['milestoneId']
+    data(pm.post(project + '/reports',headers=headers(),json=body(period=week_key(datetime.now(TZ).date()),
+        structuredFields=sections(milestone_progress=[{'milestoneId':milestone,'claim':'progress'}]))))
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'health', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm','reviewer'))})
+
+
 def test_browser_delivery_through_archive(live, team):
     _, _, users, _ = team
     pm, reviewer, customer = (users[k] for k in ('pm', 'reviewer', 'client_representative'))

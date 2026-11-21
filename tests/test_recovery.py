@@ -8,13 +8,19 @@ import sys
 from hashlib import sha256
 from uuid import uuid4
 
+from argon2 import PasswordHasher
+import httpx
 import psycopg
 from psycopg import sql
 import pytest
 import sqlalchemy as sa
 
 from pmo import evidence_storage, recovery, schema_v1 as db
+from pmo.health_calculation import TZ, week_key
+from test_database_roles import serve
 from test_evidence import binary
+from test_reports import body, data, headers, sections
+from test_reviews import data_login, member
 
 
 @pytest.fixture
@@ -45,18 +51,29 @@ def recovery_db(tmp_path, monkeypatch):
 def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monkeypatch):
     admin, source, engine, originals, tools, control = recovery_db
     png = binary('png')
-    owner = uuid4()
+    owner, verifier = uuid4(), uuid4()
+    password = uuid4().hex
     with engine.begin() as conn:
         org = conn.scalar(db.organizations.insert().values(name='Recovery fixture', status='active').returning(db.organizations.c.id))
-        conn.execute(db.persons.insert().values(id=owner, created_by=owner, name='Fixture owner', org_id=org, is_active=True))
+        digest = PasswordHasher(time_cost=1, memory_cost=8192).hash(password)
+        for person, username in ((owner, 'fixture-pm'), (verifier, 'fixture-reviewer')):
+            account = conn.scalar(db.user_accounts.insert().values(username=username, password_hash=digest, is_active=True)
+                                  .returning(db.user_accounts.c.id))
+            conn.execute(db.persons.insert().values(id=person, created_by=person, name=username, org_id=org,
+                                                   is_active=True, user_id=account))
         project = conn.scalar(db.projects.insert().values(org_id=org, code='DRILL', name='Recovery fixture', stage='drafting',
-                             revision=1, initiator_id=owner, created_by=owner).returning(db.projects.c.id))
+                             revision=1, initiator_id=owner, created_by=owner, pm_id=owner).returning(db.projects.c.id))
+        member(conn, project, owner, owner, 'pm')
+        member(conn, project, verifier, owner, 'reviewer')
         milestone = conn.scalar(db.milestones.insert().values(project_id=project, created_by=owner, name='Deliver', ordinal=1,
                                 planned_date=date(2026, 10, 1), is_key=True).returning(db.milestones.c.id))
         legacy_report = conn.scalar(db.reports.insert().values(project_id=project, created_by=owner, author_id=owner,
             type='weekly', period='2026-W40', period_start=date(2026, 9, 28), period_end=date(2026, 10, 5),
             version_no=1, is_current=True, is_current_confirmed=True, status='confirmed', structured_fields={},
             narrative='Preserve legacy report text', submitted_at=datetime(2026, 10, 5, tzinfo=UTC)).returning(db.reports.c.id))
+        old_snapshot = conn.scalar(db.health_snapshots.insert().values(project_id=project, as_of=datetime(2026, 10, 5, tzinfo=UTC),
+            data_trust='trusted', input_hash='a'*64, input_revisions={}, results={'health': 'green'},
+            rule_version='legacy-synthetic', source_refs=[f'report:{legacy_report}@1']).returning(db.health_snapshots.c.id))
 
     def upload(content=png, resource='milestone', resource_id=milestone, name='record.png', mime='image/png'):
         key = uuid4().hex
@@ -75,6 +92,25 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         assert c.scalar(sa.text('SELECT version_num FROM alembic_version')) == '0016'
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True,
                    env={**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)})
+    path = f'projects/{project}'
+    with engine.begin() as c:
+        c.execute(db.projects.update().where(db.projects.c.id == project).values(stage='executing'))
+        original_id = c.scalar(sa.select(db.evidence_files.c.id).where(db.evidence_files.c.storage_key == original))
+    with serve(source, tmp_path, evidence_dir=originals) as pm:
+        pm.headers['X-CSRF-Token'] = data_login(pm, 'fixture-pm', password)
+        with httpx.Client(base_url=pm.base_url, trust_env=False) as reviewer:
+            reviewer.headers['X-CSRF-Token'] = data_login(reviewer, 'fixture-reviewer', password)
+            proof = data(reviewer.post(f'evidence/{original_id}/verify', headers=headers(1),
+                json={'reason':'Compared the synthetic source bytes', 'sha256':sha256(png).hexdigest()}))
+        report = data(pm.post(path + '/reports', headers=headers(), json=body(period=week_key(datetime.now(TZ).date()),
+            narrative='Synthetic source trail retained after recovery', structuredFields=sections(milestone_progress=[{
+                'milestoneId':str(milestone), 'claim':'progress', 'evidenceRefs':[proof['evidenceRef']]}]))))
+        published = data(pm.post(f"reports/{report['reportId']}/confirm", headers=headers(report['revision'])))
+        snapshot = data(pm.post(path + '/health/refresh', headers=headers(1)))
+        weekly = snapshot['inputs']['weekly']
+        assert weekly['receipts'][0]['hash'] == published['contentHash']
+        assert weekly['claims'][0]['evidence'][0]['sha256'] == sha256(png).hexdigest()
+        assert not weekly['missingEvidence'] and snapshot['snapshotId'] != str(old_snapshot)
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -118,8 +154,16 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
             assert restored.execute('''SELECT narrative, content_hash, submitted_by, confirmed_by, confirmed_at
                 FROM public.reports WHERE id=%s''', (legacy_report,)).fetchone() == ('Preserve legacy report text', None, None, None, None)
+            assert restored.execute('SELECT results FROM health_snapshots WHERE id=%s', (old_snapshot,)).fetchone() == ({'health':'green'},)
+            assert restored.execute('''SELECT content_hash,submitted_by,confirmed_by,revision FROM reports WHERE id=%s''',
+                (published['reportId'],)).fetchone() == (published['contentHash'], owner, owner, published['revision'])
             monkeypatch.setenv('PMO_EVIDENCE_DIR', str(targets / receipt['evidenceDirectory']))
             assert {r[0]: evidence_storage.checked_bytes(*r[:3]) for r in rows} == {original: png, external: book}
+        with serve(admin.set(database=name), tmp_path, evidence_dir=targets / receipt['evidenceDirectory']) as pm:
+            pm.headers['X-CSRF-Token'] = data_login(pm, 'fixture-pm', password)
+            readback = data(pm.get(path + '/health', params={'asOf':snapshot['asOf']}))
+            assert readback['historical'] and readback['snapshotId'] == snapshot['snapshotId']
+            assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
         assert {p.name for p in originals.iterdir()} == {original, external, orphan, late[0]}
     finally:
         control.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))

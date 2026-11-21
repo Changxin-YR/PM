@@ -1,5 +1,6 @@
 """Only contract operations backed by a live implementation belong here."""
 ROUTES = {
+    'pmo_health_get': ('GET', '/projects/{projectId}/health'),
     'pmo_task_list': ('GET', '/projects/{projectId}/tasks'),
     'pmo_task_update': ('PATCH', '/tasks/{taskId}'),
     'pmo_report_list': ('GET', '/projects/{projectId}/reports'),

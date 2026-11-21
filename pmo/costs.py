@@ -1,9 +1,11 @@
 from decimal import Decimal
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.engine import RowMapping
 from fastapi import APIRouter
 from pydantic import AwareDatetime, Field
 
@@ -113,6 +115,44 @@ class Summary(Strict):
     canSaveForecast: bool | None = None
 
 
+@dataclass(frozen=True)
+class CostBasis:
+    pid: UUID
+    plan: RowMapping | None
+    budgets: list[RowMapping]
+    verified: list[RowMapping]
+
+    def amounts(self, kind):
+        rows = [r for r in self.budgets if r.type == kind]
+        budget = sum((r.budget for r in rows), Decimal(0)) if rows else None
+        actual = sum((r.amount_signed for r in self.verified if r.type == kind), Decimal(0))
+        remaining = self.plan[kind + '_remaining'] if self.plan else None
+        if remaining is None:
+            remaining = sum((r.forecast_remaining for r in rows), Decimal(0))
+        return budget, actual, remaining
+
+    def budget_refs(self, kind):
+        return [f'cost-entry:{r.entry_id}@{r.seq}' for r in self.budgets if r.type == kind]
+
+    def refs(self, kind=None):
+        return ([f'cost-plan:{self.pid}@{self.plan.revision}'] if self.plan else []) + [
+            f'cost-entry:{r.entry_id}@{r.seq}' for r in self.budgets if kind is None or r.type == kind] + [
+            f'cost-posting:{r.id}' for r in self.verified if kind is None or r.type == kind]
+
+
+def cost_basis(c, pid: UUID, at: datetime) -> CostBasis:
+    plan = c.execute(latest_plan(pid).where(plans.c.effective_at <= at)).mappings().one_or_none()
+    # First pick each entry's last state at the cutoff, THEN drop retired entries.
+    rows = c.execute(sa.text('''SELECT * FROM (SELECT DISTINCT ON(entry_id) * FROM cost_baseline_history
+        WHERE project_id=:pid AND effective_at<=:at ORDER BY entry_id,effective_at DESC,seq DESC) s
+        WHERE is_current ORDER BY entry_id'''), {'pid': pid, 'at': at}).mappings().all()
+    postings = db.cost_postings.c
+    verified = c.execute(sa.select(postings.id, postings.type, postings.amount_signed, postings.verified_at,
+        postings.occurred_at).where(postings.project_id == pid, postings.status == 'verified',
+        postings.verified_at <= at, postings.occurred_at <= at).order_by(postings.id)).mappings().all()
+    return CostBasis(pid, plan, list(rows), list(verified))
+
+
 @router.get('/projects/{projectId}/costs',operation_id='pmo_cost_summary',response_model_exclude_none=True)
 def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Result[Summary]:
     op = 'pmo_cost_summary'
@@ -122,25 +162,12 @@ def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Res
         at = asOf or now
         if at>now: raise Failure(422,'FUTURE_AS_OF')
         if at<project.created_at: raise Failure(404,'RESOURCE_NOT_FOUND')
-        plan = c.execute(latest_plan(projectId).where(plans.c.effective_at<=at)).mappings().one_or_none()
-        refs = [f'project:{projectId}']
-        if plan: refs.append(f'cost-plan:{projectId}@{plan.revision}')
-        # First pick each entry's last state at the cutoff, THEN drop retired entries.
-        rows = c.execute(sa.text('''SELECT * FROM (SELECT DISTINCT ON(entry_id) * FROM cost_baseline_history
-            WHERE project_id=:pid AND effective_at<=:at ORDER BY entry_id,effective_at DESC,seq DESC) s
-            WHERE is_current ORDER BY entry_id'''),{'pid':projectId,'at':at}).mappings().all()
-        postings = db.cost_postings.c
-        verified = c.execute(sa.select(postings.id,postings.type,postings.amount_signed).where(postings.project_id==projectId,
-            postings.status=='verified',postings.verified_at<=at,postings.occurred_at<=at).order_by(postings.id)).mappings().all()
-        refs.extend(f'cost-entry:{r.entry_id}@{r.seq}' for r in rows)
-        refs.extend(f'cost-posting:{r.id}' for r in verified)
+        basis = cost_basis(c, projectId, at)
+        plan = basis.plan
+        refs = [f'project:{projectId}', *basis.refs()]
         def line(kind):
-            entries = [r for r in rows if r.type==kind]
-            budget = sum((r.budget for r in entries),Decimal(0)) if entries else None
-            actual = sum((r.amount_signed for r in verified if r.type==kind),Decimal(0))
-            remaining = plan[kind+'_remaining'] if plan else None
-            if remaining is None: remaining = sum((r.forecast_remaining for r in entries),Decimal(0))
-            result = cost_line(budget,actual,remaining)
+            budget, actual, remaining = basis.amounts(kind)
+            result = cost_line(budget,actual,remaining,zero_declared=zero_budget_claim(c,basis,kind,at) is not None)
             return Line(budget=format(budget or Decimal(0),'.2f'),actual=format(actual,'.2f'),forecastRemaining=format(remaining,'.2f'),
                 projectedTotal=format(result.projected,'.2f'),varianceRate=format(result.variance,'.4f') if result.variance is not None else None,color=result.color)
         editor = a.kind=='human' and asOf is None and can_manage(c,a,project)
@@ -151,3 +178,10 @@ def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Res
         info = meta(op,refs); info.asOf = at
         return Result[Summary](data=data,meta=info)
     return run(authorization,op,query)
+
+
+def zero_budget_claim(c, basis: CostBasis, kind, at: datetime) -> RowMapping | None:
+    from .health_schema import zero_budgets
+    col = zero_budgets.c
+    return c.execute(sa.select(zero_budgets).where(col.project_id == basis.pid, col.kind == kind,
+        col.baseline_hash == fingerprint(basis.budget_refs(kind)), col.declared_at <= at)).mappings().one_or_none()

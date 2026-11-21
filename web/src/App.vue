@@ -24,6 +24,7 @@ import IncomingRisk from './IncomingRisk.vue'
 import TerminationConfirmations from './TerminationConfirmations.vue'
 import Reports from './Reports.vue'
 import Tasks from './Tasks.vue'
+import Health from './Health.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),page=ref(1),total=ref(0),rows=ref<Project[]>([])
@@ -57,6 +58,7 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
       MILESTONE_COMPLETION_REQUIRED:'全部有效里程碑须完成并附核验凭证。',
       RETROSPECTIVE_ANSWERS_REQUIRED:'请先保存完整的复盘四问。',CONFIRMED_LESSON_REQUIRED:'归档须有至少一条经独立人工确认的教训。',
       REVIEW_SNAPSHOT_STALE:'已冻结的评审材料发生变化，请撤回后重送。',
+      HEALTH_APPEAL_LIMIT:'该快照已申诉过一次。',ZERO_BUDGET_BASIS_STALE:'预算基线已变化，请重新读取后声明。',
     }
     throw Error(descriptions[body.code]||(typeof body.code==='string'?`操作失败（${body.code}）`:`操作失败（${r.status}）`))
   }
@@ -106,6 +108,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane name="lifecycle" label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api" @stage-read="stageRead"/></el-tab-pane>
     <el-tab-pane name="tasks" label="补强任务" lazy><Tasks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane name="reports" label="日报周报" lazy><Reports :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="health" label="三线健康" lazy><Health :project-id="materialProject.projectId" :active="materialTab==='health'" :api="api"/></el-tab-pane>
     <el-tab-pane name="retrospective" label="复盘与教训" lazy><Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"/></el-tab-pane>
   </el-tabs>
 </el-drawer>

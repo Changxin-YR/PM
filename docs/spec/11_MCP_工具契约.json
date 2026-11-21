@@ -7502,6 +7502,16 @@
                   "requirementSatisfactionRate": {
                     "type": "string"
                   },
+                  "publication": {
+                    "enum": ["official", "preview", "withheld", "unavailable"]
+                  },
+                  "historical": {
+                    "type": "boolean"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
                   "dataTrust": {
                     "type": "string"
                   },

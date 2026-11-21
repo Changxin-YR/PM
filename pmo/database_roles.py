@@ -29,7 +29,8 @@ API_READ = frozenset('''organizations user_accounts user_roles persons projects
     rule_events review_submission_snapshots project_stage_transitions tasks review_appeals review_confirmations
     review_decision_snapshots review_strengthening_tasks cost_reconciliation_grants cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
-    requirement_exception_events project_termination_confirmations'''.split())
+    requirement_exception_events project_termination_confirmations health_snapshots health_appeals
+    health_appeal_decisions health_zero_budgets project_rule_scan_state'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders reports
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures
@@ -39,7 +40,8 @@ API_ADD = frozenset('''projects project_members charters charter_versions milest
     rule_events review_submission_snapshots project_stage_transitions tasks scorecards decisions
     review_appeals review_confirmations review_decision_snapshots review_strengthening_tasks cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
-    requirement_exception_events project_termination_confirmations'''.split())
+    requirement_exception_events project_termination_confirmations health_snapshots health_appeals
+    health_appeal_decisions health_zero_budgets project_rule_scan_state'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
@@ -71,6 +73,7 @@ API_EDIT = {
     'evidence_links': 'revision verification_note',
     'milestone_delay_episodes': 'closing_revision',
     'rule_events': 'status updated_at',
+    'project_rule_scan_state': 'dirty last_daily_slot last_scanned_at',
 }
 WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbox', 'rule_events'})
 WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'notifications'})
@@ -180,7 +183,7 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
         # A narrowly scoped grant for the version log's identity value.
         conn.execute(sql.SQL('GRANT USAGE ON SEQUENCE public.cost_baseline_history_seq_seq TO {}').format(sql.Identifier(api)))
         # ON CONFLICT and RETURNING require SELECT on the referenced columns only.
-        grant(conn, api, 'outbox_events', 'SELECT', 'id')
+        grant(conn, api, 'outbox_events', 'SELECT', 'id dedupe_key')
         grant(conn, worker, 'notifications', 'SELECT', 'rule_event_id recipient_person_id')
 
 
