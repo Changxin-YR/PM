@@ -173,3 +173,14 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py -k termination_pending_from_sponsor --tb=short --junitxml=.local/lifecycle-authority-first.xml` | 1 | FAIL：执行中和暂停中，独立 PM 的申请均被错误返回 `TRANSITION_REQUEST_PENDING`。`.local/lifecycle-authority-first.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py tests/test_mcp_transition.py --tb=short --junitxml=.local/lifecycle-authority-affected.xml` | 0 | PASS：9 项 / 27.70 秒，`.local/lifecycle-authority-affected.log`。回读独立终止、重复与跨项目拒绝、Agent 不能批准、暂停恢复、落地返工和交付返工的权限与落库记录。 |
 | `.venv/Scripts/python.exe -m pytest -q 'tests/test_lifecycle.py::test_termination_pending_from_sponsor_does_not_block_independent_pm_request[on_hold]' --tb=short --junitxml=.local/rc0030-terminated-archive.xml` | 0 | PASS：1 项 / 12.54 秒，`.local/rc0030-terminated-archive.log`。`on_hold→terminated→retrospective→archived` 保留终止类型和四问，缺答复或确认 Lesson 时拒绝；有权独立人归档，阶段历史无 `closed`。 |
+
+## 裁决审计关联与暂停、恢复权限
+
+源条款：§6.2–6.3、§20.4–20.5、LR-01。基准 SHA `14d6a0b7f39b580d0928ba46c0360769180105a8`，通过 Edge 的源码树 `b838686f61f948b7b8fc475f226ae30ebecb5299`；后端运行时的提交内容相同，仅浏览器断言随后追加。关口和非关口裁决在原事务内写 `audit_logs.decision_id`，正式回执和审计带裁决来源，Outbox 与裁决快照共享编号；管理员按组织和请求号读取。未补造历史审计，未改迁移、权重、审批角色或签核状态。实现 `pmo/review_outcomes.py`、`pmo/project_lifecycle.py`、`pmo/projects.py`、`pmo/audits.py`、`web/src/AuditLog.vue`。Windows、PostgreSQL 16 隔离 schema、回环 HTTP/stdio、Edge，合成账号，无真实签核。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py::test_charter_atomic_decision_acl_replay_and_concurrency tests/test_lifecycle.py::test_pause_resume_checks_sponsor_deadline_and_stale_revision --tb=short --junitxml=.local/decision-audit-first.xml` | 1 | FAIL：两项，分别复现关口回执没有裁决引用、暂停裁决的组织审计没有 `decisionId`。`.local/decision-audit-first.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_admin_audit.py tests/test_mcp_transition.py tests/test_requirement_disputes.py tests/test_requirement_exceptions.py tests/test_runtime.py --tb=short --junitxml=.local/decision-audit-verified.xml` | 0 | PASS：37 项 / 62.67 秒，`.local/decision-audit-verified.log`。挡住 PM 自批、Reviewer 和同项目管理员批准暂停与恢复；独立 Sponsor 正例；回读 Decision/审计/Outbox 同号，失败未留下半条业务记录。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_draft_workflow tests/browser_case.py::test_browser_drafting_through_archive_without_model --tb=short --junitxml=.local/decision-audit-edge-retest.xml` | 0 | PASS：2 项 / 75.85 秒，`.local/decision-audit-edge-retest.log`。立项后重登和刷新仍可经请求号查裁决 ID；正常无模型归档回归。初次同组选例 1 FAIL / 1 PASS（`.local/decision-audit-edge.log`，退出 1）：新增检查使用已经正常登出的管理员页；显式重新登录后保留原断言。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：规格、Python 和 Vue 类型检查；`.local/decision-audit-check.log`、`.local/decision-audit-vue.log`。 |

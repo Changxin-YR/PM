@@ -30,6 +30,7 @@ class AuditEntry(Strict):
     actorId: UUID
     delegatedBy: UUID | None
     projectId: UUID | None
+    decisionId: UUID | None
     action: str
     result: Outcome
     errorCode: str | None
@@ -60,9 +61,10 @@ def listing(authorization: Auth, page: int=Query(1,ge=1), pageSize: int=Query(20
             conditions.append(log.result==result)
         n=c.execute(sa.select(sa.func.count()).select_from(audit).where(*conditions)).scalar_one()
         stmt=sa.select(log.id,log.created_at,log.request_id,log.actor_type,log.actor_id,log.delegated_by,
-            log.project_id,log.action,log.result,log.error_code,log.rule_version,log.source_refs,log.after_hash).where(*conditions).order_by(log.created_at.desc(),log.id)
+            log.project_id,log.decision_id,log.action,log.result,log.error_code,log.rule_version,log.source_refs,log.after_hash
+            ).where(*conditions).order_by(log.created_at.desc(),log.id)
         items=[AuditEntry(auditId=r.id,createdAt=r.created_at,requestId=r.request_id,actorType=r.actor_type,
-               actorId=r.actor_id,delegatedBy=r.delegated_by,projectId=r.project_id,action=r.action,
+               actorId=r.actor_id,delegatedBy=r.delegated_by,projectId=r.project_id,decisionId=r.decision_id,action=r.action,
                result=r.result,errorCode=r.error_code,ruleVersion=r.rule_version,sourceRefs=r.source_refs,
                responseHash=r.after_hash) for r in c.execute(stmt.limit(pageSize).offset((page-1)*pageSize)).mappings()]
         return Result[AuditPage](data=AuditPage(items=items,page=page,pageSize=pageSize,total=n),meta=meta(op,[f'audit:{i.auditId}' for i in items]))

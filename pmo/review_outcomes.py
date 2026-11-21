@@ -569,10 +569,20 @@ def write_action(auth, op, review_id, command, key, expected):
                 saved, destination = execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid)
         # Reload cannot apply a stage update of its own. The response and all writes share this transaction.
         project = lock_project(c, a, p.id, write=True) if destination != p.stage else p
-        result = Result[Workbench](data=workbench(c, a, project, saved, frozen), meta=meta(op, [f'review:{review_id}@{saved.revision}']))
+        state = workbench(c, a, project, saved, frozen)
+        refs = [f'review:{review_id}@{saved.revision}']
+        event_data = {}
+        decision_id = None
+        if op == DECIDE:
+            assert state.decision is not None
+            decision_id = state.decision.decisionId
+            refs.extend(state.decision.sourceRefs)
+            event_data['decisionId'] = str(decision_id)
+        result = Result[Workbench](data=state, meta=meta(op, refs))
         body = result.model_dump(mode='json', exclude_none=True)
-        record_receipt(c, a, key, op, rid, review.id, p.id, signature, body, fingerprint(body), fingerprint(snapshot(review)))
-        event(c, rid, op, p, saved, stage=destination, revision=saved.revision)
+        record_receipt(c, a, key, op, rid, review.id, p.id, signature, body, fingerprint(body), fingerprint(snapshot(review)),
+                       decision_id=decision_id)
+        event(c, rid, op, p, saved, stage=destination, revision=saved.revision, **event_data)
         return result
 
     return run(auth, op, write, after_denied=lambda c, a, failure, rid: shortfall_after_denial(c, a, failure, rid, review_id, expected))

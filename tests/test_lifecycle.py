@@ -333,19 +333,45 @@ def test_closing_rework_and_then_authorized_termination(live, team):
 
 
 def test_pause_resume_checks_sponsor_deadline_and_stale_revision(live, team):
-    _, _, users, _ = team
-    pm, sponsor, reviewer = (users[r] for r in ('pm', 'sponsor', 'reviewer'))
+    pid, people, users, _ = team
+    pm, sponsor, reviewer, admin = (users[r] for r in ('pm', 'sponsor', 'reviewer', 'outsider'))
     project, _, _ = execution_fixture(live, team)
+    engine = live[0]
+    with engine.begin() as c:
+        uid = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people['outsider']))
+        c.execute(db.user_roles.insert().values(user_id=uid, role='system_admin'))
+    assert stage(admin, project)['stage'] == 'executing'
+    for unauthorized in (sponsor, reviewer, admin):
+        assert propose(unauthorized, project, 'on_hold').status_code == 403
     pause = data(propose(pm, project, 'on_hold'))
     expiry = datetime.now(UTC) + timedelta(hours=1)
-    assert judgment(pm, pause, holdUntil=expiry.isoformat()).status_code == 403
-    assert judgment(reviewer, pause, holdUntil=expiry.isoformat()).status_code == 403
+    for unauthorized in (pm, reviewer, admin):
+        denied = judgment(unauthorized, pause, holdUntil=expiry.isoformat())
+        assert (denied.status_code, denied.json()['code']) == (403, 'INDEPENDENT_APPROVER_REQUIRED')
+        log, = data(admin.get('admin/audits', params={'requestId': denied.headers['X-Request-ID']}))['items']
+        assert (log['result'], log['projectId'], log.get('decisionId')) == ('denied', pid, None)
+    assert execute(pm, project, pause).status_code == 403
+    assert stage(pm, project)['stage'] == 'executing'
     assert judgment(sponsor, pause).json()['code'] == 'INVALID_HOLD_UNTIL'
     assert judgment(sponsor, pause, holdUntil=(expiry - timedelta(hours=2)).isoformat()).json()['code'] == 'INVALID_HOLD_UNTIL'
-    held = data(judgment(sponsor, pause, holdUntil=expiry.isoformat()))
+    approved = judgment(sponsor, pause, holdUntil=expiry.isoformat())
+    held = data(approved)
     assert datetime.fromisoformat(held['holdUntil']) == expiry and stage(pm, project)['stage'] == 'on_hold'
     assert judgment(sponsor, pause, holdUntil=expiry.isoformat()).json()['code'] == 'VERSION_CONFLICT'
+    rid = approved.headers['X-Request-ID']
+    log, = data(admin.get('admin/audits', params={'requestId': rid}))['items']
+    assert (log['result'], log['projectId'], log['decisionId']) == ('success', pid, held['decisionId'])
+    assert f"decision:{held['decisionId']}@1" in log['sourceRefs']
+    with engine.connect() as c:
+        event = c.scalar(sa.select(db.outbox_events.c.payload).where(db.outbox_events.c.dedupe_key == rid))
+        assert event['decisionId'] == held['decisionId']
+    for unauthorized in (sponsor, reviewer, admin):
+        assert propose(unauthorized, project, 'executing').status_code == 403
     resume = data(propose(pm, project, 'executing'))
+    for unauthorized in (pm, reviewer, admin):
+        assert judgment(unauthorized, resume).status_code == 403
+    assert execute(pm, project, resume).status_code == 403
+    assert stage(pm, project)['stage'] == 'on_hold'
     resumed = data(judgment(sponsor, resume))
     assert datetime.fromisoformat(resumed['holdUntil']) == expiry and stage(pm, project)['stage'] == 'executing'
 

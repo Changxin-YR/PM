@@ -308,11 +308,19 @@ def entry(c, a, p, req, intent):
 
 
 def finish(c, a, p, req, op, rid, key, signature, item, refs):
-    result = Result[type(item)](data=item, meta=meta(op, [f'approval:{req.id}', *refs]))
+    sources = [f'approval:{req.id}', *refs]
+    event = {'projectId': str(p.id), 'approvalRequestId': str(req.id), 'status': item.status, 'toStage': item.toStage}
+    decision_id = None
+    if op == DECIDE:
+        assert isinstance(item, Entry) and item.decisionId is not None
+        decision_id = item.decisionId
+        sources.append(f'decision:{decision_id}@1')
+        event['decisionId'] = str(decision_id)
+    result = Result[type(item)](data=item, meta=meta(op, sources))
     response = result.model_dump(mode='json', exclude_none=True)
-    record_receipt(c, a, key, op, rid, req.id, p.id, signature, response, fingerprint(response), req.snapshot_hash)
-    c.execute(db.outbox_events.insert().values(event_type=op, dedupe_key=rid, status='pending',
-        payload={'projectId': str(p.id), 'approvalRequestId': str(req.id), 'status': item.status, 'toStage': item.toStage}))
+    record_receipt(c, a, key, op, rid, req.id, p.id, signature, response, fingerprint(response), req.snapshot_hash,
+                   decision_id=decision_id)
+    c.execute(db.outbox_events.insert().values(event_type=op, dedupe_key=rid, status='pending', payload=event))
     return result
 
 

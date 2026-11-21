@@ -428,10 +428,21 @@ def test_charter_atomic_decision_acl_replay_and_concurrency(live, team):
     assert all(i['assigneeId'] == str(people['pm']) and i['sourceType'] == 'review' for i in finished['tasks'])
     assert data(owner.get(f'projects/{pid}'))['project']['stage'] == 'designing'
     assert decide(human, path).json()['code'] == 'REVIEW_NOT_PENDING'
+    decision_id = finished['decision']['decisionId']
+    rid = first.headers['X-Request-ID']
+    decision_ref = f'decision:{decision_id}@1'
+    assert decision_ref in first.json()['meta']['sourceRefs']
+    audit, = data(pm.get('admin/audits', params={'requestId': rid}))['items']
+    assert (audit['decisionId'], audit['projectId'], audit['action'], audit['result']) == (
+        decision_id, pid, 'human_review_decide', 'success')
+    assert decision_ref in audit['sourceRefs']
     with engine.connect() as c:
         assert result_counts(c, pid) == ('designing', 1, 1, 2, 1, 1, 1, 3)
-        row = c.execute(sa.text('SELECT * FROM review_decision_snapshots WHERE request_id=:rid'), {'rid': first.headers['X-Request-ID']}).mappings().one()
+        row = c.execute(sa.text('SELECT * FROM review_decision_snapshots WHERE request_id=:rid'), {'rid': rid}).mappings().one()
         assert row.payload_hash == fingerprint(row.payload) and len(row.payload['scorecards']) == 2
+        log_id = c.scalar(sa.select(db.audit_logs.c.decision_id).where(db.audit_logs.c.request_id == rid))
+        event = c.scalar(sa.select(db.outbox_events.c.payload).where(db.outbox_events.c.dedupe_key == rid))
+        assert str(log_id) == str(row.decision_id) == event['decisionId'] == decision_id
 
 
 def test_charter_veto_appeal_preserves_opinions_fast_confirmation(live, team):

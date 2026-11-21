@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import json
+from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from . import schema_v1 as db
@@ -107,10 +108,10 @@ def create(header,command,key):
         return result
     return run(header,op,write)
 
-def record_receipt(c,a,key,op,request_id,resource_id,pid,payload_hash,response,digest,before=None):
+def record_receipt(c,a,key,op,request_id,resource_id,pid,payload_hash,response,digest,before=None,*,decision_id: UUID | None=None):
     c.execute(db.idempotency_keys.insert().values(actor_id=a.credential,actor_type=a.kind,org_id=a.org,delegated_by=a.person if a.kind=='agent' else None,idempotency_key=key,operation=op,completed_at=sa.func.now(),expires_at=datetime.now(UTC)+timedelta(days=90),request_hash=payload_hash,response_body=response,response_hash=digest,response_status=200,status='completed',resource_id=resource_id))
     c.execute(audit.insert().values(action=op,actor_type=a.kind,actor_id=a.credential,delegated_by=a.account if a.kind=='agent' else None,org_id=a.org,project_id=pid,before_hash=before,after_hash=digest,result='success',request_id=request_id,idempotency_key=key,rule_version=RULE_VERSION,
-        source_refs=stable_refs(response.get('meta', {}).get('sourceRefs', []))))
+        decision_id=decision_id,source_refs=stable_refs(response.get('meta', {}).get('sourceRefs', []))))
     if pid is not None and op in SCAN_SOURCE_WRITES:
         request_scan(c, pid)
 
