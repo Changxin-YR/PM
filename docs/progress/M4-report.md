@@ -176,3 +176,15 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit`；`docker @stack build` | 0 | PASS：规格、类型、候选镜像；`.local/rc0030-check.log`、`.local/rc0030-compose-build.log`，保留 Web 包体积告警。 |
 
 隔离 Compose `pmo104-rc-0c3c7df1` 停写备份后以 `docker @stack up --no-deps --abort-on-container-exit --exit-code-from migrate migrate` 迁移，再 `up -d --wait` 启动候选服务，退出 0（`.local/rc0030-compose-verify.log`）。升级 `0029→0030` 保留 15 项目、30 消费回执、33 审计；存活/就绪 200、两模型开关关闭。该合成运行库不含附件原件；带附件升级和恢复单独见 [M2](M2-report.md#0030-结项撤回按冻结状态表回到执行)。共享库未迁移。以上不改变 T09、真实模型、试点、签核或生产状态。
+
+## 0031 财务有限数及续版恢复
+
+依据：领域不变量 §2、§3、数据库一致性第 2 节、主方案 §9.1、LR-04/LR-07、FND-002、T10。基准 `bb0cdb771fdc6a5af5c50fc19447b0f4998c891a`，验证源码树 `f9fc46a663390f7c9cba67836e9294e9fe7fb963`（不含证据文档）。Windows、PostgreSQL 16.14、本机回环 HTTP 与隔离 schema/专库，合成数据。`migrations/versions/0031_finite_costs.py` 追加约束，保护预算、计划预测、历史基线和有符号的凭证金额；金额/人天继续采用 `NUMERIC`，合法的 0、负向冲销及可空的计划字段不变。升级校验存量，异常则整个迁移回滚，不纠正旧值、不改写已应用迁移。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_postgres_invariants.py --tb=short --junitxml=.local/cost-db-0030.xml` | 1 | FAIL：1 项 / 1 PASS；`.local/cost-db-0030.log`。在旧 head 复现成本表接受 `NaN`；项目/类型/期间、独立核验、全额冲销和部分唯一索引反例通过。前两版夹具缺 `baseline_version`、`revision`，独立保留 `.local/cost-db-first.log`、`.local/cost-db-baseline.log`，均退出 1。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_postgres_invariants.py tests/test_costs.py tests/test_postings.py tests/test_database_roles.py tests/test_recovery.py --tb=short --junitxml=.local/rc0031-cost-recovery.xml` | 1 | FAIL：1 项 / 8 PASS；`.local/rc0031-cost-recovery.log`。原生 SQL 测试参数误为字符串 UUID；修正参数类型，保留失败断言。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_postgres_invariants.py tests/test_costs.py tests/test_postings.py tests/test_cost_reconciliation.py tests/test_database_roles.py tests/test_recovery.py tests/test_runtime.py --tb=short --junitxml=.local/rc0031-cost-verified.xml` | 0 | PASS：24 项 / 61.22 秒；`.local/rc0031-cost-verified.log`。覆盖四表拒绝、历史异常使所有新约束与 `alembic_version` 一起回滚、核验不可改、重复来源/冲销、独立实际值对账、受限角色；`0016→0029→0031` 带数据升级并联合恢复，真实回读金额 `65.25`、人天 `3.75`、基线、预测、来源及三份原件，候选流水不重复入账。 |
+| `.venv/Scripts/python.exe -m scripts.schema_erd --check .local/erd-0031.md`；`pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：隔离 PostgreSQL 新图与 `docs/erd.md` 一致（78 表、202 外键），三套规格检查与 mypy 87 源文件 `.local/rc0031-check.log`。 |
+| `docker compose -p pmo104-rc-f98acc11 --env-file .local/pmo104-rc-f98acc11.env -f deploy/compose.yaml up --build -d --wait`；`.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-f98acc11` | 0 | PASS；`.local/rc0031-compose-build.log`、`.local/rc0031-compose-smoke.log`。新增本机回环候选栈，不动既有 `0030` 或共享 `0016`；四条 `ck_*_finite` 均 `convalidated=true`。受限进程、双模型关闭、15 项目与去重回执；真实停库时 503，复启恢复 200；登出 200 且旧会话不可再用。Edge `158.0.4370.33` 30 次/操作，p95 筛选/详情各 43ms，非目标环境性能结论。 |

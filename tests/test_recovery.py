@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 import json
 import os
 from pathlib import Path
@@ -62,6 +63,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     password = uuid4().hex
     preupgrade_session, preupgrade_csrf = uuid4().hex, uuid4().hex
     legacy_request_id = str(uuid4())
+    ledger = {}
     with engine.begin() as conn:
         org = conn.scalar(db.organizations.insert().values(name='Recovery fixture', status='active').returning(db.organizations.c.id))
         digest = PasswordHasher(time_cost=1, memory_cost=8192).hash(password)
@@ -99,6 +101,28 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         old_fact = conn.scalar(db.facts.insert().values(project_id=project, report_id=legacy_report, created_by=owner,
             subject='Legacy synthetic fact', predicate='time', value='unknown', as_of=datetime(2026, 10, 5, tzinfo=UTC),
             quote='Legacy source', source_ref=f'report:{legacy_report}@1', trust='low', validation_status='candidate').returning(db.facts.c.id))
+        # Legacy budget and source rows exercise both units independently of model output.
+        for kind, budget, actual, left in (('money', '100.00', '65.25', '5.10'), ('effort', '10.00', '3.75', '1.25')):
+            e, p = db.cost_entries, db.cost_postings
+            entry = conn.scalar(e.insert().values(project_id=project, created_by=owner, type=kind,
+                category='recovery budget', is_current_baseline=True, baseline_version=1,
+                period_start=date(2020, 2, 1), period_end=date(2020, 2, 29), budget=Decimal(budget), actual=0,
+                forecast_remaining=Decimal(left)).returning(e.c.id))
+            source_fields = dict(project_id=project, created_by=owner, cost_entry_id=entry, type=kind, source_type=kind,
+                amount_signed=Decimal(actual), occurred_at=datetime(2020, 2, 15, tzinfo=UTC), period='2020-02',
+                source_ref=f'Synthetic 0016 {kind} evidence', source_fingerprint=sha256(kind.encode()).hexdigest())
+            verified = conn.scalar(p.insert().values(**source_fields, status='verified', verified_by=verifier,
+                verified_at=sa.func.now(), verification_note='Verified 0016 synthetic source').returning(p.c.id))
+            pending = conn.scalar(p.insert().values(**source_fields, status='pending').returning(p.c.id))
+            ledger[kind] = (entry, verified, pending, budget, actual, left)
+
+    def check_costs(response):
+        item = data(response)
+        refs = response.json()['meta']['sourceRefs']
+        for kind, (entry, verified, pending, budget, actual, left) in ledger.items():
+            assert (item[kind]['budget'], item[kind]['actual'], item[kind]['forecastRemaining']) == (budget, actual, left)
+            assert f'cost-posting:{verified}' in refs and f'cost-posting:{pending}' not in refs
+            assert any(ref.startswith(f'cost-entry:{entry}@') for ref in refs)
 
     def upload(content=png, resource='milestone', resource_id=milestone, name='record.png', mime='image/png'):
         key = uuid4().hex
@@ -161,6 +185,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         pm.headers['X-CSRF-Token'] = preupgrade_csrf
         identity = pm.get('auth/me')
         assert identity.status_code==200 and identity.json()['personId']==str(owner)
+        check_costs(pm.get(path + '/costs'))
         dispute_path = f'requirements/{requirement}/disputes'
         saved_dispute, = data(pm.get(dispute_path))['items']
         assert saved_dispute['disputeId'] == str(dispute) and saved_dispute['revision'] == 2
@@ -280,6 +305,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert {r[0]: evidence_storage.checked_bytes(*r[:3]) for r in rows} == {original: png, external: book, fact_attachment: sheet}
         with serve(admin.set(database=name), tmp_path, evidence_dir=targets / receipt['evidenceDirectory']) as pm:
             pm.headers['X-CSRF-Token'] = data_login(pm, 'fixture-pm', password)
+            check_costs(pm.get(path + '/costs'))
             readback = data(pm.get(path + '/health', params={'asOf':snapshot['asOf']}))
             assert readback['historical'] and readback['snapshotId'] == snapshot['snapshotId']
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)

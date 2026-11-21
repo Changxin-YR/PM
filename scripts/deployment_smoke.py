@@ -73,6 +73,7 @@ def main():
             ' print(c.exec_driver_sql("SELECT current_user || chr(58) || rolsuper::text FROM pg_roles WHERE rolname=current_user").scalar_one())')
         assert connected == f'{role}:false', service
     assert runtime('api', 'import os; print(os.getenv("PMO_REPORT_ANALYSIS"))') == '0'
+    assert runtime('api', 'import os; print(os.getenv("PMO_ASSISTANT_PREVIEWS"))') == '0'
     print(f'project={args.project} migration={head} roles=restricted model=off', flush=True)
 
     password = secrets.token_urlsafe(24)
@@ -129,7 +130,10 @@ def main():
         wait_for(lambda: probe() == (200, {'status': 'ready'}))
         assert client.get('/api/v1/projects').raise_for_status().json()['data']['total'] == 15
         assert delivered()
-        assert client.post('/api/v1/auth/logout', headers={'X-CSRF-Token': csrf}).status_code == 204
+        session = client.cookies['pmo_session']
+        signed_out = client.post('/api/v1/auth/logout', headers={'X-CSRF-Token': csrf})
+        assert signed_out.status_code == 200 and signed_out.json()['data'] == {'loggedOut': True}
+        assert client.get('/api/v1/auth/me', headers={'Cookie': f'pmo_session={session}'}).status_code == 401
     print('database_recovered live=200 ready=200 projects_preserved=15 outbox_deduped=15', flush=True)
 
 
