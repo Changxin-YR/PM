@@ -24,7 +24,7 @@
 "LR-04","§5.6","合成金额/人天>15%超支预警、严格>20%重估；来源与去重","Q2,Q7","PASS","pmo/cost_math.py;pmo/rule_scan.py","tests/test_cost_math.py;tests/test_health.py;docs/progress/M2-report.md"
 "LR-05","§4.2","未审批的需求变更冻结验收","Q8,T10","LOCAL_PENDING_FREEZE_EVENT_AND_METRICS","pmo/scope_quality.py;pmo/requirement_delivery.py","tests/test_requirement_baselines.py;tests/test_scope_quality.py"
 "LR-06","§5.6","两应交周期漏报或当期关键里程碑进展/完成无可核验佐证；数据不可信、任务、Outbox","Q7,T06","PASS","pmo/reports.py;pmo/health_calculation.py;pmo/rule_scan.py","tests/test_health.py;tests/test_database_roles.py;docs/progress/M2-report.md"
-"LR-07","§4.4;§5.3","合成条件结项只豁免列明需求；钱/人天、非零承诺、风险、对账和过期材料各自阻断","Q5,T10;A07","PASS","pmo/gates.py;pmo/requirement_exceptions.py;pmo/review_outcomes.py","tests/test_reviews.py;tests/test_lifecycle.py;tests/test_requirement_exceptions.py"
+"LR-07","§4.4;§5.2–5.3","合成条件结项只豁免列明需求；钱/人天、非零承诺、风险、对账和过期材料各自阻断；绑定声明的零预算及独立对账合成裁决通过","Q5,T10;A07","PASS","pmo/gates.py;pmo/requirement_exceptions.py;pmo/review_outcomes.py","tests/test_reviews.py;tests/test_lifecycle.py;tests/test_requirement_exceptions.py;tests/test_zero_budget_closing.py;docs/progress/M2-report.md"
 "LR-08","§5.6","合成正常结项后第14天缺四问或confirmed Lesson提醒及归档拒绝；PMO月报整验待补","T10","NOT_RUN","pmo/rule_scan.py;pmo/project_lifecycle.py","tests/test_health.py;tests/test_lifecycle.py;docs/progress/M2-report.md"
 "AG-A1","§6","立项评审助理","Q1,T08","NOT_TESTED","",""
 "AG-A2","§6","过程管家","Q2,Q7,T06","NOT_TESTED","",""

@@ -1,6 +1,7 @@
 """Model-off product lifecycle over real HTTP, with only accounts/grants as fixtures."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, timezone
+from decimal import Decimal
 import json
 from uuid import UUID, uuid4
 
@@ -49,21 +50,21 @@ def upload(pm, reviewer, project, kind, resource, content=None):
         json={'reason': 'Reviewed original synthetic evidence bytes', 'sha256': proof['sha256']}))
 
 
-def begin_execution(live, team):
+def begin_execution(live, team, *, effort_budget='10'):
     engine, _, _, _ = live
     pid, people, users, _ = team
     reviewer = users['reviewer']
     charter = start_charter(pid, users)
     score(reviewer, charter, [4] * 4)
     data(decide(reviewer, charter))
-    project, requirement, risk = planning_setup(engine, pid, people, users, seed_stage=False)
+    project, requirement, risk = planning_setup(engine, pid, people, users, seed_stage=False, effort_budget=effort_budget)
     feasibility = gate(users['pm'], project, 'feasibility')
     score(reviewer, feasibility, [3] * 5)
     assert data(decide(reviewer, feasibility))['decision']['stage'] == 'executing'
     return project, requirement, risk
 
 
-def execution_fixture(live, team):
+def execution_fixture(live, team, *, effort_budget='10'):
     engine, _, _, _ = live
     pid, people, users, _ = team
     with engine.begin() as c:
@@ -72,7 +73,7 @@ def execution_fixture(live, team):
         for who in ('reviewer', 'outsider'):
             account = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people[who]))
             c.execute(db.user_roles.insert().values(user_id=account, role='finance_verifier'))
-    return begin_execution(live, team)
+    return begin_execution(live, team, effort_budget=effort_budget)
 
 
 def complete_milestones(pm, reviewer, project):
@@ -97,6 +98,8 @@ def close_materials(pm, reviewer, customer, project, requirement, risk, *, confi
     risk_proof = upload(pm, reviewer, project, 'risk', risk)
     now = datetime.now(UTC)
     for kind, actual in zip(('money', 'effort'), actuals):
+        if Decimal(actual) == 0:
+            continue
         posting = data(pm.post(project + '/cost-postings', headers=headers(), json={
             'type': kind, 'amount': actual, 'period': now.strftime('%Y-%m'), 'sourceRef': f'Synthetic {kind} verified source'}))
         data(reviewer.post(f"cost-postings/{posting['postingId']}/verify", headers=headers(), json={

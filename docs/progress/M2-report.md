@@ -89,3 +89,14 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`、`npm.cmd --prefix web run build` | 0 | PASS：规格三检、mypy、Vue 类型和构建，日志 `.local/addition-check-first.log`、`.local/addition-build.log`；包体告警仍在。 |
 
 新入口是工程补充，基线 95 和 MCP 注册 40 不变。DEC-07 继续待真实签核；合成客户确认不代表真实客户签收。
+
+## 2026-11-21 零预算结项
+
+源条款：§4.4、§5.2、LR-07。实现：`pmo/gates.py`，复用 `pmo/costs.py` 按有效预算基线版本匹配的人工声明。仍需已核对的独立对账、实际净额和剩余预测均为零，并满足其余结项门槛；声明 ID 及内容进入评审快照。无新迁移。基准 SHA `2d040e33544e9ec6bac7105eabcef3f99ffccbf1`，被测源码树 `59965651b90e4e815883ddaf816e816483f4fed3`（不含证据文档）。Windows / PostgreSQL 16 随机隔离 schema / 回环 HTTP；合成身份、固定对账来源、模型关闭。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_zero_budget_closing.py tests/test_cost_reconciliation.py tests/test_lifecycle.py tests/test_health.py --tb=short` | 0 | PASS：19 项 / 54.28 秒，`.local/zero-budget-targeted.log`。无声明拒绝、绑定声明后仍需对账、0.01 人天实际拒绝、非零预测拒绝且使旧对账失效、同步生成可核验的声明引用并经独立裁决进入 `closed`。 |
+| `./scripts/dev.ps1 check` | 0 | PASS：冻结规格静态三检与 mypy，`.local/zero-budget-check.log`。 |
+
+共享开发库未迁移。零预算路径通过不代表 DEC-09/16/26 已签核。

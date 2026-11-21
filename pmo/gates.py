@@ -11,7 +11,7 @@ from .change_intents import snapshot
 from .charter_models import Fields
 from .charters import COLUMNS
 from .contracts import RULE_VERSION, Strict
-from .costs import latest_plan
+from .costs import cost_basis, latest_plan, zero_budget_claim
 from .evidence import verified_link
 from .identity import Failure, explicit_grants, visible
 from .projects import fingerprint
@@ -221,6 +221,7 @@ def closing_costs(c, a, p, out, plan):
         out.content['costReconciliation'] = {k: v for k, v in snapshot(receipt).items()
             if k in ('id', 'revision', 'receipt_hash', 'cost_hash', 'signed_by', 'signed_at', 'covered_through')}
         out.refs.extend(proof_refs)
+    zero_basis = None
     for kind in ('money', 'effort'):
         lines = [r for r in budgets if r.type == kind]
         total = sum((r.budget for r in lines), Decimal(0))
@@ -228,7 +229,16 @@ def closing_costs(c, a, p, out, plan):
         remaining = plan[kind + '_remaining'] if plan else None
         if remaining is None:
             remaining = sum((r.forecast_remaining for r in lines), Decimal(0))
-        if not lines or not total:
+        declared = None
+        if lines and total == 0:
+            if zero_basis is None:
+                zero_basis = cost_basis(c, p.id, now)
+            if zero_basis.budget_refs(kind) and zero_basis.amounts(kind)[0] == 0:
+                declared = zero_budget_claim(c, zero_basis, kind, now)
+            if declared:
+                out.content.setdefault('zeroBudgetDeclarations', {})[kind] = snapshot(declared)
+                out.refs.append(f'zero-budget:{declared.id}')
+        if not lines or (total == 0 and declared is None):
             out.reject(f'{kind.upper()}_CLOSING_BUDGET_UNVERIFIED', '缺少有效预算或可核验的零预算声明。', budget_refs)
         elif actual < 0 or abs(actual - total) * 5 > total:
             out.reject(f'{kind.upper()}_CLOSING_VARIANCE', '结项最终偏差绝对值需不超过 20%。', [*budget_refs, *post_refs])
