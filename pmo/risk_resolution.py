@@ -28,7 +28,8 @@ GET = 'human_risk_resolution_get'
 PATH = '/risks/{riskId}'
 ACCEPTANCE_LIMIT = 20
 router = APIRouter(prefix='/api/v1', tags=['Risks'])
-HUMAN_REVIEWER = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True, 'x-requiredRole': 'authorized_reviewer'}
+HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
+HUMAN_REVIEWER = {**HUMAN, 'x-requiredRole': 'authorized_reviewer'}
 
 
 def _receipt_columns():
@@ -99,7 +100,7 @@ class AcceptanceVerify(Handoff, ExternalVerification):
 AcceptanceCommand = Annotated[AcceptanceRequest | AcceptanceConfirm | AcceptanceVerify, Field(discriminator='kind')]
 
 
-class AcceptanceSummary(Strict):
+class _AcceptanceEvidence(Strict):
     acceptanceId: UUID
     riskId: UUID
     riskRevision: int
@@ -108,8 +109,11 @@ class AcceptanceSummary(Strict):
     acceptanceEvidenceRef: str
     evidenceSha256: str
     evidenceRevision: int
-    kind: AcceptanceKind
     createdAt: datetime
+
+
+class AcceptanceSummary(_AcceptanceEvidence):
+    kind: AcceptanceKind
 
 
 class Acceptance(AcceptanceSummary):
@@ -132,8 +136,15 @@ class AcceptanceState(AcceptanceSummary):
     status: Literal['pending', 'accepted']
     canConfirm: bool
     canHandoff: bool
-    projectId: UUID | None = None
-    actorPersonId: UUID | None = None
+    projectId: UUID
+    actorPersonId: UUID
+
+
+class Nomination(_AcceptanceEvidence):
+    kind: Literal['requested'] = 'requested'
+    status: Literal['pending'] = 'pending'
+    canConfirm: Literal[True] = True
+    canHandoff: Literal[False] = False
 
 
 class RiskRevision(Strict):
@@ -141,7 +152,10 @@ class RiskRevision(Strict):
     revision: int
 
 
-class _State(Strict):
+class ProjectResolutionState(Strict):
+    audience: Literal['project'] = 'project'
+    risk: Risk
+    resolution: Resolution | None = None
     status: Literal['unresolved', 'pending', 'accepted', 'resolved']
     acceptances: list[AcceptanceState] = Field(max_length=ACCEPTANCE_LIMIT)
     acceptancesTruncated: bool = False
@@ -150,15 +164,15 @@ class _State(Strict):
     canVerifyAcceptance: bool = False
 
 
-class ProjectResolutionState(_State):
-    audience: Literal['project'] = 'project'
-    risk: Risk
-    resolution: Resolution | None = None
-
-
-class ReceiverResolutionState(_State):
+class ReceiverResolutionState(Strict):
     audience: Literal['receiver'] = 'receiver'
     risk: RiskRevision
+    status: Literal['pending'] = 'pending'
+    acceptances: list[Nomination] = Field(min_length=1, max_length=ACCEPTANCE_LIMIT)
+    acceptancesTruncated: bool = False
+    canClose: Literal[False] = False
+    canRequestAcceptance: Literal[False] = False
+    canVerifyAcceptance: Literal[False] = False
 
 
 ResolutionState = Annotated[ProjectResolutionState | ReceiverResolutionState, Field(discriminator='audience')]
@@ -328,7 +342,7 @@ def _insert_receipt(c, table, *, p, risk, a, rid, proof, assignment, receiver, n
     return c.execute(table.insert().values(**values).returning(table)).mappings().one()
 
 
-@router.post(PATH + '/handoff/acceptance', operation_id=ACCEPTANCE, response_model_exclude_none=True)
+@router.post(PATH + '/handoff/acceptance', operation_id=ACCEPTANCE, response_model_exclude_none=True, openapi_extra=HUMAN)
 def handoff_acceptance(riskId: UUID, command: AcceptanceCommand, authorization: Auth, key: Key, expected: Revision) -> Result[Acceptance]:
     revision = int(expected)
     receiver = command.receiverPersonId
@@ -523,12 +537,16 @@ def _current_candidates(c, risk, receiver=None):
     return rows[:ACCEPTANCE_LIMIT], len(rows) > ACCEPTANCE_LIMIT
 
 
-def _acceptance_state(row, *, member, can_confirm=False, can_handoff=False):
-    return AcceptanceState(acceptanceId=row.id, riskId=row.risk_id, riskRevision=row.risk_revision,
+def _acceptance_evidence(row):
+    return dict(acceptanceId=row.id, riskId=row.risk_id, riskRevision=row.risk_revision,
         receiverPersonId=row.receiver_id, acceptanceScope=row.scope, acceptanceEvidenceRef=f'evidence:{row.evidence_id}',
-        evidenceSha256=row.evidence_sha256, evidenceRevision=row.evidence_revision, kind=row.kind, createdAt=row.created_at,
+        evidenceSha256=row.evidence_sha256, evidenceRevision=row.evidence_revision, createdAt=row.created_at)
+
+
+def _acceptance_state(row, *, can_confirm=False, can_handoff=False):
+    return AcceptanceState(**_acceptance_evidence(row), kind=row.kind,
         status='pending' if row.kind == 'requested' else 'accepted', canConfirm=can_confirm, canHandoff=can_handoff,
-        projectId=row.project_id if member else None, actorPersonId=row.actor_id if member else None)
+        projectId=row.project_id, actorPersonId=row.actor_id)
 
 
 def _read_resolution(c, a, risk_id):
@@ -542,6 +560,7 @@ def _read_resolution(c, a, risk_id):
     can_finalize = reviewer and risk.revision < 2**63 - 1
     receipt = resolve_risk(c, a, p, risk) if member and terminal else None
     items: list[AcceptanceState] = []
+    nominations: list[Nomination] = []
     truncated = False
     resolution = None
     if receipt is not None:
@@ -550,7 +569,7 @@ def _read_resolution(c, a, risk_id):
             evidenceSha256=receipt.evidence_sha256, evidenceRevision=receipt.evidence_revision, closedAt=risk.closed_at)
         if receipt.acceptance_id is not None:
             accepted = c.execute(sa.select(acceptances).where(acceptances.c.id == receipt.acceptance_id)).mappings().one()
-            items.append(_acceptance_state(accepted, member=True))
+            items.append(_acceptance_state(accepted))
     elif not terminal:
         rows, truncated = _current_candidates(c, risk, None if member else a.person)
         for row in rows:
@@ -566,12 +585,14 @@ def _read_resolution(c, a, risk_id):
             confirm = pending and writable and can_accept and row.receiver_id == a.person
             handoff = (not pending and can_finalize and HANDOFF in a.actions
                        and a.person not in (row.receiver_id, proof.uploaded_by, proof.owner_id))
-            if member or confirm:
-                items.append(_acceptance_state(row, member=member, can_confirm=confirm, can_handoff=handoff))
+            if member:
+                items.append(_acceptance_state(row, can_confirm=confirm, can_handoff=handoff))
+            elif confirm:
+                nominations.append(Nomination(**_acceptance_evidence(row)))
 
-    if not member and not items:
+    if not member and not nominations:
         raise Failure(404, 'RESOURCE_NOT_FOUND')
-    refs = [f'risk:{risk.id}@{risk.revision}', *(f'risk-acceptance:{item.acceptanceId}' for item in items)]
+    refs = [f'risk:{risk.id}@{risk.revision}', *(f'risk-acceptance:{item.acceptanceId}' for item in (items if member else nominations))]
     state: ProjectResolutionState | ReceiverResolutionState
     if member:
         if resolution is not None:
@@ -582,12 +603,11 @@ def _read_resolution(c, a, risk_id):
             acceptancesTruncated=truncated, canClose=can_finalize and CLOSE in a.actions,
             canRequestAcceptance=reviewer and can_accept, canVerifyAcceptance=reviewer and can_accept)
     else:
-        state = ReceiverResolutionState(risk=RiskRevision(riskId=risk.id, revision=risk.revision), status='pending',
-            acceptances=items, acceptancesTruncated=truncated)
+        state = ReceiverResolutionState(risk=RiskRevision(riskId=risk.id, revision=risk.revision),
+            acceptances=nominations, acceptancesTruncated=truncated)
     return Result[ResolutionState](data=state, meta=meta(GET, refs))
 
 
-@router.get(PATH + '/resolution', operation_id=GET, response_model_exclude_none=True,
-    openapi_extra={'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True})
+@router.get(PATH + '/resolution', operation_id=GET, response_model_exclude_none=True, openapi_extra=HUMAN)
 def get_resolution(riskId: UUID, authorization: Auth) -> Result[ResolutionState]:
     return run(authorization, GET, lambda c, a, _: _read_resolution(c, a, riskId))

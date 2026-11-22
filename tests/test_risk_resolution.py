@@ -14,6 +14,7 @@ import pytest
 import sqlalchemy as sa
 from argon2 import PasswordHasher
 from fastapi import FastAPI
+from jsonschema import Draft202012Validator
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
@@ -396,6 +397,38 @@ def test_resolution_read_scopes_nominees_and_reports_effective_capabilities(scen
     assert done['risk']['revision'] == 2 and done['status'] == 'resolved' and done['resolution'] == receipt
     assert not any(done[k] for k in caps) and not any(i['canConfirm'] or i['canHandoff'] for i in done['acceptances'])
     rejected(outsider.get(path), 404, 'RESOURCE_NOT_FOUND')
+
+
+def test_nominee_response_contract_is_narrow_and_not_a_project_receipt(scenario):
+    s = scenario
+    risk = s.risk()
+    proof = s.upload(risk)
+    reviewer, receiver = s.clients['reviewer'], s.clients['receiver']
+    path = f'risks/{risk.id}'
+    item = ok(reviewer.post(path + '/handoff/acceptance', headers=headers(), json={
+        'kind': 'request', 'receiverPersonId': str(s.people['receiver']), 'acceptanceEvidenceRef': proof['evidenceRef'],
+        'acceptanceScope': SCOPE}))
+    spec = s.api.get('/openapi.json').raise_for_status().json()
+    operation = spec['paths']['/api/v1/risks/{riskId}/resolution']['get']
+    schema = operation['responses']['200']['content']['application/json']['schema']
+    validate = Draft202012Validator({**schema, 'components': spec['components']},
+                                    format_checker=Draft202012Validator.FORMAT_CHECKER)
+    member = reviewer.get(path + '/resolution').raise_for_status().json()
+    nominated = receiver.get(path + '/resolution').raise_for_status().json()
+    validate.validate(member)
+    validate.validate(nominated)
+    state = nominated['data']
+    request, = state['acceptances']
+    assert request['acceptanceId'] == item['acceptanceId'] and request['kind'] == 'requested'
+    assert {'projectId', 'actorPersonId'}.isdisjoint(request)
+    for modifications in ({'projectId': str(s.project)}, {'actorPersonId': str(s.people['reviewer'])},
+                          {'canHandoff': True}, {'canConfirm': False}, {'kind': 'reviewer_verified'}, {'status': 'accepted'}):
+        assert not validate.is_valid({**nominated, 'data': {**state, 'acceptances': [{**request, **modifications}]}}), modifications
+    for modifications in ({'canClose': True}, {'canRequestAcceptance': True}, {'canVerifyAcceptance': True},
+                          {'status': 'resolved'}, {'risk': member['data']['risk']}):
+        assert not validate.is_valid({**nominated, 'data': {**state, **modifications}}), modifications
+    acceptance = spec['paths']['/api/v1/risks/{riskId}/handoff/acceptance']['post']
+    assert acceptance['x-actorTypes'] == ['human'] and acceptance['x-forbidAgentEvenViaHttp']
 
 
 def test_resolution_read_bounds_pending_sources(scenario):

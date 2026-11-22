@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from . import evidence_storage, schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import RULE_VERSION, Result, Strict
-from .costs import Kind, latest_plan, plans
+from .costs import DisplayedAmount, DisplayedNet, Kind, latest_plan, plans
 from .identity import Failure, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
@@ -26,6 +26,7 @@ CREATE = 'human_cost_reconciliation_create'
 POLICY_VERSION = 'synthetic-cost-reconciliation-v1'
 KINDS: tuple[Kind, Kind] = ('money', 'effort')
 PATH = '/projects/{projectId}/cost-reconciliations'
+HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 router = APIRouter(prefix='/api/v1', tags=['Cost reconciliation'])
 
 grants = sa.table('cost_reconciliation_grants', sa.column('id', sa.Uuid),
@@ -40,6 +41,7 @@ receipts = sa.table('cost_reconciliations',
 Hash = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
 EvidenceRef = Annotated[str, Field(pattern=r'^evidence:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$')]
 Attribution = Literal['estimate', 'execution', 'scope']
+VarianceRate = Annotated[str, Field(pattern=r'^-?(0|[1-9][0-9]*)\.[0-9]{8}$')]
 
 
 class Create(Strict):
@@ -69,29 +71,38 @@ class Proof(Strict):
     linkRevision: int
     sha256: Hash
     verifiedBy: UUID
-    verifiedAt: str
+    verifiedAt: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$',
+                            json_schema_extra={'format': 'date-time'})
 
 
 class Variance(Strict):
-    budget: str | None = None
-    difference: str | None = None
-    rate: str | None = None
+    budget: DisplayedAmount | None = None
+    difference: DisplayedNet | None = None
+    rate: VarianceRate | None = None
     sourceRefs: list[str]
 
 
-class Line(Strict):
-    type: Kind
-    unit: Literal['CNY', 'person_day']
-    actual: str
+class _Line(Strict):
+    actual: DisplayedAmount
     sourceRef: str
-    sourceNetActual: str
-    difference: str
-    forecastRemaining: str
+    sourceNetActual: DisplayedAmount
+    difference: DisplayedNet
+    forecastRemaining: DisplayedAmount
     forecastSourceRefs: list[str]
     initial: Variance
     current: Variance
     proof: Proof
     overrunReason: Attribution | None = None
+
+
+class MoneyLine(_Line):
+    type: Literal['money']
+    unit: Literal['CNY']
+
+
+class EffortLine(_Line):
+    type: Literal['effort']
+    unit: Literal['person_day']
 
 
 class Receipt(Strict):
@@ -105,7 +116,7 @@ class Receipt(Strict):
     ruleVersion: str
     costHash: Hash
     receiptHash: Hash
-    lines: list[Line]
+    lines: tuple[MoneyLine, EffortLine]
     policyStatus: Literal['POLICY_PENDING'] = 'POLICY_PENDING'
 
 
@@ -313,10 +324,11 @@ def _lines(c, a, p, signer, refs, reasons, basis, now):
             if current.difference is not None and Decimal(current.difference) > 0 and reason is None:
                 raise fail('RECONCILIATION_OVERRUN_REASON_REQUIRED')
             forecast = basis.payload['forecasts'][kind]
-            lines.append(Line(type=kind, unit='CNY' if kind == 'money' else 'person_day', actual=_amount(actual),
-                sourceRef=source.sourceRef.strip(), sourceNetActual=_amount(source_net), difference=_amount(actual - source_net),
-                forecastRemaining=forecast['value'], forecastSourceRefs=forecast['sourceRefs'], initial=initial,
-                current=current, proof=proof, overrunReason=reason).model_dump(mode='json', exclude_none=True))
+            values = dict(actual=_amount(actual), sourceRef=source.sourceRef.strip(), sourceNetActual=_amount(source_net),
+                difference=_amount(actual - source_net), forecastRemaining=forecast['value'], forecastSourceRefs=forecast['sourceRefs'],
+                initial=initial, current=current, proof=proof, overrunReason=reason)
+            line = MoneyLine(type='money', unit='CNY', **values) if kind == 'money' else EffortLine(type='effort', unit='person_day', **values)
+            lines.append(line.model_dump(mode='json', exclude_none=True))
     return cutoff, lines
 
 
@@ -346,7 +358,7 @@ def _current(c, a, p, row, basis, now):
             or not _grant(c, p, row.signed_by, now, grant_id=row.grant_id, signed_at=row.signed_at)):
         return None
     try:
-        saved = [Line.model_validate(line) for line in row.lines]
+        saved = _view(row).lines
         cutoff, lines = _lines(c, a, p, row.signed_by, {line.proof.evidenceRef for line in saved},
             {line.type: line.overrunReason for line in saved if line.overrunReason is not None}, basis, now)
     except (Failure, ValueError, TypeError):
@@ -386,7 +398,7 @@ def _view(row):
         costHash=row.cost_hash, receiptHash=row.receipt_hash, lines=row.lines)
 
 
-@router.get(PATH, operation_id=GET)
+@router.get(PATH, operation_id=GET, openapi_extra=HUMAN)
 def get(projectId: UUID, authorization: Auth) -> Result[State]:
     def read(c, a, _):
         p = _project(c, a, projectId, write=False)
@@ -403,7 +415,7 @@ def get(projectId: UUID, authorization: Auth) -> Result[State]:
     return run(authorization, GET, read)
 
 
-@router.post(PATH, operation_id=CREATE)
+@router.post(PATH, operation_id=CREATE, openapi_extra=HUMAN)
 def create(projectId: UUID, command: Create, authorization: Auth, key: Key, expected: Revision) -> Result[Receipt]:
     revision = int(expected)
     signature = fingerprint([str(projectId), revision, command.costHash, sorted(command.evidenceRefs), command.overrunReasons])

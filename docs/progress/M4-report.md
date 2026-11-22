@@ -225,3 +225,16 @@
 | `docker compose -p pmo104-rc-cd11b7c4 --env-file .local/pmo104-rc-cd11b7c4.env -f deploy/compose.yaml up --build -d --wait`；`.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-cd11b7c4` | 0 | PASS：`.local/rc0033-compose-build.log`、`.local/rc0033-compose-smoke.log`。回环 `18763`，受限运行账号，15 个草稿和唯一消费回执；停库 `live=200 / ready=503`，恢复 `200/200`，项目和回执未丢失。30 次/操作，本机 p95 筛选 107 ms、详情 150 ms。 |
 
 联合恢复覆盖 `0016→0033` 的有数据升级，旧成本历史逐字段不变，有效与撤销的阶段授权、私有原件及应用引用均回读。候选容器内 `alembic current` 为 `0033 (head)`，回读 **95/95 基线 REST + 42 工程操作**、40 MCP 所需路由及成本格式（`.local/rc0033-compose-contract.log`）。共享库未升级。不是目标环境周期恢复、性能、真实 Host 或业务签核结论。
+
+## 0033 结项契约候选复验
+
+源条款：主方案 §4.4、§7、§9.1、LR-07、T07/T10、工程 DTO 补充 §1/3/7。基准 `0ef144874a6a55638be6c8a346e73f75124737dc`，候选和后端全量固定导出树 `af645fc52dfa7e0202587458959f4a8780d877c6`。Windows、Edge `158.0.4370.33`、PostgreSQL 16.14 隔离 schema 和专用 Compose，合成账号、模型关闭。定向反例见 [M2](M2-report.md#结项对账和风险接收的回执契约)。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0033-contract-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0033-contract-backend.xml`（固定导出目录，证据路径指向原仓库） | 0 | PASS：301 项 / 536.92 秒，无跳过，`.local/rc0033-contract-backend.log`。40 工具发现、调用、动作拒绝，18 读审计、22 写重放。JSON SHA-256 `b34bfe29ac319cb289e132169c9e26163e0a2b8093199d4210d763ec88cd0aa4`，新增变更嵌套契约用例。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0033-contract-edge.xml` | 0 | PASS：20 项 / 251.50 秒，`.local/rc0033-contract-edge.log`；含无模型三关口、对账、风险、归档。 |
+| `docker compose -p pmo104-rc-bd99e6ac --env-file .local/pmo104-rc-bd99e6ac.env -f deploy/compose.yaml up --build -d --wait`；`npm.cmd --prefix web ci`；`.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-bd99e6ac`（固定导出目录） | 0 | PASS：回环 `18764`，受限账号、15 草稿和唯一消费回执；停库 `live=200 / ready=503`，恢复 `200/200`。30 次/操作，本机 p95 筛选 64 ms、详情 366 ms。`.local/rc0033-contract-compose.log`、`rc0033-contract-npm.log`、`rc0033-contract-smoke.log`，保留包体积告警。 |
+| `docker compose ... exec -T api alembic current`；容器内 `GET /openapi.json` 与冻结目录、嵌套契约对表 | 0 | PASS：`0033 (head)`，95/95 基线 + 42 工程操作、40 MCP 路由、双口径顺序、非成员窄回执及六项 human-only 标记。`.local/rc0033-contract-openapi-final.log`。首轮探针退出 1，误以为兼容的固定 `false` 字段应删除；修正探针以核对常量。 |
+
+无迁移或附件引用改动，沿用上一批 `0016→0033` 联合恢复。旧候选 `18763` 和共享开发库未动。这不是目标 Host、目标环境性能或业务验收结论。

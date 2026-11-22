@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
+from jsonschema import Draft202012Validator
 
 from pmo import projects, schema_v1 as db
 from pmo.cost_reconciliation import CREATE, Create, _read_source, _source_ref, create, current_reconciliation, grants, receipts
@@ -108,6 +109,37 @@ def command(client, path, refs, *, reasons=None):
 
 def browser(client):
     return Browser(client.cookies['pmo_session'], client.headers['X-CSRF-Token'], True)
+
+
+def test_reconciliation_contract_binds_both_units_and_precise_values(reconciliation, live):
+    _, pid, _, users, bearer, cutoff, _ = reconciliation
+    signer = users['reviewer']
+    path = f'projects/{pid}/cost-reconciliations'
+    h, body = command(signer, path, [evidence(users, pid, sheet(pid, cutoff))], reasons={'effort': 'execution'})
+    response = signer.post(path, headers=h, json=body)
+    receipt = data(response)
+    current = signer.get(path)
+    spec = live[1].get('/openapi.json').raise_for_status().json()
+    route = spec['paths']['/api/v1/projects/{projectId}/cost-reconciliations']
+    money, effort = receipt['lines']
+    bad_lines = ([money], [money, money], [effort, money], [{**money, 'unit': 'person_day'}, effort],
+                 [{**money, 'actual': '8e1'}, effort], [{**money, 'actual': 80}, effort],
+                 [{**money, 'initial': {**money['initial'], 'rate': 'NaN'}}, effort],
+                 [{**money, 'proof': {**money['proof'], 'verifiedAt': 'not a timestamp'}}, effort])
+    for method, actual in [('get', current), ('post', response)]:
+        schema = route[method]['responses']['200']['content']['application/json']['schema']
+        validate = Draft202012Validator({**schema, 'components': spec['components']},
+                                        format_checker=Draft202012Validator.FORMAT_CHECKER)
+        wire = actual.json()
+        validate.validate(wire)
+        for bad in bad_lines:
+            invalid = {**receipt, 'lines': bad}
+            edited = {**wire['data'], 'current': invalid} if method == 'get' else invalid
+            assert not validate.is_valid({**wire, 'data': edited}), bad
+        assert route[method]['x-actorTypes'] == ['human'] and route[method]['x-forbidAgentEvenViaHttp']
+    assert data(current)['current'] == receipt
+    assert live[1].get('/api/v1/' + path, headers=bearer).status_code == 403
+    assert live[1].post('/api/v1/' + path, headers={**h, **bearer}, json=body).status_code == 403
 
 
 def test_receipt_retains_two_bases_and_becomes_stale(reconciliation, live, monkeypatch):

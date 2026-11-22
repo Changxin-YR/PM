@@ -269,3 +269,15 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_change_contracts.py tests/test_change_requests.py tests/test_change_history.py tests/test_requirement_additions.py tests/test_requirement_baselines.py tests/test_forecast_governance.py tests/test_costs.py tests/test_runtime.py tests/test_mcp_action_matrix.py tests/test_reference_vectors_governance.py --tb=short --junitxml=.local/change-contract-verified.xml` | 0 | PASS：36 项 / 78.98 秒，`.local/change-contract-verified.log`。四类真实申请与 HTTP/stdio Schema 一致，数值类型、非本地日期、前后字段不匹配、伪造批准/新增均拒绝；同主体重放、无效写无副作用、跨项目和 Agent 终裁禁权，审批仍需独立人。获批新增和旧 JSON（含 null）保留，Agent 历史不接收非契约原文。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'draft_workflow or independent_requirement_addition or drafting_through_archive_without_model' --tb=short --junitxml=.local/change-contract-edge.xml` | 0 | PASS：3 项 / 103.53 秒，`.local/change-contract-edge.log`。旧快照标识、原值、申请与独立批准回读，新增需求与无模型三关口归档。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格、mypy 88 源文件及 Vue 类型，`.local/change-contract-check.log`、`.local/change-contract-vue-verified.log`。首轮类型声明缺口退出 1（Schema dict）和 2（Web 旧快照字段），保留 `change-contract-check-first.log`、`change-contract-vue.log`。 |
+
+## 结项对账和风险接收的回执契约
+
+依据：主方案 §4.4、§5.2、LR-07、工程 DTO 补充 §1/3/7 和 [ADR 0011](../adr/0011-closing-evidence-and-lifecycle.md)。基准 `0ef144874a6a55638be6c8a346e73f75124737dc`，被测导出树 `af645fc52dfa7e0202587458959f4a8780d877c6`。Windows、PostgreSQL 16.14 隔离 schema、回环 HTTP，合成账号、模型关闭。`pmo/cost_reconciliation.py` 响应固定金额/CNY、人天/person_day 两项，明确金额、比率和核验时间格式；历史与终裁使用同一回执 DTO。`pmo/risk_resolution.py` 的非成员接收人仅能取得自己的有效待确认范围，不含项目或审核人 ID，不可发起或终裁移交。六个操作均已标注 human-only，REST 仍实际拦截。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_cost_reconciliation.py::test_reconciliation_contract_binds_both_units_and_precise_values tests/test_risk_resolution.py::test_nominee_response_contract_is_narrow_and_not_a_project_receipt --tb=short --junitxml=.local/closing-contract-before.xml` | 1 | FAIL：2 项，旧响应合同接受缺口径和非成员响应中的项目 ID。`.local/closing-contract-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_cost_reconciliation.py tests/test_lifecycle.py tests/test_recovery.py tests/test_requirement_exceptions.py tests/test_risk_resolution.py tests/test_runtime.py tests/test_stage_edges.py tests/test_zero_budget_closing.py --tb=short --junitxml=.local/closing-contract-final.xml` | 0 | PASS：51 项 / 127.57 秒，`.local/closing-contract-final.log`。含角色/证据拒绝、历史回读、相关依赖变化和结项。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规格、mypy 88 源文件，`.local/closing-contract-check-verified.log`。首轮 mypy 退出 1，保留 `.local/closing-contract-check.log`。 |
+
+不更改业务政策、授权、迁移或附件引用。全量回归见 [M4](M4-report.md#0033-结项契约候选复验)。
