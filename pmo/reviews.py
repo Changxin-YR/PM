@@ -23,7 +23,7 @@ snapshots = sa.table('review_submission_snapshots', sa.column('review_id', sa.Uu
 transitions = sa.table('project_stage_transitions', sa.column('project_id', sa.Uuid), sa.column('from_revision'),
                        sa.column('to_revision'), sa.column('from_stage'), sa.column('to_stage'), sa.column('review_id', sa.Uuid),
                        sa.column('actor_id', sa.Uuid), sa.column('actor_type'), sa.column('request_id', sa.Uuid),
-                       sa.column('approval_request_id', sa.Uuid))
+                       sa.column('approval_request_id', sa.Uuid), sa.column('transitioned_at', sa.DateTime(timezone=True)))
 APPROVAL_ACTION = 'review_finalize'
 
 

@@ -478,3 +478,18 @@ def test_browser_project_overview_filters_and_dated_samples(live, team):
     with vite(live[2]) as (root, url):
         run_browser(root, url, 'project-overview', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'initiator')),
             'PMO_TEST_SAMPLE': first['asOf']})
+
+
+def test_browser_local_workbench_latency(live, team):
+    from test_reviews import data, headers
+
+    _, _, users, _ = team
+    client = users['outsider']
+    for i in range(1, 16):
+        project = data(client.post('projects', headers=headers(), json={'code': f'RC-SMOKE-{i:02}', 'name': f'RC project {i:02}'}))
+        milestone = data(client.post(f"projects/{project['projectId']}/milestones", headers=headers(),
+            json={'name': f'Acceptance milestone {i:02}', 'plannedDate': '2027-01-10'}))
+        assert milestone['projectId'] == project['projectId']
+    session = browser_sessions(users, 'outsider')['outsider']
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'deployment-performance', {'PMO_SYNTHETIC_SESSION': json.dumps(session)})

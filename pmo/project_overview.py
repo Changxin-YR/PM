@@ -4,17 +4,25 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query
+from pydantic import Field
 import sqlalchemy as sa
 
 from . import schema_v1 as db
 from .access import Auth, DEEP_OBJECT_FILTERS, Filters
-from .contracts import ProjectView, Result, Strict
+from .contracts import CharterSummary, ProjectView, Result, Stage, Strict
+from .costs import DisplayedRate
+from .dto import Proportion, Unavailable
+from .gates import lock_project
+from .health import current
+from .health_trace import Color
 from .identity import visible
-from .projects import can_edit_draft, listing_filters, meta, run, view
+from .projects import can_edit_draft, listing_filters, meta, read_charter_summary, run, view
+from .reviews import transitions
 from .rule_scan import latest_query
 
 router = APIRouter(prefix='/api/v1', tags=['Project overview'])
 OP = 'human_project_overview_list'
+DETAIL = 'human_project_overview_get'
 
 
 class Manager(Strict):
@@ -42,6 +50,37 @@ class OverviewPage(Strict):
     page: int
     pageSize: int
     total: int
+
+
+class Indicators(Strict):
+    asOf: datetime
+    health: Color | Literal['untrusted', 'unavailable']
+    publication: Literal['official', 'preview', 'withheld', 'unavailable']
+    ruleVersion: str
+    snapshotId: UUID | None = None
+    timeLine: Color | None = None
+    moneyVarianceRate: DisplayedRate | Unavailable | None = None
+    effortVarianceRate: DisplayedRate | Unavailable | None = None
+    requirementSatisfactionRate: Proportion | Unavailable | None = None
+
+
+class StageReceipt(Strict):
+    fromStage: Stage
+    toStage: Stage
+    fromRevision: int
+    toRevision: int
+    transitionedAt: datetime
+    requestId: UUID
+    reviewId: UUID | None = None
+    approvalRequestId: UUID | None = None
+
+
+class OverviewDetail(Strict):
+    project: ProjectView
+    materialsVisible: bool
+    charterSummary: CharterSummary | None = None
+    indicators: Indicators | None = None
+    recentTransitions: list[StageReceipt] = Field(max_length=5)
 
 
 def page_query(actor, filters, page, size):
@@ -96,3 +135,33 @@ def listing(authorization: Auth, filters: Filters, page: int = Query(1, ge=1),
         info.asOf = rows[0].read_at
         return Result[OverviewPage](data=OverviewPage(items=items, page=page, pageSize=pageSize, total=rows[0].total), meta=info)
     return run(authorization, OP, read)
+
+
+@router.get('/project-overview/{projectId}', operation_id=DETAIL, response_model_exclude_none=True)
+def detail(projectId: UUID, authorization: Auth) -> Result[OverviewDetail]:
+    def read(c, a, _):
+        project = lock_project(c, a, projectId)
+        as_of = c.scalar(sa.select(sa.func.clock_timestamp()))
+        result = OverviewDetail(project=view(project), materialsVisible=project.materials_visible, recentTransitions=[])
+        refs = [f'project:{project.id}@{project.revision}']
+        if project.materials_visible:
+            result.charterSummary = charter = read_charter_summary(c, project.id)
+            if charter:
+                refs.append(f'charter:{charter.charterId}@{charter.revision}')
+            observation = current(c, a, project, as_of, human=False)
+            result.indicators = Indicators.model_validate(observation.model_dump(include=set(Indicators.model_fields)))
+            refs.extend(observation.sourceRefs)
+            t = transitions.c
+            rows = c.execute(sa.select(t.from_stage, t.to_stage, t.from_revision, t.to_revision, t.transitioned_at,
+                                       t.request_id, t.review_id, t.approval_request_id)
+                             .where(t.project_id == project.id).order_by(t.from_revision.desc()).limit(5)).mappings()
+            for row in rows:
+                result.recentTransitions.append(StageReceipt(fromStage=row.from_stage, toStage=row.to_stage,
+                    fromRevision=row.from_revision, toRevision=row.to_revision, transitionedAt=row.transitioned_at,
+                    requestId=row.request_id, reviewId=row.review_id, approvalRequestId=row.approval_request_id))
+                refs.append(f'project-transition:{project.id}@{row.to_revision}')
+                refs.append(f'review:{row.review_id}' if row.review_id else f'approval:{row.approval_request_id}')
+        info = meta(DETAIL, list(dict.fromkeys(refs)), project_id=project.id)
+        info.asOf = as_of
+        return Result[OverviewDetail](data=result, meta=info)
+    return run(authorization, DETAIL, read)

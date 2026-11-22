@@ -17,7 +17,7 @@ try {
   const links = page.getByRole('button', {name:/^查看 RC project \d\d 的项目资料$/})
   await expect(links).toHaveCount(15)
   const search = page.getByLabel('搜索项目名称或编号')
-  const filterMs = [], detailMs = []
+  const filterMs = [], detailMs = [], milestonesMs = []
 
   // Three unmeasured passes warm the browser and DB pool, then measure 30 distinct UI interactions.
   for (let i = -3; i < 30; i++) {
@@ -41,24 +41,32 @@ try {
 
     const startDetail = performance.now()
     const [detail] = await Promise.all([page.waitForResponse(r =>
-      new URL(r.url()).pathname === `/api/v1/projects/${project.projectId}/milestones`), link.click()])
+      new URL(r.url()).pathname === `/api/v1/project-overview/${project.projectId}`), link.click()])
     expect(detail.status()).toBe(200)
     const drawer = page.getByRole('dialog', {name:`${project.name} · 项目资料`,exact:true})
-    await expect(drawer.getByRole('cell',{name:`Acceptance milestone ${suffix}`,exact:true})).toBeVisible()
+    await expect(drawer.getByRole('region',{name:'立项概要',exact:true})).toBeVisible()
     const endDetail = performance.now()
+    const tab = drawer.getByRole('tab',{name:'里程碑',exact:true})
+    const [milestones] = await Promise.all([page.waitForResponse(r =>
+      new URL(r.url()).pathname === `/api/v1/projects/${project.projectId}/milestones`), tab.click()])
+    expect(milestones.status()).toBe(200)
+    await expect(drawer.getByRole('cell',{name:`Acceptance milestone ${suffix}`,exact:true})).toBeVisible()
+    const endMilestones = performance.now()
     if (i >= 0) {
       filterMs.push(endFilter-startFilter)
       detailMs.push(endDetail-startDetail)
+      milestonesMs.push(endMilestones-endDetail)
     }
     await button(drawer,'Close this dialog').click()
     await expect(drawer).toBeHidden()
   }
 
   const summary = {channel,browser:browser.version(),viewport:'1280x900',projectCount:15,samplesPerOperation:30,
-    p95FilterMs:p95(filterMs),p95DetailMs:p95(detailMs)}
+    p95FilterMs:p95(filterMs),p95DetailMs:p95(detailMs),p95MilestonesMs:p95(milestonesMs)}
   console.log(JSON.stringify(summary))
   expect(summary.p95FilterMs).toBeLessThanOrEqual(1000)
   expect(summary.p95DetailMs).toBeLessThanOrEqual(1000)
+  expect(summary.p95MilestonesMs).toBeLessThanOrEqual(1000)
 } finally {
   await browser.close()
 }

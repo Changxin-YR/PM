@@ -83,6 +83,12 @@ def listing(header,page,size,stage,keyword):
         return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total),meta=meta(op,[f'project:{i.projectId}@{i.revision}' for i in items]))
     return run(header,op,query)
 
+
+def read_charter_summary(c, pid):
+    charter = c.execute(sa.select(db.charters).where(db.charters.c.project_id == pid)).mappings().one_or_none()
+    return charter_summary(charter) if charter else None
+
+
 def detail(header,pid):
     op='pmo_project_get'
     def query(c,a,_):
@@ -91,15 +97,15 @@ def detail(header,pid):
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
         if not row.materials_visible:
             return Result[ProjectDetail](data=ProjectDetail(project=view(row),stakeholders=[]),meta=meta(op,[f'project:{pid}@{row.revision}'],project_id=row.id))
-        charter=c.execute(sa.select(db.charters).where(db.charters.c.project_id==pid)).mappings().one_or_none()
+        charter=read_charter_summary(c,pid)
         refs=[f'project:{pid}@{row.revision}']
-        if charter: refs.append(f'charter:{charter.id}@{charter.revision}')
+        if charter: refs.append(f'charter:{charter.charterId}@{charter.revision}')
         s=db.stakeholders
         contacts=[ContactSummary.from_row(item) for item in c.execute(sa.select(
             s.c.id,s.c.project_id,s.c.name,s.c.type,s.c.contact_role,s.c.revision
         ).where(s.c.project_id==pid).order_by(s.c.created_at.desc(),s.c.id).limit(100)).mappings()]
         refs.extend(item.source_ref() for item in contacts)
-        return Result[ProjectDetail](data=ProjectDetail(project=view(row),charterSummary=charter_summary(charter) if charter else None,stakeholders=contacts),meta=meta(op,refs,project_id=row.id))
+        return Result[ProjectDetail](data=ProjectDetail(project=view(row),charterSummary=charter,stakeholders=contacts),meta=meta(op,refs,project_id=row.id))
     return run(header,op,query)
 
 def create(header,command,key):

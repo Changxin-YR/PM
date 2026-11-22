@@ -397,3 +397,14 @@
 | `python -m pytest -q tests/browser_case.py -k 'project_overview or browser_and_stdio or draft_workflow' --tb=short --junitxml=.local/pmo104-project-overview-edge-combined.xml` | 0 | PASS：3 项 / 67.84 秒（20 未选）；阶段选择显式提交，页面正确反映可见范围、发起人改名权、旧采样时点及后续不可信回执；原 Web/MCP 资源一致与权限回归通过。`.local/pmo104-project-overview-edge-combined.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | 0 | PASS：冻结规格与 91 个 Python 类型文件，通过 Vue 检查和生产构建；仍有 chunk 提示。`.local/pmo104-project-overview-check.log`、`.local/pmo104-project-overview-build-final.log`。 |
 | 新预览 `18773/18774`：`GET /health/ready` 与 `/openapi.json`，Web 代理登录、筛选和登出 | 0 | PASS：95 基线 + 43 工程，40 双入口，新增列表只限人工。旧热重载 API 仍返回旧目录，未停用，改在新回环端口启动当前工作树；同一合成 schema `0036`，共享 `0016`。首次误用 `/readyz` 得 404（`.local/pmo104-project-overview-openapi.log`），按实际探针复验 `.local/pmo104-project-overview-openapi-retest.log`。 |
+
+## 人工项目概览
+
+依据主方案 §2 UI-03、§5、§6 与 [ADR 0021](../adr/0021-project-overview.md)。基准 `436d79767d127060926dff24a8b0ab7b048ea5d0`，被测源码树 `99c754784652d2fac0f118f2eeaa8913e141df98`。实现 `pmo/project_overview.py`、`pmo/projects.py::read_charter_summary`、`web/src/ProjectOverview.vue`。Windows、PostgreSQL 16.14、回环 REST 和 Edge，合成，模型关闭。没有业务规则、附件或迁移变更。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_project_overview_detail.py::test_overview_detail_draft_has_no_fabricated_health_or_activity --tb=short --junitxml=.local/pmo104-project-detail-red.xml` | 1 | FAIL：基准没有受控详情；`.local/pmo104-project-detail-red.log`。 |
+| `python -m pytest -q tests/test_project_overview_detail.py tests/test_project_overview.py tests/test_runtime.py tests/test_health.py tests/test_transition_authority.py --tb=short --junitxml=.local/pmo104-project-detail-api.xml`；补流转版本出处后单跑 `tests/test_project_overview_detail.py` 输出 `-api-final.xml` | 0 / 0 | PASS：定向 35 项 / 65.13 秒，最终详情两项 / 14.47 秒。与原健康端点一致、未采样时不制造数据、不可信无旧色、真实流转版本和回执、待批准申请不冒充流转、受限发起人及 Agent 拒绝。`.local/pmo104-project-detail-{api,api-final}.log`。 |
+| `python -m pytest -q -s tests/browser_case.py -k 'project_overview or local_workbench_latency' --tb=short --junitxml=.local/pmo104-project-detail-edge.xml` | 0 | PASS：2 项 / 61.73 秒，含移动端摘要权限、历史采样和当前四指标分离。Edge `158.0.4370.33`，15 个合成草稿、30 次取样，本机筛选/概览/里程碑 p95 69/114/854 ms；`.local/pmo104-project-detail-edge.log`。本机结果不代表目标环境。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；`18773` 登录后取列表和详情，`18774` 读探针和 OpenAPI | 0 | PASS：规格、Python/Vue 类型和构建（仍有 chunk 体积提示）；95 基线、44 工程、40 双入口，详情仅人工。`.local/pmo104-project-detail-{check,build,openapi}.log`。 |

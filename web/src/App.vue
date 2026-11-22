@@ -28,6 +28,7 @@ import Health from './Health.vue'
 import OrgDirectory from './OrgDirectory.vue'
 import AcceptOrgInvite from './AcceptOrgInvite.vue'
 import ProjectAssistant from './ProjectAssistant.vue'
+import ProjectOverview from './ProjectOverview.vue'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 type HealthSample={snapshotId:string;asOf:string;health:'green'|'yellow'|'red'|'untrusted';publication:'official'|'preview'|'withheld';ruleVersion:string}
 type OverviewRow=Project&{materialsVisible:boolean;canEditDraft:boolean;manager?:{personId:string;name:string};healthSample?:HealthSample}
@@ -39,8 +40,8 @@ const dialog=ref(false),selected=ref<OverviewRow|null>(null),name=ref(''),code=r
 const csrf=ref(sessionStorage.getItem('pmo.csrf')||'');let sequence=0,attempt='',lastPayload=''
 const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿')
 const admin=ref(false)
-const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('milestones')
-function materials(row:Project){materialProject.value=row;materialTab.value='milestones';showMaterials.value=true}
+const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('overview')
+function materials(row:Project){materialProject.value=row;materialTab.value='overview';showMaterials.value=true}
 function stageRead(projectId:string,stage:string,revision:number){
   if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision){
     materialProject.value={...materialProject.value,stage,revision}
@@ -163,7 +164,8 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>
   <el-tabs v-if="materialProject" v-model="materialTab" :key="materialProject.projectId">
-    <el-tab-pane name="milestones" label="里程碑"><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
+    <el-tab-pane name="overview" label="概览"><ProjectOverview :project-id="materialProject.projectId" :active="showMaterials&&materialTab==='overview'" :stages="stageNames" :api="api" @stage-read="stageRead" @navigate="materialTab=$event"/></el-tab-pane>
+    <el-tab-pane name="milestones" label="里程碑" lazy><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="requirements" label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="baseline" label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane name="exceptions" v-if="['delivering','closing_review'].includes(materialProject.stage)" label="需求例外" lazy><RequirementExceptions :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>

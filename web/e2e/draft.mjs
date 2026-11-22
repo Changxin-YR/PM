@@ -30,6 +30,7 @@ try {
   await expect(page.getByRole('dialog')).toBeHidden()
   await page.getByRole('button',{name:'查看 试点范围复核 的项目资料'}).click()
   const drawer=page.getByRole('dialog')
+  await drawer.getByRole('tab',{name:'里程碑',exact:true}).click()
   await drawer.getByRole('button',{name:'新增里程碑'}).click()
   await drawer.getByLabel('里程碑名称').fill('交付节点')
   await drawer.getByLabel('计划日期').fill('2027-01-20')

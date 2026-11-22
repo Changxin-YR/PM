@@ -6,6 +6,8 @@ from .dto import Strict as Strict
 from .stakeholder_models import ContactSummary
 
 RULE_VERSION = 'lite-v1.0-standalone.3'
+Stage = Literal['drafting','charter_review','rejected','designing','feasibility_review','executing','on_hold',
+                'delivering','closing_review','closed','retrospective','terminated','archived']
 
 class CreateProject(Strict):
     code: str = Field(min_length=2,max_length=60,pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
@@ -16,7 +18,7 @@ class ProjectView(Strict):
     projectId: UUID
     code: str
     name: str
-    stage: Literal['drafting','charter_review','rejected','designing','feasibility_review','executing','on_hold','delivering','closing_review','closed','retrospective','terminated','archived']
+    stage: Stage
     revision: int
     orgId: UUID
     createdAt: datetime
