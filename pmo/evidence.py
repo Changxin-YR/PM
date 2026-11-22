@@ -103,6 +103,14 @@ def lookup(c,a,eid,lock=False,*,shared=False):
     return row
 
 
+def lookup_for_integrity(c, pid, eid):
+    """Internal verification only, after authorizing the parent action and its persisted references."""
+    row = c.execute(stmt().where(e.c.project_id == pid, e.c.id == eid).with_for_update(of=e, read=True)).mappings().one_or_none()
+    if row is None:
+        raise Failure(404, 'RESOURCE_NOT_FOUND')
+    return row
+
+
 def upload_write(auth,pid,key,expected,link,name,mime,data,digest):
     op='human_evidence_upload'; sig=fingerprint([str(pid),expected,link.model_dump(mode='json'),name,mime,digest])
     def write(c,a,rid):
@@ -235,9 +243,13 @@ def verified_link(c,a,ref,pid,kind,resource_id,*,shared=False):
     except ValueError: raise Failure(422,'INVALID_EVIDENCE_REF') from None
     row=lookup(c,a,eid,True,shared=shared)
     if row.project_id!=pid or row.resource_type!=kind or row.resource_id!=resource_id: raise Failure(422,'EVIDENCE_TARGET_MISMATCH')
+    require_verified_content(row)
+    return row
+
+
+def require_verified_content(row):
     if row.quarantine_status!='verified' or not row.verified_at or not row.verified_by or row.verified_by==row.uploaded_by: raise Failure(422,'VERIFIED_EVIDENCE_REQUIRED')
     storage.checked_bytes(row.storage_key,row.sha256,row.size_bytes)
-    return row
 
 
 @router.post('/milestones/{milestoneId}/complete',operation_id='human_milestone_complete',response_model_exclude_none=True)

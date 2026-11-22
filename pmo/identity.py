@@ -71,6 +71,7 @@ HUMAN_ONLY_OPERATIONS = frozenset({
         'admin_user_invite','admin_user_invitation_list','admin_user_invitation_revoke',
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
+        'human_approval_queue',
         'human_termination_confirmation_inbox','human_termination_confirm',
         'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson',
 })

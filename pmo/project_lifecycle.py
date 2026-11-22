@@ -600,11 +600,13 @@ def termination_inbox(authorization: Auth) -> Result[TerminationPage]:
 
 @router.get('/approvals', operation_id=INBOX, response_model_exclude_none=True)
 def inbox(authorization: Auth, projectId: UUID = Query(...), page: int = Query(1, ge=1),
-          pageSize: int = Query(100, ge=1, le=100)) -> Result[Page]:
+          pageSize: int = Query(100, ge=1, le=100), approvalId: UUID | None = Query(None)) -> Result[Page]:
     def read(c, a, _):
         p = lock_project(c, a, projectId)
         query = sa.select(approval.c.id).join(intents, intents.c.approval_id == approval.c.id).where(
             approval.c.project_id == p.id, approval.c.action == ACTION)
+        if approvalId is not None:
+            query = query.where(approval.c.id == approvalId)
         total = c.execute(sa.select(sa.func.count()).select_from(query.subquery())).scalar_one()
         offset = (page - 1) * pageSize
         rows = c.execute(query.order_by(approval.c.created_at.desc(), approval.c.id)

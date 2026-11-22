@@ -29,7 +29,7 @@ type Workbench={
   requirementException?:RequirementException
   tasks:{taskId:string;title:string;assigneeId?:string;dueAt?:string;sourceType:string;sourceId:string;status:string;revision:number}[]
   canScore:boolean;canAppeal:boolean;canDecide:boolean;canWithdraw:boolean;canConfirmSponsor:boolean;canConfirmInitiator:boolean
-  policyPending:boolean;stale:boolean
+  policyPending:boolean;stale:boolean;scoreEvidenceStale?:true
 }
 type ScoreDraft=Omit<Rating,'score'> & {score:keyof typeof anchorCodes|'';attachment:string}
 type Condition={id:number;title:string;assigneeId:string;dueAt:string}
@@ -186,6 +186,7 @@ async function submit(previous?:Attempt){
       <template v-if="view">
         <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" :closable="false" show-icon/>
         <el-alert v-if="view.stale" type="warning" title="送审所依据的材料或授权已变化。" :closable="false" show-icon/>
+        <el-alert v-if="view.scoreEvidenceStale" type="warning" title="有效评分的证据无法通过复核，暂不可确认或裁决。" :closable="false" show-icon/>
         <RequirementExceptionReceipt v-if="view.requirementException" :receipt="view.requirementException"
           :title="view.decision?'裁决接受的具体需求偏差':'本次送审冻结的客户书面例外'"/>
         <section v-if="view.assessment" class="group" aria-label="评分评定">

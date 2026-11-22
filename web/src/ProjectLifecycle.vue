@@ -13,8 +13,8 @@ type Mode='request'|'execute'|'decide'|'resubmit'
 type Intent={mode:Mode;revision:number;fromStage:string;toStage?:string;requestId?:string}
 type Decision='approve'|'reject'
 
-const props=defineProps<{projectId:string;projectRevision?:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number]}>()
+const props=defineProps<{projectId:string;projectRevision?:number;focusApprovalId?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number];clearFocus:[]}>()
 const stages:Record<string,string>={drafting:'草稿',charter_review:'立项评审',rejected:'已拒绝',designing:'方案细化',
   feasibility_review:'落地评审',executing:'执行中',on_hold:'已暂停',delivering:'交付验收',closing_review:'结项评审',
   closed:'已结项',retrospective:'复盘',terminated:'已终止',archived:'已归档'}
@@ -42,6 +42,7 @@ function eligible(mode:'execute'|'decide',item?:Entry){
 }
 async function read(page=state.value?.page??1){
   const params=new URLSearchParams({projectId:props.projectId,page:String(page),pageSize:'20'})
+  if(props.focusApprovalId)params.set('approvalId',props.focusApprovalId)
   const {data}:{data:Inbox}=await props.api(`approvals?${params}`)
   state.value=data
   if(!outdated.value)emit('stageRead',data.projectId,data.stage,data.projectRevision)
@@ -53,6 +54,7 @@ async function refresh(page=state.value?.page??1){
 }
 onMounted(()=>void refresh())
 watch(()=>props.projectRevision,revision=>{if(revision!==state.value?.projectRevision)void refresh()})
+watch(()=>props.focusApprovalId,()=>void refresh(1))
 
 function begin(mode:Mode,item?:Entry){
   const inbox=state.value
@@ -114,8 +116,9 @@ async function save(){
         <el-tag v-if="state.policyPending" size="small" type="warning">审批策略待签核</el-tag>
       </div>
       <div class="controls">
-        <el-button v-if="destinations.length" type="primary" :disabled="busy||outdated" @click="begin('request')"><Send :size="15"/>申请阶段流转</el-button>
-        <el-button v-if="state?.canResubmit" :disabled="busy||outdated" @click="begin('resubmit')"><RotateCcw :size="15"/>退回草稿重提</el-button>
+        <el-button v-if="focusApprovalId" :disabled="busy||dialog" @click="emit('clearFocus')">查看全部流转</el-button>
+        <el-button v-if="!focusApprovalId&&destinations.length" type="primary" :disabled="busy||outdated" @click="begin('request')"><Send :size="15"/>申请阶段流转</el-button>
+        <el-button v-if="!focusApprovalId&&state?.canResubmit" :disabled="busy||outdated" @click="begin('resubmit')"><RotateCcw :size="15"/>退回草稿重提</el-button>
         <el-button aria-label="刷新阶段流转" title="刷新阶段流转" :disabled="busy" @click="refresh()"><RefreshCw :size="15"/></el-button>
       </div>
     </div>
@@ -123,8 +126,8 @@ async function save(){
     <el-alert v-else-if="outdated" type="warning" title="项目版本已变化，阶段流转记录需要重新读取。" :closable="false" show-icon/>
     <p v-if="notice" role="status" class="notice">{{notice}}</p>
     <p v-if="loading" class="meta">正在读取阶段流转…</p>
-    <h3>阶段流转记录</h3>
-    <p v-if="state&&!state.items.length" class="meta">暂无阶段流转记录。</p>
+    <h3>{{focusApprovalId?'选中的阶段流转':'阶段流转记录'}}</h3>
+    <p v-if="state&&!state.items.length" class="meta">{{focusApprovalId?'此申请已不可见。':'暂无阶段流转记录。'}}</p>
     <ul v-if="state?.items.length" class="entries" aria-label="阶段流转记录">
       <li v-for="item in state.items" :key="item.requestId">
         <div class="entry-heading">

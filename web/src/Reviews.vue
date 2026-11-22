@@ -7,7 +7,7 @@ type Gate='charter'|'feasibility'|'closing'
 type Draft={gateCheck:{gate:Gate;eligible:boolean;missing:{code:string;message:string;sourceRefs:string[]}[]};draftMaterials:string[]}
 type Review={reviewId:string;type:Gate;status:'draft'|'pending'|'decided'}
 type Api=(path:string,options?:RequestInit,receiveHeaders?:(headers:Headers)=>void)=>Promise<any>
-const props=defineProps<{projectId:string;projectRevision?:number;stageLabel:string;api:Api}>()
+const props=defineProps<{projectId:string;projectRevision?:number;focusReviewId?:string;stageLabel:string;api:Api}>()
 const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number]}>()
 const gates:Record<string,Gate>={drafting:'charter',designing:'feasibility',delivering:'closing'}
 const labels={charter:'立项',feasibility:'落地',closing:'结项'}
@@ -62,6 +62,7 @@ async function submit(){
 }
 onMounted(refresh)
 watch(()=>props.projectRevision,rev=>{if(!busy.value&&rev!==seenRevision)void refresh()})
+watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
 </script>
 
 <template>

@@ -409,6 +409,23 @@ def test_browser_personal_strengthening_queue(live, task_team):
     assert ok(owner.get('me/strengthening-tasks'))['total'] == 23
 
 
+def test_browser_personal_review_and_stage_approvals(live, team):
+    from test_approval_queue import another_project
+    from test_lifecycle import begin_execution, propose
+    from test_reviews import data, score, start_charter
+
+    _, people, users, _ = team
+    project, _, _ = begin_execution(live, team)
+    pause = data(propose(users['pm'], project, 'on_hold'))
+    review = start_charter(another_project(live[0], people, users), users)
+    score(users['reviewer'], review, [4] * 4)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'personal-approvals', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm', 'reviewer', 'sponsor')),
+            'PMO_TEST_APPROVALS': json.dumps({'reviewId': review.split('/')[-1], 'transition': pause})})
+    assert stage(users['pm'], project)['stage'] == 'on_hold'
+    assert data(users['reviewer'].get(review + '/workbench'))['decision']['stage'] == 'designing'
+
+
 def test_browser_model_free_weekly_draft_and_publish(live, team):
     from test_reports import data
 

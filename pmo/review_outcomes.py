@@ -11,7 +11,7 @@ from . import schema_v1 as db
 from .audit_store import stable_refs
 from .change_intents import snapshot
 from .contracts import RULE_VERSION, Result, Strict
-from .evidence import verified_link, lookup as evidence_lookup
+from .evidence import lookup as evidence_lookup, lookup_for_integrity, require_verified_content
 from .gates import ENTRY, REVIEW, evaluate, lock_project, submitter
 from .identity import Failure
 from .materials import replay
@@ -144,6 +144,7 @@ class Workbench(Strict):
     canConfirmInitiator: bool
     policyPending: bool
     stale: bool
+    scoreEvidenceStale: Literal[True] | None = None
 
 
 def one(c, table, *where):
@@ -214,7 +215,7 @@ def score_hash(frozen, round_no, scores):
     return fingerprint([frozen.snapshot_hash, round_no, [snapshot(r) for r in scores]])
 
 
-def proofs(c, a, p, review, frozen, dimensions):
+def proofs(c, a, p, review, frozen, dimensions, *, persisted=False):
     scoped = set(frozen.source_refs)
     targets = {ref.split('@', 1)[0] for ref in scoped} | {f'review:{review.id}'}
     verified = []
@@ -224,11 +225,14 @@ def proofs(c, a, p, review, frozen, dimensions):
                 raise Failure(422, 'REVIEW_SOURCE_NOT_FROZEN', project_id=p.id)
             continue
         try:
-            proof = evidence_lookup(c, a, UUID(ref.removeprefix('evidence:')), True, shared=True)
+            evidence_id = UUID(ref.removeprefix('evidence:'))
+            # A confirmation does not grant file access. Recheck only attachments already bound to effective cards.
+            proof = (lookup_for_integrity(c, p.id, evidence_id) if persisted
+                     else evidence_lookup(c, a, evidence_id, True, shared=True))
             target = proof.resource_type.replace('_', '-')
             if proof.project_id != p.id or f'{target}:{proof.resource_id}' not in targets:
                 raise Failure(422, 'EVIDENCE_TARGET_MISMATCH')
-            proof = verified_link(c, a, ref, p.id, proof.resource_type, proof.resource_id, shared=True)
+            require_verified_content(proof)
         except (ValueError, Failure):
             raise Failure(422, 'REVIEW_EVIDENCE_INVALID', project_id=p.id) from None
         verified.append({'ref': ref, 'sha256': proof.sha256, 'revision': proof.revision,
@@ -240,7 +244,7 @@ def check_score_evidence(c, a, p, review, frozen, scores):
     for row in scores:
         try:
             valid = row.rule_version == RULE_VERSION and row.type == review.type and row.rationale['evidence'] == proofs(
-                c, a, p, review, frozen, row.dimensions)
+                c, a, p, review, frozen, row.dimensions, persisted=True)
         except Failure:
             valid = False
         if not valid:
@@ -348,6 +352,18 @@ def workbench(c, a, p, review, frozen):
     valid = pending and not stale
     fast = bool(calculated and calculated.classification == 'fast_track' and valid)
     no_policy = not synthetic_confirmation(c)
+    can_decide = valid and reviewer and not no_policy and (calculated is not None or review.type == 'closing')
+    can_confirm_sponsor = fast and sponsor and 'sponsor' not in confirmed
+    can_confirm_initiator = fast and initiator and 'initiator' not in confirmed
+    score_evidence_stale: Literal[True] | None = None
+    if can_decide or can_confirm_sponsor or can_confirm_initiator:
+        try:
+            check_score_evidence(c, a, p, review, frozen, latest)
+        except Failure as failure:
+            if failure.code != 'REVIEW_SNAPSHOT_STALE':
+                raise
+            score_evidence_stale = True
+            can_decide = can_confirm_sponsor = can_confirm_initiator = False
     t = db.tasks
     task_rows = c.execute(sa.select(t).join(task_refs, task_refs.c.task_id == t.c.id).where(
         task_refs.c.review_id == review.id, t.c.project_id == p.id).order_by(t.c.created_at, t.c.id)).mappings()
@@ -365,13 +381,12 @@ def workbench(c, a, p, review, frozen):
         appeal=appeal_view(reconsideration) if reconsideration else None, assessment=calculated if can_read_scores else None,
         confirmations=confirmations_found if can_read_scores else [], decision=decision,
         requirementException=RequirementException.model_validate(exception) if exception and show_full_material else None,
-        tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy,
+        tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy, scoreEvidenceStale=score_evidence_stale,
         withdrawalReason=review.minutes if review.verdict == 'withdrawn' else None,
         canScore=valid and reviewer and bool(rubric(review.type)) and not any(r.reviewer_id == a.person and r.round == round_no for r in rows),
         canAppeal=valid and owner and bool(rows) and reconsideration is None,
-        canDecide=valid and reviewer and not no_policy and (calculated is not None or review.type == 'closing'),
-        canWithdraw=pending and owner, canConfirmSponsor=fast and sponsor and 'sponsor' not in confirmed,
-        canConfirmInitiator=fast and initiator and 'initiator' not in confirmed)
+        canDecide=can_decide, canWithdraw=pending and owner, canConfirmSponsor=can_confirm_sponsor,
+        canConfirmInitiator=can_confirm_initiator)
 
 
 def read_workbench(auth, review_id):

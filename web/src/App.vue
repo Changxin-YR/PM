@@ -25,6 +25,7 @@ import TerminationConfirmations from './TerminationConfirmations.vue'
 import Reports from './Reports.vue'
 import Tasks from './Tasks.vue'
 import PersonalTasks from './PersonalTasks.vue'
+import PersonalApprovals from './PersonalApprovals.vue'
 import Health from './Health.vue'
 import OrgDirectory from './OrgDirectory.vue'
 import AcceptOrgInvite from './AcceptOrgInvite.vue'
@@ -42,8 +43,17 @@ const csrf=ref(sessionStorage.getItem('pmo.csrf')||'');let sequence=0,attempt=''
 const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿')
 const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('overview'),focusTaskId=ref<string>()
-function materials(row:Project){materialProject.value=row;focusTaskId.value=undefined;materialTab.value='overview';showMaterials.value=true}
+const focusReviewId=ref<string>(),focusApprovalId=ref<string>()
+function materials(row:Project){
+  materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=undefined
+  materialTab.value='overview';showMaterials.value=true
+}
 function openTask(project:Project,taskId:string){materials(project);focusTaskId.value=taskId;materialTab.value='tasks'}
+function openApproval(project:Project,kind:'review'|'transition',id:string){
+  materials(project)
+  if(kind==='review'){focusReviewId.value=id;materialTab.value='reviews'}
+  else{focusApprovalId.value=id;materialTab.value='lifecycle'}
+}
 function stageRead(projectId:string,stage:string,revision:number){
   if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision){
     materialProject.value={...materialProject.value,stage,revision}
@@ -161,6 +171,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <Alerts :api="api"/>
 <IncomingRisk :api="api"/>
 <TerminationConfirmations :api="api"/>
+<PersonalApprovals :api="api" :stages="stageNames" @open-approval="openApproval"/>
 <PersonalTasks :api="api" @open-task="openTask"/>
 <AuditLog v-if="admin" :api="api"/>
 <OrgDirectory v-if="admin" :api="api"/>
@@ -179,8 +190,8 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane name="members" label="项目成员" lazy><Members :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane name="risks" label="风险" lazy><Risks :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane name="costs" label="成本" lazy><Costs :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
-    <el-tab-pane name="reviews" label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :project-revision="materialProject.revision" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
-    <el-tab-pane name="lifecycle" label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane name="reviews" label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :project-revision="materialProject.revision" :focus-review-id="focusReviewId" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
+    <el-tab-pane name="lifecycle" label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :focus-approval-id="focusApprovalId" :api="api" @stage-read="stageRead" @clear-focus="focusApprovalId=undefined"/></el-tab-pane>
     <el-tab-pane name="tasks" label="补强任务" lazy><Tasks :project-id="materialProject.projectId" :focus-task-id="focusTaskId" :api="api" @clear-focus="focusTaskId=undefined"/></el-tab-pane>
     <el-tab-pane name="reports" label="日报周报" lazy><Reports :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane name="health" label="三线健康" lazy><Health :project-id="materialProject.projectId" :active="materialTab==='health'" :api="api"/></el-tab-pane>
