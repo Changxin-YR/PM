@@ -212,3 +212,16 @@
 | `.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-7c9ce0ea` | 0 | PASS：`.local/rc0032-compose-smoke.log`。回环 `18762`，受限数据库账号，15 个草稿和唯一消费回执；停库 `live=200 / ready=503`，恢复 `200/200` 且项目和回执未丢失。30 次/操作，p95 筛选 50 ms、详情 62 ms，仅本机合成负载。 |
 
 候选 API 容器内回读 OpenAPI：**95/95 基线 REST + 42 工程操作**，40 MCP 路由无缺项，评分分值/锚点五种条件已发布（`.local/rc0032-compose-contract-internal.log`）。Web 代理不开放内部 OpenAPI。回核 `docker ... exec -T api alembic current` 返回 `0032 (head)`，回环 `/health/ready` 200。逐边权限和其余嵌套 DTO 不由目录覆盖推定，目标 Host、目标部署、真实模型和真实试点也未通过。
+
+## 0033 候选与综合回归
+
+源条款：§5.2、§9.1、§12.1 Q2、§12.2 T05/T10、§20.3、工程 DTO 补充 §3、§7。基准 `d2b12df5acc3b680b3a6e165781fd2385a0380ec`，候选和首轮被测树 `08746312574ff91954f3f9df0c50f83f89d7cdf6`，修复 ERD 后固定导出树 `7d5758898ae50c809c72ea71ec6e57c7a36ba6e0`。环境：Windows / Python 3.12.15 / PostgreSQL 16.14 隔离 schema 与专用 Compose / 回环 HTTP、真实 SDK stdio 和 Edge `158.0.4370.33`，全部合成、关闭模型。实现与定向验证见 [M2](M2-report.md#0033-预算版本在同一时点生效)。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0033-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0033-backend.xml` | 1 | FAIL：296 PASS、1 FAIL，ERD 修订标题仍为 `0032`；对照实际库生成文本后修同步，保留断言。`.local/rc0033-backend.log`。 |
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0033-mcp-verified.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0033-backend-verified.xml`（在 `git archive` 导出的固定树执行，实际日志路径指向原仓库） | 0 | PASS：297 项 / 487.54 秒，无跳过，`.local/rc0033-backend-verified.log`。目录与实际 ERD 一致；40 工具发现、调用与未授权拒绝，18 读审计、22 写重放。见 [逐项证据](../acceptance/mcp-stdio-0033.json)，SHA-256 `5c9ca88af1c54b9911a21d8d1921d0ebf38a1faefe7aeb405c769d7e985bc1d2`，相较 0029 增加预算生效时点的 SDK 证据。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0033-edge.xml` | 0 | PASS：20 项 / 267.82 秒，`.local/rc0033-edge.log`。无模型人工闭环与正式授权路径均回归；后续 ERD 修复不涉及产品代码。 |
+| `docker compose -p pmo104-rc-cd11b7c4 --env-file .local/pmo104-rc-cd11b7c4.env -f deploy/compose.yaml up --build -d --wait`；`.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-cd11b7c4` | 0 | PASS：`.local/rc0033-compose-build.log`、`.local/rc0033-compose-smoke.log`。回环 `18763`，受限运行账号，15 个草稿和唯一消费回执；停库 `live=200 / ready=503`，恢复 `200/200`，项目和回执未丢失。30 次/操作，本机 p95 筛选 107 ms、详情 150 ms。 |
+
+联合恢复覆盖 `0016→0033` 的有数据升级，旧成本历史逐字段不变，有效与撤销的阶段授权、私有原件及应用引用均回读。候选容器内 `alembic current` 为 `0033 (head)`，回读 **95/95 基线 REST + 42 工程操作**、40 MCP 所需路由及成本格式（`.local/rc0033-compose-contract.log`）。共享库未升级。不是目标环境周期恢复、性能、真实 Host 或业务签核结论。

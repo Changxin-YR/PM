@@ -48,11 +48,16 @@ def apply(c,p,actor,i,old):
     elif kind=='charter':
         fields={COLUMNS[k]:Decimal(v) if k in ('roughCost','roughEffort') else v for k,v in after.items()}
     else:
-        # One entry version is current. Keep existing posting foreign keys on the original version.
-        c.execute(t.update().where(t.c.id==old.id).values(is_current_baseline=False,updated_at=sa.func.now(),revision=old.revision+1))
-        values={k:old[k] for k in ('project_id','type','category','period_start','period_end','forecast_remaining')}
-        return c.execute(t.insert().values(**values,actual=0,created_by=actor.person,budget=Decimal(after['budget']),baseline_version=old.baseline_version+1,
-            source_ref=f'change:{i.id}').returning(t)).mappings().one()
+        # History uses the statement's timestamp. Retire and insert in the same
+        # statement without moving posting foreign keys off the original row.
+        carry = ('project_id', 'type', 'category', 'period_start', 'period_end', 'forecast_remaining')
+        cutover = sa.func.statement_timestamp()
+        retired = t.update().where(t.c.id == old.id).values(is_current_baseline=False, updated_at=cutover,
+            revision=t.c.revision + 1).returning(*(t.c[k] for k in carry), t.c.baseline_version).cte('retired_budget')
+        replacement = sa.select(*(retired.c[k] for k in carry), sa.literal(0), sa.literal(actor.person),
+            sa.literal(Decimal(after['budget'])), retired.c.baseline_version + 1, sa.literal(f'change:{i.id}'), cutover, cutover)
+        return c.execute(t.insert().from_select((*carry, 'actual', 'created_by', 'budget', 'baseline_version',
+            'source_ref', 'created_at', 'updated_at'), replacement).returning(t)).mappings().one()
     saved=c.execute(t.update().where(t.c.id==old.id).values(**fields,updated_at=sa.func.now(),revision=old.revision+1).returning(t)).mappings().one()
     if kind=='milestone': reconcile(c,p,saved)
     return saved
@@ -98,7 +103,7 @@ def decide(auth,approve,cid,command,key,rev):
             c.execute(ch.update().where(ch.c.id==cid).values(status='approved',approved_by=a.person,revision=rev+1))
             result=apply(c,project,a,i,old)
         status='applied' if approve else 'rejected'
-        at=c.scalar(sa.select(sa.func.clock_timestamp()))
+        at=result.updated_at if result is not None and i.target_type=='budget' else c.scalar(sa.select(sa.func.clock_timestamp()))
         saved=c.execute(ch.update().where(ch.c.id==cid).values(status=status,revision=rev+(2 if approve else 1),effective_at=at if approve else None,
             updated_at=at).returning(ch)).mappings().one()
         if intent: c.execute(ar.update().where(ar.c.id==cid).values(status='approved' if approve else 'rejected',decided_by=a.person,decided_at=at,reason=reason,updated_at=at))

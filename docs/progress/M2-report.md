@@ -246,3 +246,15 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_stage_edges.py --tb=short --junitxml=.local/stage-edges-first.xml` | 1 | FAIL：测试将审计 `request_id` 的 `varchar` 当作 UUID 比较；按实际类型查询并保留原断言，`.local/stage-edges-first.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_stage_edges.py --tb=short --junitxml=.local/stage-edges-second.xml` | 0 | PASS：6 路径 / 24.38 秒，`.local/stage-edges-second.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_stage_edges.py tests/test_reviews.py tests/test_lifecycle.py tests/test_transition_authority.py tests/test_mcp_transition.py tests/test_runtime.py::test_runtime_stage_catalog_matches_frozen_graph --tb=short --junitxml=.local/stage-edges-regression.xml` | 0 | PASS：35 项 / 91.53 秒，`.local/stage-edges-regression.log`。 |
+
+## 0033 预算版本在同一时点生效
+
+依据：§5.2、§12.1 Q2、§12.2 T05、§20.3 和 [ADR 0009](../adr/0009-baseline-change-authority.md)。基准 SHA `d2b12df5acc3b680b3a6e165781fd2385a0380ec`，定向被测源码树 `08746312574ff91954f3f9df0c50f83f89d7cdf6`。Windows、PostgreSQL 16.14 隔离 schema、真实回环 HTTP/SDK stdio，合成账号、模型关闭。`0033_atomic_budget_cutover.py` 以语句时点记账：获批预算在同一条 SQL 中退役旧版并插入新版；落地批准时两种口径一起冻结。旧流水外键和已存历史不重写。OpenAPI 明确小数字符串精度、颜色枚举及不可计算时可省略偏差率。
+
+| 实际命令或用例 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `pytest` 定向用例 `test_approved_cost_bases_switch_at_one_effective_instant`、`test_cost_summary_contract_handles_unavailable_rate` | 1 | FAIL：旧回读在换版空档显示 `budget=0.00`，但已核验实际为 `30.25`（`.local/cost-cutover-before.log`）；OpenAPI 错列 `varianceRate` 必填（`.local/cost-dto-before.log`）。修复过程首轮还误将 SDK 的 `ok` 外层与 REST 比较，保留 `.local/rc0033-cost-first.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_costs.py tests/test_postings.py tests/test_cost_reconciliation.py tests/test_change_requests.py tests/test_reviews.py tests/test_stage_edges.py tests/test_postgres_invariants.py tests/test_database_roles.py tests/test_recovery.py --tb=short --junitxml=.local/rc0033-cost-verified.xml` | 0 | PASS：39 项 / 105.64 秒，`.local/rc0033-cost-verified.log`。换版前一微秒和生效时点的金额、人天、核验流水和来源，一致于人工 REST、Agent REST 与真实 stdio。Outbox 写入故障不产生部分成本、批准、成功审计或幂等回执；重试后只生成一个有效版本。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规格和 mypy 87 源文件，`.local/rc0033-check-final.log`。 |
+
+带数据升级、联合恢复、ERD 及综合运行见 [M4](M4-report.md#0033-候选与综合回归)。不改变业务阈值、权限、签核或未决政策。

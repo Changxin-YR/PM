@@ -20,6 +20,9 @@ from .risks import WRITABLE, can_manage
 
 router = APIRouter(prefix='/api/v1', tags=['Costs'])
 Amount = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$')]
+DisplayedAmount = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]*)\.[0-9]{2}$')]
+DisplayedNet = Annotated[str, Field(pattern=r'^-?(0|[1-9][0-9]*)\.[0-9]{2}$')]
+DisplayedRate = Annotated[str, Field(pattern=r'^-?(0|[1-9][0-9]*)\.[0-9]{4}$')]
 Kind = Literal['money', 'effort']
 FIELDS = ('money_budget', 'effort_budget', 'money_remaining', 'effort_remaining')
 plans = sa.table('cost_plan_versions', sa.column('project_id',sa.Uuid), sa.column('revision',sa.BigInteger),
@@ -41,10 +44,10 @@ class Forecast(Strict):
 class Plan(Strict):
     projectId: UUID
     revision: int
-    moneyBudget: str | None = None
-    effortBudget: str | None = None
-    moneyForecastRemaining: str | None = None
-    effortForecastRemaining: str | None = None
+    moneyBudget: DisplayedAmount | None = None
+    effortBudget: DisplayedAmount | None = None
+    moneyForecastRemaining: DisplayedAmount | None = None
+    effortForecastRemaining: DisplayedAmount | None = None
 
 
 def plan_view(pid, row):
@@ -96,12 +99,12 @@ def save_forecast(projectId:UUID,command:Forecast,authorization:Auth,key:Key,exp
 
 
 class Line(Strict):
-    budget: str
-    actual: str
-    forecastRemaining: str
-    projectedTotal: str
-    varianceRate: str | None
-    color: str
+    budget: DisplayedAmount
+    actual: DisplayedNet
+    forecastRemaining: DisplayedAmount
+    projectedTotal: DisplayedNet
+    varianceRate: DisplayedRate | None = None
+    color: Literal['untrusted', 'green', 'yellow', 'red']
 
 
 class Summary(Strict):

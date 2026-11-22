@@ -140,6 +140,11 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     original = upload()
     with engine.connect() as c:
         assert c.scalar(sa.text('SELECT version_num FROM alembic_version')) == '0016'
+    history_sql = '''SELECT seq,entry_id,project_id,type,budget,forecast_remaining,is_current,effective_at
+                     FROM cost_baseline_history WHERE project_id=%s ORDER BY seq'''
+    with engine.connect() as c:
+        old_cost_history = [tuple(row) for row in c.exec_driver_sql(history_sql, (project,))]
+        assert len(old_cost_history) == 2
     cli = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', '0029'], check=True, env=cli)
     with engine.begin() as c:
@@ -158,6 +163,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         c.execute(transitions.insert().values(**historical, from_revision=2, to_revision=3,
             from_stage='closing_review', to_stage='delivering', request_id=legacy_withdrawal))
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True, env=cli)
+    with engine.connect() as c:
+        assert [tuple(row) for row in c.exec_driver_sql(history_sql, (project,))] == old_cost_history
     with pytest.raises(sa.exc.IntegrityError, match='ck_project_stage_closing_rework'), engine.begin() as c:
         # A fresh review ID avoids the existing one-exit-per-review index masking the new check.
         fresh = c.scalar(db.reviews.insert().values(project_id=legacy_project, created_by=owner, type='closing', status='pending',
@@ -307,6 +314,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert {(r[0],r[3],str(r[4])) for r in rows} == {(original,'milestone',str(milestone)), (external,'project',str(project)),
                 (fact_attachment,'report',report['reportId'])}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
+            assert restored.execute(history_sql, (project,)).fetchall() == old_cost_history
             assert restored.execute(authority_sql).fetchall() == saved_authority
             assert restored.execute('''SELECT project_id, review_id, from_stage, to_stage, from_revision, to_revision
                 FROM project_stage_transitions WHERE request_id=%s''', (legacy_withdrawal,)).fetchone() == (

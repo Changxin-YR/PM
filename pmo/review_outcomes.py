@@ -404,15 +404,15 @@ def freeze_approved_baselines(c, a, p, review, decision_id):
     plan = c.execute(latest_plan(p.id)).mappings().one()
     first, last = c.execute(sa.select(sa.func.min(m.c.planned_date), sa.func.max(m.c.planned_date)).where(
         m.c.project_id == p.id, ~m.c.is_cancelled)).one()
-    refs = []
+    rows = []
     for kind in ('money', 'effort'):
         budget, forecast = plan[kind + '_budget'], plan[kind + '_remaining']
-        row = c.execute(t.insert().values(project_id=p.id, created_by=a.person, category='project_baseline', type=kind,
+        rows.append(dict(project_id=p.id, created_by=a.person, category='project_baseline', type=kind,
             period_start=first, period_end=last, budget=budget, actual=0,
             forecast_remaining=budget if forecast is None else forecast, baseline_version=1,
-            source_ref=f'decision:{decision_id}').returning(t.c.id, t.c.revision)).one()
-        refs.append(f'cost-entry:{row.id}@{row.revision}')
-    return refs
+            source_ref=f'decision:{decision_id}'))
+    saved = c.execute(t.insert().values(rows).returning(t.c.id, t.c.revision)).all()
+    return [f'cost-entry:{row.id}@{row.revision}' for row in saved]
 
 
 def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid):
