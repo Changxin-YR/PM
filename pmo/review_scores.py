@@ -2,7 +2,7 @@
 from decimal import Decimal, localcontext
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from .contracts import Strict
 
@@ -13,10 +13,15 @@ Source = Annotated[str, Field(min_length=4, max_length=200)]
 
 
 class DimensionScore(Strict):
+    model_config = ConfigDict(json_schema_extra={'allOf': [
+        {'if': {'properties': {'score': {'const': score}}, 'required': ['score']},
+         'then': {'properties': {'selectedAnchorCode': {'const': anchor}}}}
+        for score, anchor in enumerate(ANCHORS, 1)
+    ]})
     score: int = Field(strict=True, ge=1, le=5)
     selectedAnchorCode: Anchor
     rationale: Reason
-    evidenceRefs: list[Source] = Field(min_length=1, max_length=12)
+    evidenceRefs: list[Source] = Field(min_length=1, max_length=12, json_schema_extra={'uniqueItems': True})
 
     @model_validator(mode='after')
     def justified(self):

@@ -18,7 +18,7 @@ from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment, active_member
 from .requirement_delivery import synthetic_confirmation
 from .requirement_exceptions import Receipt as RequirementException
-from .review_scores import Assessment, Dimension, DimensionScore, Reason, assess, rubric
+from .review_scores import Assessment, CharterDimensions, Dimension, FeasibilityDimensions, Reason, assess, rubric
 from .reviews import (APPROVAL_ACTION, ReviewView, approval_hash, decision_stage, reviews,
                       snapshots, transition_project, transitions, view, withdrawal_stage)
 
@@ -70,7 +70,7 @@ class Card(Strict):
     scorecardId: UUID
     reviewerId: UUID
     round: int
-    dimensions: dict[str, DimensionScore]
+    dimensions: CharterDimensions | FeasibilityDimensions
     reviewedAt: datetime
 
 

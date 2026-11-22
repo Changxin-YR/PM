@@ -218,3 +218,13 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k formal_transition_authority --tb=short --junitxml=.local/rc0032-application-edge-before.xml` | 1 | FAIL：旧 Web 在 Sponsor 先提后丢失 PM 可用的终止选项，`.local/rc0032-application-edge-before.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py tests/test_transition_authority.py tests/test_mcp_transition.py tests/test_reference_vectors_permissions.py tests/test_runtime.py --tb=short --junitxml=.local/rc0032-application-verified.xml` | 0 | PASS：48 项 / 78.51 秒，`.local/rc0032-application-verified.log`。执行与暂停两边重复判定、停用后旧申请仍在但不可裁决、新申请可独立终止、MCP 只提不批。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'formal_transition_authority or drafting_through_archive_without_model or independent_termination' --tb=short --junitxml=.local/rc0032-application-edge.xml` | 0 | PASS：3 项 / 75.83 秒，`.local/rc0032-application-edge.log`。Edge 独立申请、授权裁决与刷新回读，正常无模型归档和发起人确认回归通过。 |
+
+## 立项与落地评分嵌套 REST 契约
+
+依据：§4.2–4.3、§20.1、OpenAPI 评分基线、工程 DTO 补充 §1 和 §7、[ADR 0010](../adr/0010-review-submission.md)。基准 SHA `60842998920abf4b16e18a1b9a2ba2e40bb42be1`、被测源码树 `4ad0a46cef829cd13792d3c14501fb3d69369985`（不含补录）。`pmo/review_scores.py` 和 `pmo/review_outcomes.py` 发布五个分值对应的锚点条件、证据引用去重和两种固定维度集合，不改历史或规则。Windows、真实回环 HTTP 与隔离 PostgreSQL 16.14、合成账号。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py -k runtime_review_score_contract --tb=short --junitxml=.local/rc0032-score-contract-before.xml` | 1 | FAIL：仅增测试，两关口的发布 Schema 都误收额外历史维度，但 HTTP 写入已拒绝非法数据，`.local/rc0032-score-contract-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_requirement_exceptions.py tests/test_reference_vectors_governance.py tests/test_postgres_invariants.py tests/test_runtime.py --tb=short --junitxml=.local/rc0032-score-contract-verified.xml` | 0 | PASS：52 项 / 77.03 秒，`.local/rc0032-score-contract-verified.log`。同一真实写入与历史回读通过发布的 Schema，三种非法评分同时被 HTTP 与 Schema 拒绝；无多余评分或版本推进，复议/阈值/权限/结项例外及数据库保护保持。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：三套冻结规格校验及 mypy 87 源文件，`.local/rc0032-check-final.log`。 |

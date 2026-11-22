@@ -353,6 +353,52 @@ def decide(client, path, **kwargs):
     return client.post(path + '/decisions', headers=headers(state['review']['revision']), json=outcome(state, **kwargs))
 
 
+@pytest.mark.parametrize('kind', ['charter', 'feasibility'])
+def test_runtime_review_score_contract_validates_nested_input_and_history(live, team, kind):
+    from copy import deepcopy
+
+    from jsonschema import Draft202012Validator
+
+    from test_lifecycle import start_feasibility
+
+    pid, _, users, _ = team
+    path = start_charter(pid, users) if kind == 'charter' else start_feasibility(live, team)[1]
+    reviewer = users['reviewer']
+    before = bench(reviewer, path)
+    command = score_command(before, [3] * len(before['dimensions']))
+    dimension = next(iter(command['dimensions']))
+    spec = live[1].get('/openapi.json').raise_for_status().json()
+    route = spec['paths']['/api/v1/reviews/{reviewId}/scores']['post']
+    request_schema = route['requestBody']['content']['application/json']['schema']
+    response_schema = route['responses']['200']['content']['application/json']['schema']
+    request = Draft202012Validator({**request_schema, 'components': spec['components']})
+    result = Draft202012Validator({**response_schema, 'components': spec['components']})
+    assert request.is_valid(command)
+    invalid_cases = {}
+    for field, value in [('selectedAnchorCode', 'score_5'), ('evidenceRefs', command['dimensions'][dimension]['evidenceRefs'] * 2)]:
+        invalid = deepcopy(command)
+        invalid['dimensions'][dimension][field] = value
+        invalid_cases[field] = invalid
+    unknown = deepcopy(command)
+    unknown['dimensions']['invented'] = command['dimensions'][dimension]
+    invalid_cases['unknown dimension'] = unknown
+    for name, invalid in invalid_cases.items():
+        response = reviewer.post(path + '/scores', headers=headers(before['review']['revision']), json=invalid)
+        assert response.status_code == 422, (name, response.text)
+    assert bench(reviewer, path)['review']['revision'] == before['review']['revision']
+    assert bench(reviewer, path)['scores'] == []
+
+    response = reviewer.post(path + '/scores', headers=headers(before['review']['revision']), json=command)
+    assert data(response)['scores'][0]['dimensions'] == command['dimensions']
+    result.validate(response.json())
+    result.validate(reviewer.get(path + '/workbench').raise_for_status().json())
+    extra_dimension = deepcopy(response.json())
+    extra_dimension['data']['scores'][0]['dimensions']['invented'] = command['dimensions'][dimension]
+    assert not result.is_valid(extra_dimension), 'Scorecard history must use the same closed set of dimensions'
+    for name, invalid in invalid_cases.items():
+        assert not request.is_valid(invalid), name
+
+
 def result_counts(c, pid):
     return c.execute(sa.text('''SELECT
         (SELECT stage FROM projects WHERE id=:p),
