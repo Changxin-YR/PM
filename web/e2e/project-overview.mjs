@@ -48,6 +48,9 @@ try{
   await expect(indicators.getByText('数据不可信',{exact:true})).toBeVisible()
   await expect(indicators.locator('dd')).toHaveText(['不可用','不可用','不可用','不可用'])
   await expect(overview.getByRole('region',exact('最近阶段活动')).getByRole('listitem')).toHaveCount(4)
+  const activity=overview.getByRole('region',exact('最近台账活动'))
+  await expect(activity.getByRole('listitem')).toHaveCount(1)
+  await expect(activity.getByText('风险已登记',{exact:true})).toBeVisible()
   await button(indicators,'三线健康').click()
   const health=pm.getByRole('region',exact('三线健康'))
   await expect(health.getByText('暂停正式发布',{exact:true})).toBeVisible()
@@ -71,4 +74,5 @@ try{
   const minimal=applicant.getByRole('region',exact('项目概览'))
   await expect(minimal.getByText('当前账号仅可查看项目基本信息。',{exact:true})).toBeVisible()
   await expect(minimal.getByRole('region',exact('当前四指标'))).toHaveCount(0)
+  await expect(minimal.getByRole('region',exact('最近台账活动'))).toHaveCount(0)
 }finally{await browser.close()}

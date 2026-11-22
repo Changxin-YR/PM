@@ -9,6 +9,7 @@ import sqlalchemy as sa
 
 from . import schema_v1 as db
 from .access import Auth, DEEP_OBJECT_FILTERS, Filters
+from .change_requests import ledger_scope
 from .contracts import CharterSummary, ProjectView, Result, Stage, Strict
 from .costs import DisplayedRate
 from .dto import Proportion, Unavailable
@@ -75,12 +76,40 @@ class StageReceipt(Strict):
     approvalRequestId: UUID | None = None
 
 
+ActivityKind = Literal['risk_created', 'change_requested', 'change_applied', 'change_rejected']
+
+
+class Activity(Strict):
+    kind: ActivityKind
+    resourceId: UUID
+    occurredAt: datetime
+
+
 class OverviewDetail(Strict):
     project: ProjectView
     materialsVisible: bool
     charterSummary: CharterSummary | None = None
     indicators: Indicators | None = None
     recentTransitions: list[StageReceipt] = Field(max_length=5)
+    recentActivity: list[Activity] | None = Field(default=None, max_length=5)
+
+
+def recent_activity(c, project_id, as_of) -> list[Activity]:
+    r, ch = db.risks.c, db.change_entries.c
+    receipts = sa.table('change_decision_records', sa.column('change_id', sa.Uuid),
+                        sa.column('outcome'), sa.column('decided_at', sa.DateTime(timezone=True)))
+    d = receipts.c
+    scope = ledger_scope(project_id)
+    risks = sa.select(sa.literal('risk_created').label('kind'), r.id.label('resource_id'),
+                      r.created_at.label('occurred_at')).where(r.project_id == project_id)
+    requests = sa.select(sa.literal('change_requested'), ch.id, ch.created_at).where(scope)
+    decisions = sa.select(sa.case((d.outcome == 'applied', 'change_applied'), else_='change_rejected'), ch.id,
+                          d.decided_at).select_from(db.change_entries.join(receipts, d.change_id == ch.id)).where(
+                              scope, d.outcome.in_(('applied', 'rejected')))
+    events = sa.union_all(risks, requests, decisions).subquery()
+    rows = c.execute(sa.select(events).where(events.c.occurred_at <= as_of).order_by(
+        events.c.occurred_at.desc(), events.c.resource_id, events.c.kind).limit(5)).mappings()
+    return [Activity(kind=r.kind, resourceId=r.resource_id, occurredAt=r.occurred_at) for r in rows]
 
 
 def page_query(actor, filters, page, size):
@@ -161,6 +190,8 @@ def detail(projectId: UUID, authorization: Auth) -> Result[OverviewDetail]:
                     requestId=row.request_id, reviewId=row.review_id, approvalRequestId=row.approval_request_id))
                 refs.append(f'project-transition:{project.id}@{row.to_revision}')
                 refs.append(f'review:{row.review_id}' if row.review_id else f'approval:{row.approval_request_id}')
+            result.recentActivity = recent_activity(c, project.id, as_of)
+            refs.extend(f'{"risk" if item.kind == "risk_created" else "change"}:{item.resourceId}' for item in result.recentActivity)
         info = meta(DETAIL, list(dict.fromkeys(refs)), project_id=project.id)
         info.asOf = as_of
         return Result[OverviewDetail](data=result, meta=info)

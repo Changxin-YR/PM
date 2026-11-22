@@ -7,6 +7,7 @@ from pmo.health_calculation import TZ
 from test_health import code, prepare, sample
 from test_lifecycle import propose
 from test_reference_vectors_permissions import bearer, denied_audit
+from test_requirement_additions import COMMAND as ADDITION, grant_reviewers
 from test_reports import body, sections
 from test_reviews import data, headers, team as team
 
@@ -37,6 +38,10 @@ def test_overview_detail_returns_current_metrics_and_committed_edges(live, team,
     assert f"project-transition:{pid}@{newest['toRevision']}" in response.json()['meta']['sourceRefs']
     assert f'review:{receipt.review_id}' in response.json()['meta']['sourceRefs']
     assert f"health-snapshot:{first['snapshotId']}" in response.json()['meta']['sourceRefs']
+    risk = data(pm.get(project + '/risks'))['items'][0]
+    activity, = detail['recentActivity']
+    assert activity == {'kind': 'risk_created', 'resourceId': risk['riskId'], 'occurredAt': activity['occurredAt']}
+    assert f"risk:{risk['riskId']}" in response.json()['meta']['sourceRefs']
 
     schema = api.get('/openapi.json').raise_for_status().json()
     route = schema['paths']['/api/v1/project-overview/{projectId}']['get']
@@ -64,13 +69,28 @@ def test_overview_detail_returns_current_metrics_and_committed_edges(live, team,
         'asOf': after['indicators']['asOf'], 'ruleVersion': first['ruleVersion']}
     assert datetime.fromisoformat(after['indicators']['asOf']) > datetime.fromisoformat(first['asOf'])
     assert after['recentTransitions'] == transitions
+    assert after['recentActivity'] == detail['recentActivity']
     assert data(pm.get(project + '/health/history'))['total'] == 1
+
+    grant_reviewers(live, team)
+    requested = data(pm.post(project + '/changes/requirement-additions',
+                            headers=headers(after['project']['revision']), json=ADDITION))
+    cid = requested['changeId']
+    rejected = data(users['reviewer'].post(f'changes/{cid}/reject', headers=headers(requested['revision']),
+                                          json={'rationale': 'Synthetic rejection rationale kept in the ledger.'}))
+    response = pm.get(overview)
+    assert data(response)['recentActivity'][:2] == [
+        {'kind': 'change_rejected', 'resourceId': cid, 'occurredAt': rejected['decidedAt']},
+        {'kind': 'change_requested', 'resourceId': cid, 'occurredAt': requested['createdAt']},
+    ]
+    assert f'change:{cid}' in response.json()['meta']['sourceRefs']
+    assert 'Synthetic rejection rationale kept in the ledger.' not in response.text
 
 
 def test_overview_detail_draft_has_no_fabricated_health_or_activity(live, team):
     pid, _, users, _ = team
     detail = data(users['initiator'].get(f'project-overview/{pid}'))
     assert detail['project']['stage'] == 'drafting'
-    assert detail['recentTransitions'] == [] and 'charterSummary' not in detail
+    assert detail['recentTransitions'] == detail['recentActivity'] == [] and 'charterSummary' not in detail
     assert detail['indicators']['health'] == detail['indicators']['publication'] == 'unavailable'
     assert 'timeLine' not in detail['indicators'] and 'moneyVarianceRate' not in detail['indicators']

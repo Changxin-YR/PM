@@ -4,13 +4,15 @@ import {ArrowRight,RefreshCw} from 'lucide-vue-next'
 
 type StageReceipt={fromStage:string;toStage:string;fromRevision:number;toRevision:number;transitionedAt:string;requestId:string;
   reviewId?:string;approvalRequestId?:string}
+const activityNames={risk_created:'风险已登记',change_requested:'变更已提交',change_applied:'变更已生效',change_rejected:'变更已拒绝'}
+type Activity={kind:keyof typeof activityNames;resourceId:string;occurredAt:string}
 type Indicators={asOf:string;health:'green'|'yellow'|'red'|'untrusted'|'unavailable';publication:'official'|'preview'|'withheld'|'unavailable';
   timeLine?:'green'|'yellow'|'red';moneyVarianceRate?:string;effortVarianceRate?:string;requirementSatisfactionRate?:string}
 type Detail={project:{projectId:string;code:string;stage:string;revision:number};materialsVisible:boolean;indicators?:Indicators;
   charterSummary?:{isFrozen:boolean;revision:number;valueProp?:string;targetClient?:string;roughCost?:string;roughEffort?:string;roughDurationDays?:number};
-  recentTransitions:StageReceipt[]}
+  recentTransitions:StageReceipt[];recentActivity?:Activity[]}
 const props=defineProps<{projectId:string;active:boolean;stages:Record<string,string>;api:(path:string)=>Promise<any>}>()
-const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number];navigate:[tab:string]}>()
+const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number];navigate:[tab:string];openChange:[changeId:string]}>()
 const data=ref<Detail|null>(null),loading=ref(false),error=ref(''),refs=ref<string[]>([])
 const colors={green:'绿',yellow:'黄',red:'红',untrusted:'数据不可信',unavailable:'不可用'}
 const tags={green:'success',yellow:'warning',red:'danger',untrusted:'warning',unavailable:'info'} as const
@@ -79,6 +81,17 @@ onBeforeUnmount(()=>{sequence++})
           </li>
         </ol>
       </section>
+      <section class="overview-section" aria-label="最近台账活动">
+        <h3>最近台账活动</h3>
+        <p v-if="!data.recentActivity?.length" class="muted">暂无已提交的台账活动。</p>
+        <ol v-else class="edges activity">
+          <li v-for="item in data.recentActivity" :key="`${item.kind}:${item.resourceId}`">
+            <div><span>{{activityNames[item.kind]}}</span><time class="muted" :datetime="item.occurredAt">{{time(item.occurredAt)}} 北京时间</time></div>
+            <el-button v-if="item.kind==='risk_created'" text @click="emit('navigate','risks')">风险台账 <ArrowRight :size="14"/></el-button>
+            <el-button v-else text @click="emit('openChange',item.resourceId)">查看变更 <ArrowRight :size="14"/></el-button>
+          </li>
+        </ol>
+      </section>
       <details class="overview-section sources"><summary>数据来源</summary><ul><li v-for="source in refs" :key="source"><code>{{source}}</code></li></ul></details>
     </template>
   </section>
@@ -91,4 +104,5 @@ onBeforeUnmount(()=>{sequence++})
 .overview-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.75rem;margin:.7rem 0}.overview-metrics div{border-left:2px solid #d7e2df;padding:0 .55rem;min-width:0}
 dt{font-size:.8rem;color:#516069}dd{margin:.25rem 0;font-weight:600;overflow-wrap:anywhere}.purpose,.sources{overflow-wrap:anywhere}.purpose{white-space:pre-wrap}
 .edges{margin:.4rem 0;padding-left:1.15rem}.edges li{padding:.25rem 0}.edges li svg{vertical-align:middle}.edges li .muted{display:block}.sources summary{cursor:pointer}
+.activity li>div{display:inline-block;vertical-align:middle}.activity button{margin-left:.45rem}
 </style>

@@ -47,14 +47,20 @@ class Ledger(Page):
     additionProjectRevision: int | None = None
 
 
+def ledger_scope(project_id):
+    t=db.change_entries
+    targets=[sa.and_(t.c.target_type==kind,sa.exists(sa.select(1).select_from(table).where(
+        table.c.id==t.c.target_id,table.c.project_id==project_id))) for kind,table in TARGETS.items()]
+    targets.append(sa.and_(t.c.target_type=='requirement',t.c.before.contains({'present':False})))
+    return sa.and_(t.c.project_id==project_id,sa.or_(*targets))
+
+
 @router.get('/projects/{projectId}/changes',operation_id='human_changes_list',response_model_exclude_none=True)
 def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),changeId:UUID|None=None)->Result[Ledger]:
     op='human_changes_list'
     def read(c,a,_):
         p=project_access(c,a,projectId); t=db.change_entries
-        targets=[sa.and_(t.c.target_type==kind,sa.exists(sa.select(1).select_from(table).where(table.c.id==t.c.target_id,table.c.project_id==projectId))) for kind,table in TARGETS.items()]
-        targets.append(sa.and_(t.c.target_type=='requirement',t.c.before.contains({'present':False})))
-        query=with_decision(t).where(t.c.project_id==projectId,sa.or_(*targets))
+        query=with_decision(t).where(ledger_scope(projectId))
         if changeId is not None: query=query.where(t.c.id==changeId)
         matched=query.cte('matched')
         total=sa.select(sa.func.count().label('total')).select_from(matched).subquery()

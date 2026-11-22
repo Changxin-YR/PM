@@ -49,11 +49,12 @@ function materials(row:Project){
   materialTab.value='overview';showMaterials.value=true
 }
 function openTask(project:Project,taskId:string){materials(project);focusTaskId.value=taskId;materialTab.value='tasks'}
+function openChange(changeId:string){focusChangeId.value=changeId;materialTab.value='changes'}
 function openApproval(project:Project,kind:'review'|'transition'|'change',id:string){
   materials(project)
   if(kind==='review'){focusReviewId.value=id;materialTab.value='reviews'}
   else if(kind==='transition'){focusApprovalId.value=id;materialTab.value='lifecycle'}
-  else{focusChangeId.value=id;materialTab.value='changes'}
+  else{openChange(id)}
 }
 function stageRead(projectId:string,stage:string,revision:number){
   if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision){
@@ -179,7 +180,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <AgentTokens :api="api" :projects="rows" :admin="admin"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>
   <el-tabs v-if="materialProject" v-model="materialTab" :key="materialProject.projectId">
-    <el-tab-pane name="overview" label="概览"><ProjectOverview :project-id="materialProject.projectId" :active="showMaterials&&materialTab==='overview'" :stages="stageNames" :api="api" @stage-read="stageRead" @navigate="materialTab=$event"/></el-tab-pane>
+    <el-tab-pane name="overview" label="概览"><ProjectOverview :project-id="materialProject.projectId" :active="showMaterials&&materialTab==='overview'" :stages="stageNames" :api="api" @stage-read="stageRead" @navigate="materialTab=$event" @open-change="openChange"/></el-tab-pane>
     <el-tab-pane name="milestones" label="里程碑" lazy><Milestones :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="requirements" label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="baseline" label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>

@@ -456,3 +456,12 @@
 | `.venv/Scripts/python.exe -m mypy pmo --ignore-missing-imports`；`npm.cmd --prefix web run build` | 0 | PASS：类型、Vue 构建。`.local/pmo104-change-queue-build.log`。 |
 
 全量回归、重复升级恢复 NOT_RUN，留至综合候选验证；真实审批授权 BLOCKED_EXTERNAL。
+
+## 项目概览最近台账活动
+
+依据主方案 §2 UI-03。基准 `ab4b776`，产品及测试差异 `fe4b77ac4ecb239aba2bee63f446ff8da3e888e6`。Windows、合成 PostgreSQL `0036` 隔离 schema、真实回环 HTTP/Edge、模型关闭。保留独立阶段回执；台账活动按实际提交时点显示最多 5 项风险登记及变更申请、正式裁决，只投影类别、资源 ID 和时点。仅有基本资料权限时不返回活动；私有报告、审计载荷和裁决理由不入概览。变更链接回到同项目的精确台账。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_project_overview_detail.py tests/browser_case.py -k 'overview_detail or browser_project_overview' --tb=short --junitxml=.local/pmo104-recent-activity.xml` | 0 | PASS：HTTP 2、Edge 1；验证风险与变更出处、拒绝实时时点、私有报告不入流、基本资料权限及 Agent 拒绝。`.local/pmo104-recent-activity.log`。 |
+| `npm.cmd --prefix web run build` | 0 | PASS：Vue 类型和构建；保留包大小提示。`.local/pmo104-recent-activity-build.log`。 |
