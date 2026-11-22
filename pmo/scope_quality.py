@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from . import schema_v1 as db
 from .access import Auth
 from .contracts import RULE_VERSION, Result, Strict
+from .dto import UNAVAILABLE, Proportion, Unavailable
 from .projects import fingerprint, meta, run
 from .requirement_additions import addition, applied_addition, initial_signature, origin
 from .requirement_baselines import project
@@ -41,8 +42,8 @@ class Quality(Strict):
     activeP0: int
     changedInitialCount: int
     approvedChangeCount: int
-    satisfaction: str | None=None
-    changeRate: str | None=None
+    satisfaction: Proportion | Unavailable | None=None
+    changeRate: Proportion | Unavailable | None=None
     gaps: list[str]
 
 
@@ -117,5 +118,10 @@ def get(projectId:UUID,authorization:Auth)->Result[Quality]:
     op='human_requirement_metrics'
     def read(c,a,_):
         project(c,a,projectId,False); result,refs=metrics(c,projectId)
-        return Result[Quality](data=result,meta=meta(op,refs))
+        # Keep the internal metric representation for existing snapshot hashes.
+        display = result.model_copy(update={
+            'satisfaction': result.satisfaction if result.activeWeight else UNAVAILABLE,
+            'changeRate': result.changeRate if result.initialCount else UNAVAILABLE,
+        })
+        return Result[Quality](data=display,meta=meta(op,refs))
     return run(authorization,op,read)

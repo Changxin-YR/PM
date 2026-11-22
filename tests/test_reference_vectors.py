@@ -143,10 +143,11 @@ def test_no_requirement_denominator(case, live, team):
     metrics = data(users['pm'].get(f'projects/{pid}/requirement-metrics'))
     if 'expectedChangeRate' in case:
         assert case['expectedChangeRate'] == 'UNAVAILABLE' and metrics['initialCount'] == case['initialBaselineCount']
-        assert metrics['approvedChangeCount'] == case['approvedChangedBaselineCount'] and metrics.get('changeRate') is None
+        assert metrics['approvedChangeCount'] == case['approvedChangedBaselineCount']
+        assert metrics['changeRate'] == case['expectedChangeRate']
     else:
         assert case['expected'] == 'UNAVAILABLE' and metrics['activeCount'] == len(case['items'])
-        assert metrics.get('satisfaction') is None and 'NO_ACTIVE_REQUIREMENTS' in metrics['gaps']
+        assert metrics['satisfaction'] == case['expected'] and 'NO_ACTIVE_REQUIREMENTS' in metrics['gaps']
 
 
 @pytest.mark.parametrize('case', cases('report', lambda c: 'modelResult' not in c))

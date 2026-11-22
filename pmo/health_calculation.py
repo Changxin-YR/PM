@@ -8,8 +8,8 @@ import sqlalchemy as sa
 
 from . import evidence_storage, schema_v1 as db
 from .contracts import RULE_VERSION
-from .cost_math import cost_line
-from .costs import CostBasis, cost_basis, zero_budget_claim
+from .costs import CostBasis, assess_line, cost_basis
+from .dto import UNAVAILABLE
 from .identity import Failure
 from .projects import fingerprint
 from .reports import TZ, daily_submissions, weekly_submissions
@@ -17,7 +17,6 @@ from .scope_quality import Schedule, metrics
 
 ACTIVE = ('executing', 'on_hold', 'delivering', 'closing_review')
 WEEK = timedelta(days=7)
-UNAVAILABLE = 'UNAVAILABLE'
 SCALE = {'green': 0, 'yellow': 1, 'red': 2, 'untrusted': 3}
 
 
@@ -175,12 +174,9 @@ def _quality(c, pid, today):
 def _costs(c, source, at):
     lines, all_refs, gaps = {}, [], set()
     for kind in ('money', 'effort'):
-        budget, actual, remaining = source.amounts(kind)
-        refs = source.refs(kind)
-        zero = zero_budget_claim(c, source, kind, at) if budget == 0 else None
-        if zero:
-            refs = [*refs, f'zero-budget:{zero.id}']
-        result = cost_line(budget, actual, remaining, zero_declared=zero is not None)
+        line = assess_line(c, source, kind, at)
+        budget, actual, remaining = line.budget, line.actual, line.remaining
+        result, refs = line.result, line.source_refs
         if result.color == 'untrusted':
             gaps.add(f'{kind.upper()}_BUDGET_MISSING' if budget is None else f'{kind.upper()}_ZERO_BUDGET_UNDECLARED')
         lines[kind] = {'budget': str(budget) if budget is not None else None, 'actual': str(actual),

@@ -253,3 +253,17 @@
 | `.venv/Scripts/python.exe` 运行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py`；`python -m mypy pmo --ignore-missing-imports` | 0 | PASS：冻结规格及 88 源文件类型检查。`.local/rc0034-static.log`；静态证据不替代系统验收。 |
 
 同一全量命令中的 `tests/test_recovery.py` 两项 PASS，见 `.local/rc0034-backend-final.xml`。`0016→0034` 有数据升级，实际 `pg_dump/pg_restore` 和私有原件联合恢复；旧预算、阶段授权、归档里程碑、日报引用和原件完整回读，恢复库再次拒绝修改归档里程碑。共享开发库只读查询仍为 `0016`，旧候选未覆盖。所有日志和 JUnit 路径属于原仓库 `.local`；上述 `python` 为本机 `.venv/Scripts/python.exe`。不代表真实签核、目标 Host 兼容、目标环境运维或生产放行。
+
+## 三线候选复验
+
+依据 §5.2–5.5、LR-04/05、Q2/Q7、工程 DTO 补充 §3–4。基准 `b82d9440800e4a8655e194341d21f3fb62b15262`，最终被测源码树 `64ff7789082e4c4ab6b63f4fdcf478e65098e133`，Git 导出目录 `.local/signals-final-64ff7789-fixed`（不含后补证据）。Windows、Python 3.12、PostgreSQL 16.14、Edge `158.0.4370.33`，回环 HTTP/stdio/Compose，合成数据，模型关闭。实现与中间失败见 [M2](M2-report.md#三线零分母及争议出处)。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/signals-final-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/signals-final-backend.xml` | 0 | PASS：305 项 / 482.12 秒，`.local/signals-final-backend.log`。40 工具发现、成功调用及动作拒绝、18 读审计、22 写重放；JSON SHA-256 `1847bcb4d1bef4b889032d4a3157a53733d81606d8c30838126abd4b7e1fe1fd`。 |
+| `npm.cmd --prefix web ci`；`.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/signals-final-edge.xml` | 0 | PASS：Edge 20 项 / 231.05 秒；`.local/signals-final-npm.log` 与 `.local/signals-final-edge.log`。包含无模型三关口、归档、零预算和客户争议历史。 |
+| `docker compose -p pmo104-rc-e92e110d --env-file .local/pmo104-rc-e92e110d.env -f deploy/compose.yaml up --build -d --wait`；`python scripts/deployment_smoke.py pmo104-rc-e92e110d` | 0 | PASS：回环 `18767`，受限角色、15 草稿、15 个唯一消费回执，停库 `200/503`、恢复 `200/200`。30 次/操作，本机 p95 筛选 60 ms、详情 62 ms。`.local/signals-final-compose.log`、`.local/signals-final-smoke.log`。 |
+| `docker compose ... exec -T api alembic current`；容器内 `GET /openapi.json` | 0 | PASS：`0034 (head)`，137 操作，健康、双口径成本及需求指标的不可计算字段接受 `UNAVAILABLE`。`.local/signals-final-openapi-readback.log`。早期探针使用错误 DTO 名和字段名，退出 1，保留 `.local/signals-final-openapi*.log`；按 operationId 解析真实 Schema 后通过。 |
+| `python` 分别执行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py` 和 `python -m mypy pmo --ignore-missing-imports` | 0 | PASS：静态规格与 88 文件类型检查。`.local/signals-final-static.log`。 |
+
+本批无迁移或附件引用变化，上一候选恢复证据仍适用；本次全量的两条恢复测试也通过。命令均在导出树运行，证据归原仓库 `.local`。未覆盖真实 Host、真实签核及目标部署环境。

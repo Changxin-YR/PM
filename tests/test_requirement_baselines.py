@@ -42,7 +42,10 @@ def test_two_current_people_sign_the_same_requirement_snapshot(live,actor):
         manager=login(user); customer_session=login(username)
         def read(who): return who.get(path).json()['data']
         def sign(who,st,role,headers=None): return who.post(path+'/sign',headers=headers or h(st['revision']),json={'contentHash':st['contentHash'],'role':role,'reason':'Reviewed full list'})
-        empty=manager.get(base+'/requirement-metrics').json()['data']; assert 'satisfaction' not in empty and 'changeRate' not in empty
+        empty=manager.get(base+'/requirement-metrics').json()['data']
+        assert (empty['initialCount'],empty['activeWeight'])==(0,0)
+        assert empty['satisfaction']==empty['changeRate']=='UNAVAILABLE'
+        assert 'INITIAL_BASELINE_MISSING' in empty['gaps']
         incomplete=read(manager); assert 'canSignAs' not in incomplete and sign(manager,incomplete,'pm').json()['code']=='PLANNED_CONFIRM_DATE_REQUIRED'
         assert manager.patch('requirements/'+req,headers=h(),json={'fieldsRequirement':{'plannedConfirmAt':'2027-01-31'}}).status_code==200
         initial=read(manager); assert initial['canSignAs']=='pm' and 'canSignAs' not in read(customer_session)
@@ -174,5 +177,5 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     cancel={'targetType':'requirement','targetId':req,'before':{'status':'delivered'},'after':{'status':'cancelled'},'reason':'Customer withdrew scope'}
     receipt=manager.post(ledger,headers=h(changed['revision']+1),json=cancel).json()['data']; assert quality()['activeWeight']==2
     assert client.post('changes/'+receipt['changeId']+'/approve',headers=h(),json=verdict).status_code==200
-    empty=quality(); assert empty['activeWeight']==0 and 'satisfaction' not in empty and empty['changeRate']=='1.000000' and empty['approvedChangeCount']==2
+    empty=quality(); assert empty['activeWeight']==0 and empty['satisfaction']=='UNAVAILABLE' and empty['changeRate']=='1.000000' and empty['approvedChangeCount']==2
     assert empty['gaps']==['NO_ACTIVE_REQUIREMENTS']

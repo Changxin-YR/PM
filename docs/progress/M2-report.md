@@ -311,3 +311,12 @@
 依据：主方案 §4.1、§20.5、LR-08，领域不变量 §4/§6。基准 `4739d033d9a31ba4239cdfe10ea00a297b96b4a9`。`0034_archived_core_read_only.py` 在 `0033` 后加项目及 15 张受保护表的触发器。评分和 Decision 已有的追加式保护不变；数据库额外拒绝向归档项目追加记录或重挂归属，校验新增评分及有关口 Decision 同 Review 的项目一致。非关口 Decision 仍可不引用 Review。子记录写入按 ID 排序锁定相关项目；需要等并发归档提交后重新判断阶段。此约束不授予审批权限，也不拦截成功归档本身、审计或 Outbox 消费。
 
 Windows、隔离 PostgreSQL 16.14、真实 HTTP、合成数据。`tests/test_postgres_invariants.py` 的 `test_archived_project_core_records_are_read_only_in_storage` 和 `test_archive_serializes_storage_writes_against_the_project_lock` 在基准 `0033` 上均复现失败：退出 1，`.local/archive-storage-reproduced.log` 与同名 JUnit。测试在 `0034` 确认两种拒绝、无部分写入、其他活动项目可写；库角色用例确认非所有者账号有相关列权限仍被拒绝。定向 61 项 PASS，退出 0，`.local/archive-storage-verified.log`。前两次夹具初始化失败保留于 `.local/archive-storage-before.log` 和 `.local/archive-storage-first.log`，不计为业务失败证据。全量、候选和带数据升级/联合恢复见 [M4](M4-report.md#0034-归档候选与联合恢复)。
+
+## 三线零分母及争议出处
+
+依据：主方案 §5.2–5.5，LR-04/05，工程 DTO 补充 §3–4，Q2/Q7。最终测试基准 `b82d9440800e4a8655e194341d21f3fb62b15262`、源码树 `64ff7789082e4c4ab6b63f4fdcf478e65098e133`，单独导出。Windows、PostgreSQL 16.14、回环 HTTP、真实 stdio 与 Edge `158.0.4370.33`，合成账号，模型关闭。
+
+- `pmo/scope_quality.py`、`health_calculation.py`、`costs.py` 区分零分母 `UNAVAILABLE` 与还没有可核对的基线。仅有效预算为零时展示不可计算；成本灯色仍取实际净额、预测及在 `asOf` 前生效的零预算声明，声明也带出处。零分母不转成 `100%`/`NaN%`，不改阈值、冻结基线或历史快照。
+- `pmo/weekly_health.py` 只从同项目、已存快照中存在的 `requirement-dispute:<id>@1` 关联当时的客户争议；撤回后仍可解释历史红线，不把新撤回当成旧来源。`web/src/RequirementMetrics.vue`、`Costs.vue` 明确展示不可计算。
+- 中间树 `14a2506bf499df9f5a9f37cdd59265edf68b9078` 全量退出 1：303 PASS、2 FAIL，两个测试仍断言响应缺字段，而冻结向量要求 `UNAVAILABLE`。最终用原向量结果直接比较，不改向量。保留 `.local/signals-backend.log`、`.xml`。
+- 最终针对性验证 3 PASS、退出 0：`test_no_requirement_denominator` 两条原向量和 `test_browser_customer_dispute_has_independent_and_persistent_history`，见 `.local/signals-final-targeted.log` 及同名 JUnit。整体验证命令、退出码和证据见 [M4](M4-report.md#三线候选复验)。

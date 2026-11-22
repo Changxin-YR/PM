@@ -13,6 +13,7 @@ from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import Result, Strict
 from .costs import cost_basis, summary_line
+from .dto import UNAVAILABLE
 from .fact_sources import verified_source
 from .health_schema import events
 from .identity import Failure
@@ -281,7 +282,7 @@ def _ledger_health(c, a, p, at):
               ('人天偏差率', current.effortVarianceRate), ('需求满足率', current.requirementSatisfactionRate)]
     items, missing = [], []
     for label, value in fields:
-        if value is None or value == 'UNAVAILABLE':
+        if value is None or value == UNAVAILABLE:
             missing.append(f'{label}不可用。')
         else:
             items.append(Cited(text=f'{label}：{value}', observedAt=current.asOf, sourceRefs=current.sourceRefs))
@@ -312,12 +313,13 @@ def _ledger(c, a, p, at, topic, keyword, category):
             unknowns.append('需求满足率不可用：' + '、'.join(quality.gaps))
     else:
         basis = cost_basis(c, p.id, at)
-        for unit, kind in [('金额（CNY）', 'money'), ('人天', 'effort')]:
-            refs = basis.refs(kind)[:100]
+        for kind in ('money', 'effort'):
+            unit = '金额（CNY）' if kind == 'money' else '人天'
+            result, refs = summary_line(c, basis, kind, at)
             if refs:
-                result = summary_line(c, basis, kind, at)
+                rate = result.varianceRate
                 answer.append(Cited(text=f'{unit}：已核验净额 {result.actual}；剩余预测 {result.forecastRemaining}；'
-                    f'偏差率 {result.varianceRate or "不可用"}', sourceRefs=refs))
+                    f'偏差率 {rate if rate not in (None, UNAVAILABLE) else "不可用"}', sourceRefs=refs[:100]))
             else:
                 unknowns.append(f'{unit}无可核验记录。')
     if not answer and not unknowns:

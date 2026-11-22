@@ -4,7 +4,7 @@ import {RefreshCw} from 'lucide-vue-next'
 const props=defineProps<{projectId:string;api:(p:string)=>Promise<any>}>()
 type Metrics={initialCount:number;changedInitialCount:number;activeCount:number;frozenCount:number;confirmedWeight:number;activeWeight:number;confirmedP0:number;activeP0:number;satisfaction?:string;changeRate?:string;gaps:string[]}
 const data=ref<Metrics|null>(null),busy=ref(false),error=ref(''),gaps:Record<string,string>={INITIAL_BASELINE_MISSING:'尚无初始签署基线',NO_ACTIVE_REQUIREMENTS:'无有效需求',BASELINE_CHAIN_INVALID:'基线版本不一致',CONFIRMATION_RECEIPT_MISSING:'缺少客户确认回执'}
-function pct(x?:string){return x===undefined?'不可用':new Intl.NumberFormat('zh-CN',{style:'percent',maximumFractionDigits:2}).format(Number(x))}
+function pct(x?:string){return x===undefined||x==='UNAVAILABLE'?'不可用':new Intl.NumberFormat('zh-CN',{style:'percent',maximumFractionDigits:2}).format(Number(x))}
 async function load(){busy.value=true;error.value='';try{data.value=(await props.api(`projects/${props.projectId}/requirement-metrics`)).data}catch(e){data.value=null;error.value=String(e)}finally{busy.value=false}}
 onMounted(load)
 </script>

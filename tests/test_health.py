@@ -287,11 +287,14 @@ def test_weekly_presence_and_formal_publication_are_independent(live, team):
 
 
 def test_zero_budget_is_explicit_and_not_absent(live, team):
-    _, _, users, _ = team
+    from test_reference_vectors_permissions import mcp_calls
+
+    pid, _, users, _ = team
     project, _ = prepare(live, team, effort_budget='0')
     pm = users['pm']
     raw = data(pm.get(project + '/health'))
     assert raw['health']=='untrusted' and raw['gaps']==['EFFORT_ZERO_BUDGET_UNDECLARED']
+    earlier_at = raw['asOf']
     url = project + '/health/zero-budget'
     command = {'type':'effort','reason':'Authorized as a non-labor pilot budget.', 'baselineHash':raw['zeroBudgetHashes']['effort']}
     v = raw['projectRevision']
@@ -299,15 +302,33 @@ def test_zero_budget_is_explicit_and_not_absent(live, team):
     code(users['sponsor'].post(url,headers=headers(v),json=command),403,'FORBIDDEN')
     key = headers(v)
     saved = pm.post(url,headers=key,json=command)
-    assert data(saved)['declaredBy']
+    declaration = data(saved)
+    assert declaration['declaredBy']
     assert pm.post(url,headers=key,json=command).json()==saved.json()
     obs = sample(pm, project)
     assert obs['health']=='green' and obs['effortVarianceRate']=='UNAVAILABLE'
-    assert any(ref.startswith('zero-budget:') for ref in obs['sourceRefs'])
+    ref = f"zero-budget:{declaration['declarationId']}"
+    assert ref in obs['sourceRefs']
+    frozen = {'asOf': obs['asOf']}
+    earlier = pm.get(project + '/costs', params={'asOf': earlier_at}).raise_for_status().json()
+    later = pm.get(project + '/costs', params=frozen).raise_for_status().json()
+    assert (earlier['data']['effort'].get('varianceRate'), earlier['data']['effort']['color'], ref in earlier['meta']['sourceRefs']) == (
+        'UNAVAILABLE', 'untrusted', False)
+    assert (later['data']['effort'].get('varianceRate'), later['data']['effort']['color'], ref in later['meta']['sourceRefs']) == (
+        'UNAVAILABLE', 'green', True)
+    token = issue(pm, pid, ['pmo_cost_summary', 'pmo_health_get'])
+    cost, health = mcp_calls(live, token, [(op, {'projectId': pid, **frozen}) for op in ('pmo_cost_summary', 'pmo_health_get')])
+    assert not cost.isError and not health.isError
+    assert cost.structuredContent['data']['effort'] == later['data']['effort']
+    assert cost.structuredContent['meta']['sourceRefs'] == later['meta']['sourceRefs']
+    assert cost.structuredContent['meta']['asOf'] == health.structuredContent['meta']['asOf'] == obs['asOf']
+    assert health.structuredContent['data']['effortVarianceRate'] == 'UNAVAILABLE'
+    assert ref in health.structuredContent['data']['sourceRefs']
     plan = data(pm.get(project + '/costs'))['plan']['revision']
     data(pm.put(project+'/cost-forecasts',headers=headers(plan),json={'type':'effort','forecastRemaining':'0.01','reason':'New labor needed'}))
     obs = sample(pm,project)
     assert obs['health']=='red' and obs['effortVarianceRate']=='UNAVAILABLE'
+    assert data(pm.get(project+'/costs'))['effort']['color']=='red'
 
 
 def close_for_lr08(live, team):

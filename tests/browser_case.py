@@ -214,10 +214,14 @@ def test_browser_health_snapshots_and_independent_appeal(live, team):
     from test_reviews import data, headers
 
     _, _, users, _ = team
-    project, _ = prepare(live, team)
+    project, _ = prepare(live, team, effort_budget='0')
     pm = users['pm']
+    pending = data(pm.get(project + '/health'))
+    data(pm.post(project + '/health/zero-budget', headers=headers(pending['projectRevision']), json={
+        'type': 'effort', 'baselineHash': pending['zeroBudgetHashes']['effort'],
+        'reason': 'This synthetic project has an explicitly approved zero effort baseline.'}))
     snapshot = sample(pm, project)
-    assert snapshot['health'] == 'green' and snapshot['publication']=='official'
+    assert snapshot['health'] == 'green' and snapshot['publication']=='official' and snapshot['effortVarianceRate']=='UNAVAILABLE'
     milestone = data(pm.get(project + '/milestones'))['items'][0]['milestoneId']
     data(pm.post(project + '/reports',headers=headers(),json=body(period=week_key(datetime.now(TZ).date()),
         structuredFields=sections(milestone_progress=[{'milestoneId':milestone,'claim':'progress'}]))))

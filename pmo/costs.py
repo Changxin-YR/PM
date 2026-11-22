@@ -12,7 +12,8 @@ from pydantic import AwareDatetime, Field
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import RULE_VERSION, Result, Strict
-from .cost_math import cost_line
+from .cost_math import CostLine, cost_line
+from .dto import UNAVAILABLE, Unavailable
 from .identity import Failure, visible
 from .materials import finish, project_access, replay
 from .projects import fingerprint, meta, run
@@ -103,7 +104,7 @@ class Line(Strict):
     actual: DisplayedNet
     forecastRemaining: DisplayedAmount
     projectedTotal: DisplayedNet
-    varianceRate: DisplayedRate | None = None
+    varianceRate: DisplayedRate | Unavailable | None = None
     color: Literal['untrusted', 'green', 'yellow', 'red']
 
 
@@ -156,12 +157,32 @@ def cost_basis(c, pid: UUID, at: datetime) -> CostBasis:
     return CostBasis(pid, plan, list(rows), list(verified))
 
 
-def summary_line(c, basis: CostBasis, kind, at: datetime) -> Line:
+@dataclass(frozen=True)
+class CostAssessment:
+    budget: Decimal | None
+    actual: Decimal
+    remaining: Decimal
+    result: CostLine
+    source_refs: list[str]
+
+
+def assess_line(c, basis: CostBasis, kind: Kind, at: datetime) -> CostAssessment:
     budget, actual, remaining = basis.amounts(kind)
-    result = cost_line(budget, actual, remaining, zero_declared=zero_budget_claim(c,basis,kind,at) is not None)
-    return Line(budget=format(budget or Decimal(0),'.2f'),actual=format(actual,'.2f'),forecastRemaining=format(remaining,'.2f'),
-        projectedTotal=format(result.projected,'.2f'),varianceRate=format(result.variance,'.4f') if result.variance is not None else None,
-        color=result.color)
+    zero = zero_budget_claim(c, basis, kind, at) if budget == 0 else None
+    refs = basis.refs(kind)
+    if zero is not None:
+        refs.append(f'zero-budget:{zero.id}')
+    result = cost_line(budget, actual, remaining, zero_declared=zero is not None)
+    return CostAssessment(budget, actual, remaining, result, refs)
+
+
+def summary_line(c, basis: CostBasis, kind: Kind, at: datetime) -> tuple[Line, list[str]]:
+    line = assess_line(c, basis, kind, at)
+    result = line.result
+    variance = format(result.variance, '.4f') if result.variance is not None else UNAVAILABLE if line.budget == 0 else None
+    return Line(budget=format(line.budget or Decimal(0), '.2f'), actual=format(line.actual, '.2f'),
+        forecastRemaining=format(line.remaining, '.2f'), projectedTotal=format(result.projected, '.2f'),
+        varianceRate=variance, color=result.color), line.source_refs
 
 
 @router.get('/projects/{projectId}/costs',operation_id='pmo_cost_summary',response_model_exclude_none=True)
@@ -175,9 +196,11 @@ def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Res
         if at<project.created_at: raise Failure(404,'RESOURCE_NOT_FOUND')
         basis = cost_basis(c, projectId, at)
         plan = basis.plan
-        refs = [f'project:{projectId}', *basis.refs()]
+        money, money_refs = summary_line(c, basis, 'money', at)
+        effort, effort_refs = summary_line(c, basis, 'effort', at)
+        refs = list(dict.fromkeys([f'project:{projectId}', *money_refs, *effort_refs]))
         editor = a.kind=='human' and asOf is None and can_manage(c,a,project)
-        data = Summary(projectId=projectId,money=summary_line(c,basis,'money',at),effort=summary_line(c,basis,'effort',at),asOf=at,ruleVersion=RULE_VERSION,
+        data = Summary(projectId=projectId,money=money,effort=effort,asOf=at,ruleVersion=RULE_VERSION,
                        plan=plan_view(projectId,plan) if a.kind=='human' else None,
                        canSaveBudget=editor and project.stage in ('drafting','designing') if a.kind=='human' else None,
                        canSaveForecast=editor and project.stage in WRITABLE if a.kind=='human' else None)

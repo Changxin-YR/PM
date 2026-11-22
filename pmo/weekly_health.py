@@ -15,6 +15,7 @@ from .health_calculation import TZ, WEEK, monday
 from .health_schema import events
 from .identity import Failure, visible
 from .projects import meta, run
+from .requirement_disputes import t as disputes
 
 router = APIRouter(prefix='/api/v1/analytics', tags=['Analytics'])
 OP = 'human_weekly_health_list'
@@ -76,7 +77,25 @@ class WeekPage(Strict):
     total: int
 
 
-def _sample(row, rule_sources) -> Sample:
+def _dispute_sources(c, snapshots) -> dict[tuple[UUID, str], list[str]]:
+    ids = [row.id for row in snapshots if row.results['dataTrust'] == 'trusted'
+           and any(item['disputed'] for item in row.input_revisions['quality']['schedule'])]
+    if not ids:
+        return {}
+    d = disputes.c
+    # Match the opening receipt saved at observation time, regardless of a later withdrawal.
+    opening = sa.literal('requirement-dispute:') + d.id.cast(sa.Text) + '@1'
+    match = sa.and_(d.project_id == s.c.project_id, s.c.source_refs.contains(sa.func.jsonb_build_array(opening)))
+    query = (sa.select(s.c.id, d.requirement_id, opening).select_from(s.join(disputes, match))
+             .where(s.c.id.in_(ids)).order_by(d.id))
+    records = c.execute(query)
+    refs: dict[tuple[UUID, str], list[str]] = {}
+    for snapshot_id, requirement_id, source in records:
+        refs.setdefault((snapshot_id, str(requirement_id)), []).append(source)
+    return refs
+
+
+def _sample(row, rule_sources, dispute_sources) -> Sample:
     values, inputs = row.results, row.input_revisions
     trusted = values['dataTrust'] == 'trusted'
     causes = []
@@ -95,8 +114,10 @@ def _sample(row, rule_sources) -> Sample:
             if requirement['color'] in SIGNALS:
                 code = ('CUSTOMER_DISPUTE' if requirement['disputed'] else
                         'P0_UNCONFIRMED' if requirement['priority'] == 'P0' else 'REQUIREMENT_LATE')
+                ref = f"requirement:{requirement['requirement_id']}@{requirement['revision']}"
+                receipt_refs = dispute_sources.get((row.id, requirement['requirement_id']), ()) if requirement['disputed'] else ()
                 causes.append(Cause(line='quality', color=requirement['color'], code=code, plannedDate=requirement['planned'],
-                    sourceRefs=[f"requirement:{requirement['requirement_id']}@{requirement['revision']}"]))
+                    sourceRefs=[ref, *receipt_refs]))
     refs = list(dict.fromkeys([f'health-snapshot:{row.id}', *row.source_refs]))[:100]
     keys = [(row.project_id, UUID(eid)) for eid in row.rule_event_ids[:100]]
     return Sample(snapshotId=row.id, asOf=row.as_of, ruleVersion=row.rule_version, health=values['health'],
@@ -146,8 +167,11 @@ def weekly_health(authorization: Auth, weekStart: date | None = None, asOf: Awar
         sources = {(row.project_id, row.id): RuleSource(alertId=row.id, ruleId=row.rule_id, sourceRefs=row.source_refs[:100])
             for row in c.execute(sa.select(e.project_id, e.id, e.rule_id, e.source_refs)
                                  .where(sa.tuple_(e.project_id, e.id).in_(event_keys))).mappings()} if event_keys else {}
-        items = [Item(projectId=row.project_id, projectCode=row.code, projectName=row.name, latest=_sample(snapshots[row.id], sources),
-                      earlierSignal=_sample(snapshots[row.signal_id], sources) if row.signal_id and row.id != row.signal_id else None)
+        dispute_sources = _dispute_sources(c, snapshots.values())
+        items = [Item(projectId=row.project_id, projectCode=row.code, projectName=row.name,
+                      latest=_sample(snapshots[row.id], sources, dispute_sources),
+                      earlierSignal=_sample(snapshots[row.signal_id], sources, dispute_sources)
+                      if row.signal_id and row.id != row.signal_id else None)
                  for row in found]
         info = meta(OP, [f'health-snapshot:{eid}' for eid in sorted(ids)])
         info.asOf = at

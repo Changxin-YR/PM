@@ -38,6 +38,12 @@ try{
   await expect(screen.getByText('关键里程碑申报缺少已核验佐证',{exact:true})).toBeVisible()
   await expect(screen.getByText('正式快照',{exact:true})).toHaveCount(1)
   await expect(screen.getByText('0.00%',{exact:true})).toHaveCount(0)
+  const drawer=pm.getByRole('dialog',exact('Synthetic review · 项目资料'))
+  await drawer.getByRole('tab',exact('成本')).click()
+  const effort=drawer.getByRole('region',exact('人天'))
+  await expect(effort.getByText('不可用',{exact:true})).toBeVisible()
+  await expect(effort.getByText('NaN%',{exact:true})).toHaveCount(0)
+  await drawer.getByRole('tab',exact('三线健康')).click()
   const reason='本次关键进展的独立佐证尚未上传。'
   await screen.getByRole('button',exact('申请复核')).click()
   await pm.getByRole('dialog',exact('申诉健康快照')).getByLabel('申诉理由').fill(reason)

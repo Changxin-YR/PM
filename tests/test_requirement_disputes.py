@@ -55,6 +55,13 @@ def test_current_customer_objection_changes_quality_and_replays_once(live, team,
     assert after['inputs']['quality']['schedule'][0]['disputed']
     source = f"requirement-dispute:{receipt['disputeId']}@1"
     assert source in after['sourceRefs']
+    params = {'asOf': after['asOf']}
+    weekly_path = 'analytics/weekly-health'
+    weekly, = data(pm.get(weekly_path, params=params))['items']
+    cause, = [item for item in weekly['latest']['causes'] if item['code'] == 'CUSTOMER_DISPUTE']
+    assert weekly['latest']['snapshotId'] == after['snapshotId']
+    assert cause['sourceRefs'] == [f"requirement:{req}@{r['revision']}", source]
+    assert not data(users['outsider'].get(weekly_path, params=params))['items']
     code(customer.post(f'requirements/{req}/customer-confirm', headers=headers(r['revision']),
                        json={'evidenceRef': proof['evidenceRef']}), 422, 'CUSTOMER_DISPUTE_OPEN')
 
@@ -69,6 +76,7 @@ def test_current_customer_objection_changes_quality_and_replays_once(live, team,
     code(customer.post(withdrawal, headers=headers(2), json=reason), 422, 'DISPUTE_ALREADY_WITHDRAWN')
     assert data(pm.get(path))['items'] == [data(saved)]
     assert sample(pm, project)['qualityLine'] == 'green'
+    assert data(pm.get(weekly_path, params=params))['items'] == [weekly]
     assert data(customer.post(f'requirements/{req}/customer-confirm', headers=headers(r['revision']),
                               json={'evidenceRef': proof['evidenceRef']}))['status'] == 'customer_confirmed'
     with engine.connect() as c:

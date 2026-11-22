@@ -10,7 +10,8 @@ from pydantic import AwareDatetime, Field, StringConstraints
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import RULE_VERSION, Result, Strict
-from .costs import Kind, cost_basis
+from .costs import DisplayedRate, Kind, cost_basis
+from .dto import Proportion, Unavailable
 from .health_calculation import ACTIVE, observe
 from .health_schema import appeals, appeal_decisions, zero_budgets
 from .identity import Failure, explicit_project_scope, visible
@@ -69,12 +70,12 @@ class Health(Strict):
     health: Literal['untrusted', 'unavailable', 'green', 'yellow', 'red']
     dataTrust: Literal['trusted', 'untrusted', 'unavailable']
     publication: Literal['official', 'preview', 'withheld', 'unavailable']
-    timeLine: str | None = None
-    costLine: str | None = None
-    qualityLine: str | None = None
-    moneyVarianceRate: str | None = None
-    effortVarianceRate: str | None = None
-    requirementSatisfactionRate: str | None = None
+    timeLine: Literal['green', 'yellow', 'red'] | None = None
+    costLine: Literal['green', 'yellow', 'red'] | None = None
+    qualityLine: Literal['green', 'yellow', 'red'] | None = None
+    moneyVarianceRate: DisplayedRate | Unavailable | None = None
+    effortVarianceRate: DisplayedRate | Unavailable | None = None
+    requirementSatisfactionRate: Proportion | Unavailable | None = None
     asOf: datetime
     ruleVersion: str = RULE_VERSION
     sourceRefs: list[str] = Field(max_length=100)
