@@ -183,13 +183,13 @@ class Report(Strict):
     revision: int
     submittedAt: datetime | None = None
     structuredFields: DraftFields | None = None
-    # Browser fields are omitted from the closed MCP response.
+    isCurrentConfirmed: bool | None = None
+    # Only the scoped Fact agent can also receive the narrative on detail reads.
     narrative: str | None = None
     periodStart: date | None = None
     periodEnd: date | None = None
     versionNo: int | None = None
     isCurrent: bool | None = None
-    isCurrentConfirmed: bool | None = None
     submittedBy: UUID | None = None
     confirmedBy: UUID | None = None
     confirmedAt: datetime | None = None
@@ -262,7 +262,10 @@ def _submissions(c, project_id: UUID, as_of: datetime, *period_filters) -> list[
     """Read verifiable receipts for an already scoped project; a claim is not proof."""
     if as_of.utcoffset() is None:
         raise ValueError('Invalid report cutoff')
-    rows = c.execute(sa.select(reports).where(r.project_id == project_id, *period_filters,
+    # Publication advances monotonically by version. Today's pointer does not answer an earlier cutoff.
+    published_version = sa.func.max(sa.case((sa.and_(r.status == 'confirmed', r.confirmed_at <= as_of), r.version_no)))
+    at_cutoff = published_version.over(partition_by=(r.type, r.period)).label('version_published_at_cutoff')
+    rows = c.execute(sa.select(reports, at_cutoff).where(r.project_id == project_id, *period_filters,
         r.status.in_(('submitted', 'confirmed')),
         r.submitted_at <= as_of, r.submitted_by.is_not(None), r.content_hash.is_not(None))
         .order_by(r.period_start, r.submitted_at, r.version_no, r.id)).mappings()
@@ -282,7 +285,7 @@ def _submissions(c, project_id: UUID, as_of: datetime, *period_filters) -> list[
             if kind == 'progress' or kind == 'completion':
                 claims.append(MilestoneClaim(_uuid(item['milestoneId']), kind,
                                              tuple(f'evidence:{eid}' for eid in _evidence_ids(item)), index))
-        published = (row.status == 'confirmed' and row.is_current_confirmed and row.confirmed_at <= as_of)
+        published = row.status == 'confirmed' and row.version_no == row.version_published_at_cutoff
         submissions.append(ReportSubmission(row.id, revision, row.version_no, row.period, row.period_start,
             row.period_end, row.submitted_at, row.submitted_by, row.content_hash, tuple(claims),
             row.confirmed_at if published else None, row.revision if published else None))
@@ -365,7 +368,7 @@ def _ref(row):
     return f'report:{row.id}@{row.revision}'
 
 
-def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False):
+def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False, publication=False):
     try:
         fields = DraftFields.model_validate(row.structured_fields) if detail else None
     except ValueError:
@@ -373,9 +376,11 @@ def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False):
     item = Report(reportId=row.id, projectId=row.project_id, type=row.type, status=row.status, period=row.period,
                   authorId=row.author_id, revision=row.revision, submittedAt=row.submitted_at,
                   structuredFields=fields)
+    if publication or a.kind == 'human':
+        item.isCurrentConfirmed = bool(row.is_current_confirmed and row.status == 'confirmed' and row.confirmed_at)
     if a.kind == 'human':
         item.periodStart, item.periodEnd = row.period_start, row.period_end
-        item.versionNo, item.isCurrent, item.isCurrentConfirmed = row.version_no, row.is_current, row.is_current_confirmed
+        item.versionNo, item.isCurrent = row.version_no, row.is_current
         item.submittedBy, item.confirmedBy, item.confirmedAt = row.submitted_by, row.confirmed_by, row.confirmed_at
         item.contentHash = row.content_hash
         item.narrative = row.narrative if detail else None
@@ -452,7 +457,7 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         info = meta(LIST, [_ref(row) for row in rows], project_id=p.id)
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)
         can_create = p.stage != 'archived' and author_role if a.kind == 'human' else None
-        return Result[Page](data=Page(items=[_view(row, a, p, pm, author_role) for row in rows], page=page, pageSize=pageSize,
+        return Result[Page](data=Page(items=[_view(row, a, p, pm, author_role, publication=True) for row in rows], page=page, pageSize=pageSize,
             total=total, asOf=info.asOf, canCreateDraft=can_create,
             weeklyGenerationRevision=p.revision if pm and p.stage != 'archived' else None), meta=info)
     return run(authorization, LIST, read)
@@ -465,7 +470,7 @@ def get(reportId: UUID, authorization: Auth) -> Result[Report]:
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)
         # Only a scoped Process Manager can see the report text to quote it in a proposal.
         excerpt = a.kind == 'agent' and 'pmo_fact_propose' in a.actions and _is_pm(c, a, p) and _content(row) is not None
-        return Result[Report](data=_view(row, a, p, pm, author_role, detail=True, agent_excerpt=excerpt),
+        return Result[Report](data=_view(row, a, p, pm, author_role, detail=True, agent_excerpt=excerpt, publication=True),
                               meta=meta(GET, [_ref(row)], project_id=p.id))
     return run(authorization, GET, read)
 

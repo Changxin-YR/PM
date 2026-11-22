@@ -20,9 +20,11 @@
 
 测试命令和失败修复见 [M2](M2-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。静态检查、SDK 联调和合成数据不能替代真实试点、目标 Host 或签核；逐项口径见[追踪矩阵](../acceptance/traceability.csv)和[阻断项](blockers.md)。上游 `origin/main`。桌面运行时 Git 首次 RPC 连接重置（退出 128，`.local/pmo104-decision-provenance-remote.log`）；运行 `git -c http.version=HTTP/1.1 ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1`（退出 0，`.local/pmo104-decision-provenance-remote-retry.log`）仅回 `refs/heads/main`（`45307c20ed94bf9347306f5983a7b695ed5c3ebb`），未返回目标开发分支 SHA。没有推送。
 
+[报告发布时点与分析历史](M4-report.md#报告当前发布与历史回读)已复验：后端 316、Edge 22、参考向量 102、仓库外 MCP 入口 11 项 PASS；含 40 工具真实 stdio、`0016→0035` 带数据升级和联合恢复。历史回读不以今天的发布指针替代原时点，旧报告无回执不标发布；归档分析历史可读但不可写。热重载仍为 `18771/18772`、隔离 `0035`，固定候选和共享库没变。
+
 ## 续接顺序
 
-1. 冻结参考向量 102/102、合成补充 A01–A16 和 Q/T 组合证据见[追踪](../acceptance/traceability.csv)。[ERD](../erd.md) 从 PostgreSQL 目录生成，13 状态、23 条合法边和 421 个冻结字段已对表。23 条合法边另有合成 HTTP 逐边角色与事务回执（[M2](M2-report.md#23-条阶段边的角色和事务回执)）。评分、成本、变更、对账、风险接收、三线输入、裁决出处和阶段历史分页已有契约实测。FND-006 已补[任务与报告 MCP 分页](M4-report.md#补强任务与报告分页)（26 项定向 PASS）及[报告成员级权限](M4-report.md#报告资源范围)（31 项定向 PASS，含 Fact/附件）；继续补历史发布、分析回读和其余资源级 DTO/库约束，退出本批时整体复验附件恢复。
+1. 冻结参考向量 102/102、合成补充 A01–A16 和 Q/T 组合证据见[追踪](../acceptance/traceability.csv)。[ERD](../erd.md) 从 PostgreSQL 目录生成，13 状态、23 条合法边和 421 个冻结字段已对表。23 条合法边另有合成 HTTP 逐边角色与事务回执（[M2](M2-report.md#23-条阶段边的角色和事务回执)）。评分、成本、变更、对账、风险接收、三线输入、裁决出处和阶段历史分页已有契约实测。FND-006 已补[任务与报告 MCP 分页](M4-report.md#补强任务与报告分页)及[报告成员级权限](M4-report.md#报告资源范围)；继续补日报/周报嵌套条目、任务状态与来源库约束和其余资源级 DTO/权限。
 2. 准备两个目标 Host 的独立配置与证据，进入 T09 前先确认交付授权；不复用生产令牌作试验。
 3. 验收环境部署、恢复、性能、真实模型、签核和试点分别核验。新增迁移或附件引用变化后才重跑带数据升级与联合恢复。
 

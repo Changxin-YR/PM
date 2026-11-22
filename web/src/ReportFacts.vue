@@ -9,7 +9,7 @@ type Trust='low'|'medium'|'high'
 type Fact={factId:string;revision:number;subject:string;predicate:string;typedValue:string|number|boolean;asOf:string;
   quote:string;sourceRef:string;quotePath:string;quoteOffset:number;validationStatus:Status;trust:Trust;
   verificationEvidenceRef?:string;verificationNote?:string}
-type Page={items:Fact[];total:number;page:number;pageSize:number;reportRevision:number;canPropose:boolean;canVerify:boolean;canClarify:boolean}
+type Page={items:Fact[];total:number;page:number;pageSize:number;reportRevision:number;canReadAnalysis:boolean;canPropose:boolean;canVerify:boolean;canClarify:boolean}
 type Entry={revision:number;action:string;actorId:string;occurredAt:string;validationStatus:Status;trust:Trust;reason:string;evidenceRef?:string}
 type Log={items:Entry[];total:number;page:number;pageSize:number}
 type Mode='propose'|'verify'|'clarify'
@@ -115,8 +115,8 @@ watch(()=>[props.reportId,props.revision],()=>{
     <div v-if="expanded" v-loading="reading" class="fact-content">
       <el-alert v-if="error" :title="error" type="error" :closable="false"/>
       <p v-if="notice" role="status" class="fact-notice">{{notice}}</p>
-      <ReportAnalysis v-if="page?.canPropose" :report-id="reportId" :revision="page.reportRevision" :api="api"
-        :can-select="!working&&!reading&&!mode" @choose="choose"/>
+      <ReportAnalysis v-if="page?.canReadAnalysis" :report-id="reportId" :revision="page.reportRevision" :api="api"
+        :can-select="page.canPropose&&!working&&!reading&&!mode" @choose="choose"/>
       <form v-if="mode" class="fact-form" :aria-label="mode==='propose'?'Fact 候选':mode==='verify'?'Fact 核验':'Fact 澄清'" @submit.prevent="submit">
         <div v-if="mode==='propose'" class="fact-inputs">
           <label>主题<input v-model="subject" required maxlength="256" :disabled="working"></label>

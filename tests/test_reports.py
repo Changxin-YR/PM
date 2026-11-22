@@ -1,11 +1,9 @@
 import asyncio
 import hashlib
-import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 from secrets import token_urlsafe
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -158,10 +156,23 @@ def test_draft_submit_publish_and_history(team):
     second = f"reports/{replacement['reportId']}"
     data(author.post(second + '/submit', headers=headers(1), json={}))
     newer = data(pm.post(team.path, headers=headers(), json=body(narrative='Newer report')))
-    data(pm.post(f"reports/{newer['reportId']}/confirm", headers=headers(1), json={}))
+    latest = data(pm.post(f"reports/{newer['reportId']}/confirm", headers=headers(1), json={}))
     deny(pm.post(second + '/confirm', headers=headers(2), json={}), 409, 'REPORT_VERSION_SUPERSEDED')
     prior = data(pm.get(path))
     assert not prior['isCurrentConfirmed'] and prior['narrative'] == edit['narrative'] and prior['revision'] == 4
+    first_confirmed = datetime.fromisoformat(prior['confirmedAt'])
+    last_confirmed = datetime.fromisoformat(latest['confirmedAt'])
+    for cutoff, expected in ((first_confirmed-timedelta(microseconds=1), None),
+                             (first_confirmed, prior), (last_confirmed-timedelta(microseconds=1), prior),
+                             (last_confirmed, latest)):
+        active = [submission for submission in receipt(team, as_of=cutoff) if submission.confirmed_at is not None]
+        if expected is None:
+            assert not active
+        else:
+            [publication] = active
+            assert str(publication.report_id) == expected['reportId']
+            assert publication.confirmed_revision == expected['revision']
+            assert publication.confirmed_at == datetime.fromisoformat(expected['confirmedAt'])
     page = data(pm.get(team.path, params={'pageSize': 2}))
     assert page['total'] == 3 and [i['versionNo'] for i in page['items']] == [3, 2]
 
@@ -240,9 +251,28 @@ def test_report_related_reads_use_the_same_resource_scope(live, team):
     asyncio.run(flow())
 
 
+def test_legacy_report_marker_is_not_a_publication_receipt(live, team):
+    pm = team.people['pm'].id
+    with team.engine.begin() as c:
+        legacy = c.scalar(db.reports.insert().values(project_id=team.pid, created_by=pm, author_id=pm,
+            type='weekly', period=WEEK, period_start=START, period_end=END, version_no=1, status='confirmed',
+            is_current=True, is_current_confirmed=True, structured_fields={}, narrative='Legacy notes preserved',
+            submitted_at=datetime(2025, 1, 6, tzinfo=UTC)).returning(db.reports.c.id))
+    path = f'reports/{legacy}'
+    browser = data(team.users['pm'].get(path))
+    assert browser['status'] == 'confirmed' and browser['narrative'] == 'Legacy notes preserved'
+    assert not browser['isCurrentConfirmed'] and 'confirmedAt' not in browser
+    assert receipt(team, as_of=datetime.now(UTC)) == []
+    auth = _token(team, person='pm', actions=(LIST, GET))
+    assert data(live[1].get('/api/v1/'+path, headers=auth))['isCurrentConfirmed'] is False
+    [listed] = data(live[1].get('/api/v1/'+team.path, headers=auth))['items']
+    assert listed['reportId'] == str(legacy) and listed['isCurrentConfirmed'] is False
+    with team.engine.connect() as c:
+        assert c.scalar(sa.select(reports.c.is_current_confirmed).where(reports.c.id == legacy)) is True
+
+
 def test_agent_scope_and_closed_mcp_dtos(team):
-    specs = json.loads(next((Path(__file__).resolve().parents[1] / 'docs/spec').glob('11_*.json')).read_text(encoding='utf-8'))
-    tools = {tool['name']: tool['outputSchema'] for tool in specs['tools']}
+    from pmo.mcp_server import tools
     token = _token(team, actions=(LIST, GET, SUBMIT, CONFIRM))
     pm = team.users['pm']
     draft = data(pm.post(team.path + '/drafts', headers=headers(), json=body(narrative='Draft note')))
@@ -257,13 +287,13 @@ def test_agent_scope_and_closed_mcp_dtos(team):
         item = data(result)
         assert item['status'] == 'submitted' and item['authorId'] == str(team.people['reporter'].id)
         path = f"reports/{item['reportId']}"
-        jsonschema.validate({'ok': True, **result.json()}, tools[SUBMIT])
+        jsonschema.validate({'ok': True, **result.json()}, tools[SUBMIT].outputSchema)
         found = agent.get(path, headers=token)
         assert 'narrative' not in data(found)
-        jsonschema.validate({'ok': True, **found.json()}, tools[GET])
+        jsonschema.validate({'ok': True, **found.json()}, tools[GET].outputSchema)
         result = agent.get(team.path, headers=token)
         assert data(result)['total'] == 1
-        jsonschema.validate({'ok': True, **result.json()}, tools[LIST])
+        jsonschema.validate({'ok': True, **result.json()}, tools[LIST].outputSchema)
         deny(agent.post(path + '/confirm', headers={**token, **headers(1)}, json={}), 403, 'FORBIDDEN')
     assert data(pm.get(path))['narrative'] == 'Delegated private narrative'
     with team.engine.connect() as c:
@@ -337,6 +367,20 @@ def test_report_real_stdio_human_publish_and_distinct_idempotency_actors(live, t
                 assert [entry['reportId'] for entry in result['data']['items']] == expected
             bad = await session.call_tool(LIST, {'projectId': str(team.pid), 'reportType': 'monthly'})
             assert bad.isError and bad.structuredContent['error']['code'] == 'VALIDATION_FAILED'
+
+            current = data(pm.post(f"reports/{human['reportId']}/confirm", headers=headers(human['revision']), json={}))
+            history = (await call(LIST, {'projectId': str(team.pid), 'reportType': 'weekly'}))['data']['items']
+            assert [(entry['reportId'], entry['isCurrentConfirmed']) for entry in history] == [
+                (current['reportId'], True), (published['reportId'], False)]
+            for entry in history:
+                found = (await call(GET, {'reportId': entry['reportId']}))['data']
+                web = data(pm.get(f"reports/{entry['reportId']}"))
+                assert found['isCurrentConfirmed'] == entry['isCurrentConfirmed'] == web['isCurrentConfirmed']
+                assert found['revision'] == entry['revision'] == web['revision']
+                assert 'isCurrent' not in found and 'confirmedBy' not in found and 'narrative' not in found
+            assert data(pm.get(path))['confirmedAt'] == published['confirmedAt']
+            encore = await call(SUBMIT, args)
+            assert encore == sent and 'isCurrentConfirmed' not in encore['data']
 
             other = await session.call_tool(LIST, {'projectId': str(team.other)})
             assert other.isError and other.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'

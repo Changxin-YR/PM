@@ -14,6 +14,7 @@ from .fact_sources import Candidate, Short, Status, Trust, Value, can_propose, c
 from .identity import Failure
 from .materials import finish, replay
 from .projects import fingerprint, meta, run
+from .report_analysis import permitted as can_read_analysis
 from .reports import _context, _plain, _ref
 from .requirement_baselines import active_member
 
@@ -62,6 +63,7 @@ class Page(Strict):
     pageSize: int
     total: int
     reportRevision: int
+    canReadAnalysis: bool
     canPropose: bool
     canVerify: bool
     canClarify: bool
@@ -137,7 +139,8 @@ def listing(reportId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         rows = list(c.execute(q.order_by(f.created_at.desc(), f.id).offset((page-1)*pageSize).limit(pageSize)).mappings())
         writable = p.stage != 'archived' and submitted(report)
         return Result[Page](data=Page(items=[view(row, human=True) for row in rows], page=page, pageSize=pageSize,
-            total=total, reportRevision=report.revision, canPropose=writable and can_propose(c, a, p, report),
+            total=total, reportRevision=report.revision, canReadAnalysis=can_read_analysis(c, p, report, a.person),
+            canPropose=writable and can_propose(c, a, p, report),
             canVerify=writable and (pm or active_member(c, p, a.person, 'reviewer')),
             canClarify=writable and pm), meta=meta(LIST, [_ref(report), *(store.fact_ref(row) for row in rows)]))
     return run(authorization, LIST, read)

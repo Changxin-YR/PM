@@ -284,6 +284,32 @@ def test_browser_report_analysis(live, team, model_on, tmp_path):
         assert task['sourceType']=='report_analysis' and task['sourceId']==report['reportId']
 
 
+def test_browser_archived_report_history_is_read_only(live, team):
+    from test_facts import submit
+    from test_report_analysis import history, request
+    from test_reports import data, headers
+
+    pid, _, users, _ = team
+    pm = users['pm']
+    project, _, _ = execution_fixture(live, team)
+
+    def publish(narrative):
+        report = submit(pm, project + '/reports', narrative=narrative)
+        return data(pm.post(f"reports/{report['reportId']}/confirm", headers=headers(report['revision']), json={}))
+
+    original = publish('Synthetic historical publication')
+    for _ in range(4):
+        assert data(request(pm, original, forceNewRun=True))['status'] == 'manual'
+    publish('Synthetic current publication')
+    with live[0].begin() as c:
+        c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='archived'))
+    read_back = history(pm, original)
+    assert read_back['total'] == 4 and not read_back['canAnalyze']
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'analysis', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
+            'PMO_TEST_ARCHIVED_HISTORY':'1'})
+
+
 def test_browser_drafting_through_archive_without_model(live, team):
     from datetime import datetime, timedelta
 

@@ -47,6 +47,10 @@ function isoWeek(day:string){
   return `${year}-W${String(Math.floor((date.valueOf()-first)/604800000)+1).padStart(2,'0')}`
 }
 function time(at:string){return new Date(at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
+function reportStatus(row:Report){
+  if(row.isCurrentConfirmed)return '已发布'
+  return row.status==='confirmed'&&!row.confirmedAt?'历史标记（无回执）':labels[row.status]
+}
 function lamp(color:string){return ({green:'绿',yellow:'黄',red:'红',untrusted:'不可信',unavailable:'不可用'} as Record<string,string>)[color]??color}
 function base(){return `projects/${props.projectId}/reports`}
 function target(row:Report){return `reports/${row.reportId}`}
@@ -233,7 +237,7 @@ watch(()=>props.projectId,()=>{
       <el-table-column label="报告周期" min-width="130"><template #default="{row}">{{row.period}} · {{row.type==='weekly'?'周报':'日报'}}</template></el-table-column>
       <el-table-column label="版本" width="78"><template #default="{row}">v{{row.versionNo}}</template></el-table-column>
       <el-table-column label="状态" min-width="100"><template #default="{row}">
-        <el-tag size="small" :type="row.isCurrentConfirmed?'success':row.status==='submitted'?'warning':'info'">{{row.isCurrentConfirmed?'已发布':labels[row.status as Status]}}</el-tag>
+        <el-tag size="small" :type="row.isCurrentConfirmed?'success':row.status==='submitted'?'warning':'info'">{{reportStatus(row)}}</el-tag>
       </template></el-table-column>
       <el-table-column label="提交时间（上海）" min-width="160"><template #default="{row}">{{row.submittedAt?time(row.submittedAt):'未提交'}}</template></el-table-column>
       <el-table-column label="操作" width="92"><template #default="{row}"><el-button text :disabled="busy||reading" @click="open(row.reportId)"><FileText :size="15"/>查看</el-button></template></el-table-column>
@@ -242,7 +246,7 @@ watch(()=>props.projectId,()=>{
 
     <article v-if="detail&&!editor" v-loading="reading" aria-label="报告详情" class="report-detail">
       <div class="report-toolbar">
-        <h3>{{detail.period}} · v{{detail.versionNo}} · {{detail.isCurrentConfirmed?'已发布':labels[detail.status]}}</h3>
+        <h3>{{detail.period}} · v{{detail.versionNo}} · {{reportStatus(detail)}}</h3>
         <div class="report-actions">
           <el-button v-if="detail.canEdit" :disabled="busy||reading" @click="begin(detail)"><Pencil :size="15"/>编辑草稿</el-button>
           <el-button v-if="detail.canSubmit" type="primary" :disabled="reading||!detail.structuredFields?.effort_person_days" :loading="busy" @click="submitDraft(detail)"><Send :size="15"/>提交报告</el-button>

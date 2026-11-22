@@ -31,6 +31,12 @@ def advertised(tool):
                                     pageSize={'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 20})
         if name == 'pmo_report_list':
             inputs['properties']['reportType'] = {'type': 'string', 'enum': ['daily', 'weekly']}
+    if name in {'pmo_report_list', 'pmo_report_get'}:
+        outputs = deepcopy(outputs)
+        report = outputs['oneOf'][0]['properties']['data']
+        if name == 'pmo_report_list':
+            report = report['properties']['items']['items']
+        report['properties']['isCurrentConfirmed'] = {'type': 'boolean'}
     if name in {'pmo_requirement_change_history', 'pmo_change_propose'}:
         outputs = deepcopy(outputs)
         record = outputs['oneOf'][0]['properties']['data']

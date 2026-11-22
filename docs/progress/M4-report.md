@@ -345,3 +345,16 @@
 | `python -m pytest -q tests/test_reports.py tests/test_facts.py tests/test_evidence.py tests/test_report_analysis.py tests/test_weekly_drafts.py tests/test_postgres_invariants.py --tb=short --junitxml=.local/pmo104-report-scope-targeted.xml` | 1 | FAIL：30 项通过；新测试的简化 PDF 不是可解析原件。保留格式硬校验，改用仓库合成 PDF 夹具。`.local/pmo104-report-scope-targeted.log`。 |
 | 同一测试集合，`--junitxml=.local/pmo104-report-scope-retest.xml` | 0 | PASS：31 项 / 41.51 秒。列表/来源、详情、Fact、附件上传与访问均实测同项目非作者拒绝；当前 PM、作者及独立 Reviewer 的合法路径和真实字节/SHA-256 回读通过；同一委托人的 REST/stdio 查询权限一致。`.local/pmo104-report-scope-retest.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；`SELECT version_num FROM <schema>.alembic_version` | 0 | PASS：三套规格、89 文件类型检查。源码 head、隔离预览 `0035`，共享 `public` 保持 `0016`。`.local/pmo104-report-scope-check.log`、`.local/pmo104-read-scope-db-heads.log`。 |
+
+## 报告当前发布与历史回读
+
+依据 §5.6 LR-06、§6.1、§6.3、§8.4、工程 DTO §3–5、[ADR 0020](../adr/0020-task-and-report-reads.md)。基准 `e22fd8948d43187dcba5d1e82bd0dad3c1230f8a`；被测暂存源码树 `905ba564c6ec347e4d45bc56bc8f56643f3ecbbf`，不含本次证据文档。实现 `pmo/reports.py`、`pmo/facts.py`、`pmo/mcp_server.py`、`web/src/Reports.vue`、`web/src/ReportFacts.vue`。Windows、PostgreSQL 16.14 隔离 schema/专用临时库、真实回环 HTTP/SDK stdio 和 Edge，全部为合成证据。没有改迁移、文件存储或报告内容哈希；业务浏览器链路关闭模型，分析集成使用既有回环模拟网关。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_reports.py::test_draft_submit_publish_and_history --tb=short --junitxml=.local/pmo104-report-history-red.xml` | 1 | FAIL：新增反例在后续版本发布后按旧时点读不到原发布版本。`.local/pmo104-report-history-red.log`。首次定向组合错列 `tests/test_legacy_health.py`（退出 4，`.local/pmo104-report-history-targeted.log`），后续实际运行了定向和全量用例。 |
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/pmo104-report-history-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/pmo104-report-history-full.xml` | 0 | PASS：316 项，516.17 秒，含旧发布标记、归档只读、`0016→0035` 带数据升级、私有附件联合恢复和受限数据库账号；`.local/pmo104-report-history-full.log`。实际 40 发现/调用/动作拒绝、18 读审计、22 写重放。本次 MCP JSON SHA-256 `c7c4e9285bc9799dd867a45af26424c8baaeffa2806c693db8d672203748afda`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/pmo104-report-history-edge-full.xml` | 0 | PASS：22 项，252.37 秒。包含无模型三关口、对账、风险正式接收与归档，终止复盘，以及报告权限、归档分析历史刷新和旧版本回读；`.local/pmo104-report-history-edge-full.log`。 |
+| `.venv/Scripts/python.exe scripts/reference_vector_evidence.py .local/pmo104-report-history-full.xml .local/pmo104-report-history-vectors.csv --require-complete` | 0 | PASS：从本批实际 JUnit 提取 102/102，`.local/pmo104-report-history-vectors.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；`GET http://127.0.0.1:18772/openapi.json` 对表 | 0 | PASS：规格、Python/Vue 类型及构建；实时 95 基线、42 工程、40 双入口。`.local/pmo104-report-history-final-check.log`、`.local/pmo104-report-history-final-build.log`、`.local/pmo104-report-history-openapi.log`。 |
+| 设置 `PMO_TEST_MCP_ENTRYPOINT` 指向本批离线构建并隔离安装的 `pmo-mcp.exe`，运行 `.venv/Scripts/python.exe -m pytest -q tests/test_mcp_configuration.py --tb=short --junitxml=.local/pmo104-report-history-installed-retest.xml` | 1 / 0 | 首次 FAIL：本机 `.local/dev.env` 只有口令字段，未构造测试连接 URL（`.local/pmo104-report-history-installed.log`）；按 `scripts/dev.ps1` 生成回环 URL 后 PASS：11 项，仓库外实际启动、40 个工具发现、正常读、缺令牌/错误地址拒绝。`.local/pmo104-report-history-installed-retest.log`。不计为 T09 或目标 Host。 |
