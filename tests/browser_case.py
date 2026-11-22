@@ -410,3 +410,23 @@ def test_browser_formal_transition_authority_without_model(live, team):
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'outsider', 'reviewer', 'sponsor')),
             'PMO_TEST_PHASE': 'formal-authority', 'PMO_TEST_AUTHORITY_REFS': json.dumps(refs)})
     assert stage(users['pm'], project)['stage'] == 'terminated'
+
+
+def test_browser_paginates_stage_receipts_without_changing_project_version(live, team):
+    from test_lifecycle import begin_execution, judgment
+    from test_reviews import data, headers
+
+    pid, _, users, _ = team
+    pm, sponsor = users['pm'], users['sponsor']
+    project, _, _ = begin_execution(live, team)
+    revision = stage(pm, project)['revision']
+    for index in range(1, 22):
+        request = data(pm.post(project + '/transition-requests', headers=headers(revision),
+            json={'toStage': 'on_hold', 'reason': f'Synthetic history request {index:02}'}))
+        assert data(judgment(sponsor, request, decision='reject'))['status'] == 'rejected'
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm')),
+            'PMO_TEST_PHASE': 'approval-pages'})
+    assert stage(pm, project)['revision'] == revision
+    history = data(pm.get('approvals', params={'projectId': pid}))
+    assert history['total'] == 22 and history['items'][0]['status'] == 'pending'

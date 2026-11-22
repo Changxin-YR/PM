@@ -7,7 +7,8 @@ type Entry={requestId:string;projectId:string;fromStage:string;toStage:string;st
   decisionId?:string;decisionReason?:string;authorityRef?:string;authoritySourceRef?:string;
   holdUntil?:string;awaitsInitiator?:boolean;initiatorConfirmedAt?:string;
   resolvedBy?:string;resolvedAt?:string;appliedProjectRevision?:number}
-type Inbox={items:Entry[];projectId:string;projectRevision:number;stage:string;requestable:string[];canResubmit:boolean;policyPending:boolean}
+type Inbox={items:Entry[];page:number;pageSize:number;total:number;projectId:string;projectRevision:number;stage:string;
+  requestable:string[];canResubmit:boolean;policyPending:boolean}
 type Mode='request'|'execute'|'decide'|'resubmit'
 type Intent={mode:Mode;revision:number;fromStage:string;toStage?:string;requestId?:string}
 type Decision='approve'|'reject'
@@ -39,18 +40,18 @@ function eligible(mode:'execute'|'decide',item?:Entry){
   return !!item&&!!state.value&&item.status==='pending'&&!item.stale&&item.revision===state.value.projectRevision&&
     (mode==='execute'?item.canExecute===true:item.canDecide===true)
 }
-async function read(){
-  const params=new URLSearchParams({projectId:props.projectId})
+async function read(page=state.value?.page??1){
+  const params=new URLSearchParams({projectId:props.projectId,page:String(page),pageSize:'20'})
   const {data}:{data:Inbox}=await props.api(`approvals?${params}`)
   state.value=data
   if(!outdated.value)emit('stageRead',data.projectId,data.stage,data.projectRevision)
 }
-async function refresh(){
+async function refresh(page=state.value?.page??1){
   if(busy.value)return
   loading.value=true;error.value=''
-  try{await read()}catch(e){state.value=null;error.value=message(e,'未能读取阶段流转。')}finally{loading.value=false}
+  try{await read(page)}catch(e){state.value=null;error.value=message(e,'未能读取阶段流转。')}finally{loading.value=false}
 }
-onMounted(refresh)
+onMounted(()=>void refresh())
 watch(()=>props.projectRevision,revision=>{if(revision!==state.value?.projectRevision)void refresh()})
 
 function begin(mode:Mode,item?:Entry){
@@ -96,7 +97,7 @@ async function save(){
     saved=true;dialog.value=false;attempt=undefined
     notice.value=action.mode==='request'?'阶段流转申请已登记。':data.status==='rejected'?'阶段流转申请已拒绝。':
       action.mode==='resubmit'?'已退回草稿。':'阶段流转已执行。'
-    await read()
+    await read(action.mode==='request'||action.mode==='resubmit'?1:undefined)
   }catch(e){
     if(saved){state.value=null;error.value='操作已提交，但未能重读项目阶段和流转记录。'}
     else formError.value=message(e,'未能确认提交结果。')
@@ -115,7 +116,7 @@ async function save(){
       <div class="controls">
         <el-button v-if="destinations.length" type="primary" :disabled="busy||outdated" @click="begin('request')"><Send :size="15"/>申请阶段流转</el-button>
         <el-button v-if="state?.canResubmit" :disabled="busy||outdated" @click="begin('resubmit')"><RotateCcw :size="15"/>退回草稿重提</el-button>
-        <el-button aria-label="刷新阶段流转" title="刷新阶段流转" :disabled="busy" @click="refresh"><RefreshCw :size="15"/></el-button>
+        <el-button aria-label="刷新阶段流转" title="刷新阶段流转" :disabled="busy" @click="refresh()"><RefreshCw :size="15"/></el-button>
       </div>
     </div>
     <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon/>
@@ -124,7 +125,7 @@ async function save(){
     <p v-if="loading" class="meta">正在读取阶段流转…</p>
     <h3>阶段流转记录</h3>
     <p v-if="state&&!state.items.length" class="meta">暂无阶段流转记录。</p>
-    <ul v-if="state?.items.length" class="entries">
+    <ul v-if="state?.items.length" class="entries" aria-label="阶段流转记录">
       <li v-for="item in state.items" :key="item.requestId">
         <div class="entry-heading">
           <strong class="edge">{{stageName(item.fromStage)}} <ArrowRight :size="14" aria-hidden="true"/> {{stageName(item.toStage)}}</strong>
@@ -155,6 +156,10 @@ async function save(){
         </div>
       </li>
     </ul>
+    <nav v-if="state&&state.total>state.pageSize" aria-label="阶段流转分页">
+      <el-pagination size="small" :current-page="state.page" :total="state.total" :page-size="state.pageSize"
+        :pager-count="5" :disabled="busy||dialog" layout="prev,pager,next" @current-change="refresh"/>
+    </nav>
   </section>
 
   <el-dialog v-model="dialog" :title="intent?modes[intent.mode].title:''" width="min(550px,94vw)" append-to-body destroy-on-close

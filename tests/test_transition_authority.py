@@ -150,6 +150,24 @@ def test_rejected_intent_has_a_decision_but_no_applied_revision(live, team):
     assert stage(pm, p)['revision'] == pending['revision']
     assert item(pm, pending) == rejected
 
+    newer = data(propose(pm, p, 'on_hold'))
+    params = {'projectId': pid, 'pageSize': 1}
+    first = data(pm.get('approvals', params=params))
+    second_response = pm.get('approvals', params={**params, 'page': 2})
+    second = data(second_response)
+    assert (first['total'], first['page'], first['pageSize'], first['projectRevision']) == (2, 1, 1, pending['revision'])
+    assert (second['total'], second['page'], second['pageSize'], second['projectRevision']) == (2, 2, 1, pending['revision'])
+    assert first['items'][0]['requestId'] == newer['requestId'] and second['items'] == [rejected]
+    refs = second_response.json()['meta']['sourceRefs']
+    assert f"approval:{pending['requestId']}" in refs and f"approval:{newer['requestId']}" not in refs
+    assert data(pm.get('approvals', params={**params, 'page': 3}))['items'] == []
+    assert pm.get('approvals', params={**params, 'pageSize': 101}).status_code == 422
+    assert pm.get('approvals', params={**params, 'page': 0}).status_code == 422
+    assert len(data(pm.get('approvals', params={'projectId': pid}))['items']) == 2
+    other = data(pm.post('projects', headers=headers(), json={'code': 'NO-APPROVALS', 'name': 'Other owned draft'}))
+    unrelated = data(pm.get('approvals', params={**params, 'projectId': other['projectId']}))
+    assert unrelated['items'] == [] and unrelated['total'] == 0
+
 
 def test_delegate_can_decide_sponsors_intent_but_not_agents_own_delegated_proposal(live, team):
     engine, api, _, _ = live

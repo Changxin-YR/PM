@@ -122,6 +122,9 @@ class TerminationPage(Strict):
 
 class Page(Strict):
     items: list[Entry]
+    page: int
+    pageSize: int
+    total: int
     projectId: UUID
     projectRevision: int
     stage: str
@@ -596,11 +599,16 @@ def termination_inbox(authorization: Auth) -> Result[TerminationPage]:
 
 
 @router.get('/approvals', operation_id=INBOX, response_model_exclude_none=True)
-def inbox(authorization: Auth, projectId: UUID = Query(...)) -> Result[Page]:
+def inbox(authorization: Auth, projectId: UUID = Query(...), page: int = Query(1, ge=1),
+          pageSize: int = Query(100, ge=1, le=100)) -> Result[Page]:
     def read(c, a, _):
         p = lock_project(c, a, projectId)
-        rows = c.execute(sa.select(approval.c.id).join(intents, intents.c.approval_id == approval.c.id).where(
-            approval.c.project_id == p.id, approval.c.action == ACTION).order_by(approval.c.created_at.desc(), approval.c.id).limit(100)).scalars()
+        query = sa.select(approval.c.id).join(intents, intents.c.approval_id == approval.c.id).where(
+            approval.c.project_id == p.id, approval.c.action == ACTION)
+        total = c.execute(sa.select(sa.func.count()).select_from(query.subquery())).scalar_one()
+        offset = (page - 1) * pageSize
+        rows = c.execute(query.order_by(approval.c.created_at.desc(), approval.c.id)
+                         .offset(offset).limit(pageSize)).scalars().all() if offset < total else []
         items = [entry(c, a, p, *lookup(c, p.id, rid)) for rid in rows]
         can_resubmit = False
         if p.stage == 'rejected' and (role(c, p, a.person, 'pm') or role(c, p, a.person, 'initiator')):
@@ -612,7 +620,8 @@ def inbox(authorization: Auth, projectId: UUID = Query(...)) -> Result[Page]:
         choices = sorted(edge[1] for edge in DIRECT | APPROVED if edge[0] == p.stage and
                          can_request(c, p, a.person, edge) and not competing_request(c, a, p, edge))
         refs = stable_refs([f'project:{p.id}@{p.revision}', *(ref for item in items for ref in item.sourceRefs or [])])
-        return Result[Page](data=Page(items=items, projectId=p.id, projectRevision=p.revision, stage=p.stage, requestable=choices,
+        return Result[Page](data=Page(items=items, page=page, pageSize=pageSize, total=total, projectId=p.id,
+                                   projectRevision=p.revision, stage=p.stage, requestable=choices,
                                    canResubmit=can_resubmit, policyPending=not synthetic_confirmation(c)),
                             meta=meta(INBOX, refs))
     return run(authorization, INBOX, read)
