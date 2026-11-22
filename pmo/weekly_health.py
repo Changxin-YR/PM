@@ -78,8 +78,9 @@ class WeekPage(Strict):
 
 
 def _dispute_sources(c, snapshots) -> dict[tuple[UUID, str], list[str]]:
+    # Older observations predate the disputed flag; they cannot carry a recorded objection.
     ids = [row.id for row in snapshots if row.results['dataTrust'] == 'trusted'
-           and any(item['disputed'] for item in row.input_revisions['quality']['schedule'])]
+           and any(item.get('disputed') is True for item in row.input_revisions['quality']['schedule'])]
     if not ids:
         return {}
     d = disputes.c
@@ -112,10 +113,11 @@ def _sample(row, rule_sources, dispute_sources) -> Sample:
                     sourceRefs=cost['sourceRefs'][:100]))
         for requirement in inputs['quality']['schedule']:
             if requirement['color'] in SIGNALS:
-                code = ('CUSTOMER_DISPUTE' if requirement['disputed'] else
+                disputed = requirement.get('disputed') is True
+                code = ('CUSTOMER_DISPUTE' if disputed else
                         'P0_UNCONFIRMED' if requirement['priority'] == 'P0' else 'REQUIREMENT_LATE')
                 ref = f"requirement:{requirement['requirement_id']}@{requirement['revision']}"
-                receipt_refs = dispute_sources.get((row.id, requirement['requirement_id']), ()) if requirement['disputed'] else ()
+                receipt_refs = dispute_sources.get((row.id, requirement['requirement_id']), ()) if disputed else ()
                 causes.append(Cause(line='quality', color=requirement['color'], code=code, plannedDate=requirement['planned'],
                     sourceRefs=[ref, *receipt_refs]))
     refs = list(dict.fromkeys([f'health-snapshot:{row.id}', *row.source_refs]))[:100]

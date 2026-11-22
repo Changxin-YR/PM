@@ -1,7 +1,11 @@
 """Q7 evidence is tied to the saved observation, not today's mutable inputs."""
 from datetime import date, datetime, timedelta
 
-from pmo.health_calculation import TZ, week_key
+import sqlalchemy as sa
+
+from pmo import schema_v1 as db
+from pmo.contracts import RULE_VERSION
+from pmo.health_calculation import TZ, observe, week_key
 from test_health import code, prepare, sample
 from test_reference_vectors_permissions import bearer
 from test_reports import body, sections
@@ -74,3 +78,31 @@ def test_weekly_health_keeps_current_receipt_separate_from_earlier_signals(live,
     assert data(outsider.get(PATH))['sampledProjects'] == 0
     token = issue(pm, pid, ['pmo_health_get'])
     code(live[1].get('/api/v1/' + PATH, headers=bearer(token)), 403, 'FORBIDDEN')
+
+
+def test_weekly_health_reads_pre_dispute_p0_receipt_without_reclassifying(live, team):
+    pid, _, users, _ = team
+    pm = users['pm']
+    project, _ = prepare(live, team, priority='P0')
+    with live[0].begin() as c:
+        at = c.scalar(sa.select(sa.func.clock_timestamp()))
+        p = c.execute(sa.select(db.projects).where(db.projects.c.id == pid).with_for_update()).mappings().one()
+        obs = observe(c, p, at)
+        (requirement,) = obs.inputs['quality']['schedule']
+        assert obs.results['dataTrust'] == 'trusted' and requirement['color'] == 'red' and not requirement['disputed']
+        # This flag was introduced only with customer disputes. Preserve the old receipt format.
+        del requirement['disputed']
+        snapshots = db.health_snapshots
+        saved = c.execute(snapshots.insert().values(project_id=pid, as_of=at, input_hash=obs.digest,
+            data_trust='trusted', rule_version=RULE_VERSION, input_revisions=obs.inputs, results=obs.results,
+            source_refs=obs.refs, rule_event_ids=[]).returning(snapshots.c.id, snapshots.c.input_hash)).one()
+
+    row, = data(pm.get(PATH, params={'asOf': at.isoformat()}))['items']
+    actual = row['latest']
+    assert (actual['snapshotId'], actual['health'], actual['qualityLine']) == (str(saved.id), 'red', 'red')
+    cause, = actual['causes']
+    assert cause['code'] == 'P0_UNCONFIRMED'
+    assert cause['sourceRefs'] == [f"requirement:{requirement['requirement_id']}@{requirement['revision']}"]
+    old = data(pm.get(project + '/health', params={'asOf': at.isoformat()}))
+    assert old['historical'] and old['inputHash'] == saved.input_hash
+    assert old['inputs']['quality']['schedule'] == [requirement]

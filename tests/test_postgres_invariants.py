@@ -282,6 +282,35 @@ def test_postgres_rejects_nonfinite_cost_inputs(live, team):
         assert saved == Decimal('120.00')
 
 
+def test_retrospective_and_lesson_completion_constraints(live, team):
+    project, people, _, _ = team
+    l, r = db.lessons, db.project_retrospectives
+    lesson = dict(project_id=project, created_by=people['pm'], category='delivery', what='Rehearse the final handoff',
+                  root_cause='Unclear ownership', advice='Record the designated recipient', status='draft')
+    completed = dict(status='confirmed', revision=2, confirmed_by=people['reviewer'], confirmed_at=sa.func.now())
+    answers = ['Goals and results', 'Delivery and causes', 'Reusable assets', 'Lessons and advice']
+    with live[0].begin() as c:
+        for invalid in ({'status': 'published'}, {'confirmed_by': people['reviewer']},
+                        {**completed, 'confirmed_by': people['pm']}, {**completed, 'confirmed_at': None},
+                        {**completed, 'confirmed_by': None}, {**completed, 'revision': 1},
+                        {**completed, 'confirmed_at': sa.func.now() - sa.text("interval '1 second'")}):
+            constraint(c, l.insert().values(lesson | invalid), 'ck_lessons_confirmation', '23514')
+        draft = c.scalar(l.insert().values(lesson).returning(l.c.id))
+        confirm = l.update().where(l.c.id == draft)
+        constraint(c, confirm.values(completed | {'confirmed_by': people['pm']}), 'ck_lessons_confirmation', '23514')
+        c.execute(confirm.values(completed))
+        assert c.scalar(sa.select(l.c.status).where(l.c.id == draft)) == 'confirmed'
+        for invalid_answers in ({'answers': answers}, [], answers[:3], [*answers[:3], None],
+                                [*answers[:3], 7], [*answers[:3], ' \t '], [*answers, 'Extra question']):
+            constraint(c, r.insert().values(project_id=project, answers=invalid_answers, completed_at=sa.func.now()),
+                       'ck_retrospectives_completed_answers', '23514')
+        unfinished = c.scalar(r.insert().values(project_id=project, answers=[]).returning(r.c.id))
+        finish = r.update().where(r.c.id == unfinished)
+        constraint(c, finish.values(completed_at=sa.func.now()), 'ck_retrospectives_completed_answers', '23514')
+        c.execute(finish.values(answers=answers, completed_at=sa.func.now(), revision=2))
+        assert c.scalar(sa.select(r.c.answers).where(r.c.id == unfinished)) == answers
+
+
 def test_finite_cost_upgrade_rolls_back_on_invalid_history():
     admin = sa.create_engine(os.environ['PMO_TEST_DATABASE_URL'], hide_parameters=True)
     assert admin.url.host in ('127.0.0.1', '::1'), 'Use a local test database'

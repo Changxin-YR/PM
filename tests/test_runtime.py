@@ -86,6 +86,59 @@ def test_rest_baseline_transport_has_concrete_success_dtos(live):
     assert len(checked) == 95
 
 
+def test_rest_actor_markers_match_frozen_permissions(live):
+    frozen = yaml.safe_load(next(Path('docs/spec').glob('12_OpenAPI*')).read_text(encoding='utf-8'))
+    actual = live[1].get('/openapi.json').raise_for_status().json()['paths']
+    compared = 0
+    for path, entries in frozen['paths'].items():
+        for method, expected in entries.items():
+            if method not in {'get', 'post', 'patch', 'put', 'delete'}:
+                continue
+            if 'x-actorTypes' not in expected:
+                continue
+            route = actual[path][method]
+            assert route.get('x-actorTypes') == expected['x-actorTypes'], expected['operationId']
+            if expected.get('x-forbidAgentEvenViaHttp'):
+                assert route['x-forbidAgentEvenViaHttp'] is True, expected['operationId']
+            compared += 1
+    assert compared == 95
+
+
+def test_human_governance_routes_deny_direct_agent_with_token_action(live, actor):
+    engine, api, _, _ = live
+    token, credential = actor(extra_actions=('human_approval_inbox', 'human_decide_approval', 'human_execute_transition',
+        'human_retrospective_save', 'human_confirm_lesson', 'human_health_history', 'admin_audits_list'))
+    auth = {'Authorization': 'Bearer ' + token}
+    project = api.post('/api/v1/projects', headers={**auth, 'Idempotency-Key': uuid4().hex},
+        json={'code': 'AGENT-SCOPE-GOV', 'name': 'Synthetic authorization test'}).raise_for_status().json()['data']
+    pid, target = project['projectId'], uuid4()
+    samples = [
+        ('GET', f'/approvals?projectId={pid}', 'human_approval_inbox', None),
+        ('POST', f'/approvals/{target}/decide', 'human_decide_approval',
+         {'decision': 'approve', 'rationale': 'Synthetic decision intent'}),
+        ('POST', f'/projects/{pid}/transitions', 'human_execute_transition',
+         {'toStage': 'archived', 'approvalRequestId': str(target)}),
+        ('PUT', f'/projects/{pid}/retrospective', 'human_retrospective_save',
+         {'answers': ['Reviewed goals', 'Reviewed delivery', 'Reviewed assets', 'Reviewed lessons']}),
+        ('POST', f'/lessons/{target}/confirm', 'human_confirm_lesson', {}),
+        ('GET', f'/projects/{pid}/health/history', 'human_health_history', None),
+        ('GET', '/admin/audits', 'admin_audits_list', None),
+    ]
+    receipts = {}
+    for method, path, operation, body in samples:
+        response = api.request(method, '/api/v1' + path, json=body, headers={**auth, 'If-Match': '1',
+                               'Idempotency-Key': uuid4().hex})
+        assert (response.status_code, response.json()['code']) == (403, 'FORBIDDEN'), operation
+        receipts[response.headers['X-Request-ID']] = operation
+    with engine.connect() as c:
+        audit = db.audit_logs.c
+        rows = c.execute(sa.select(audit.request_id, audit.action, audit.result, audit.error_code).where(
+            audit.actor_type == 'agent', audit.actor_id == credential, audit.request_id.in_(receipts))).all()
+        assert sorted(rows) == sorted((rid, op, 'denied', 'FORBIDDEN') for rid, op in receipts.items())
+        assert c.execute(sa.select(db.projects.c.stage, db.projects.c.revision).where(db.projects.c.id == pid)).one() == (
+            'drafting', 1)
+
+
 @pytest.mark.parametrize('kind', ('project', 'requirement'))
 def test_deep_object_filters_are_closed_and_project_scoped(live, actor, kind):
     _, api, _, _ = live

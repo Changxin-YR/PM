@@ -46,10 +46,8 @@ def active_browser_session(conn, criterion):
     return None
 
 
-def browser_actor(conn,identity):
-    row=active_browser_session(conn,sessions.c.token_hash==sha256(identity.cookie.encode()).hexdigest())
-    if not row: raise Failure(401,'UNAUTHORIZED')
-    actor=Actor(row.id,row.person,row.id,row.org_id,frozenset({*ROUTES,'auth_logout','auth_me','human_charter_get',
+HUMAN_ONLY_OPERATIONS = frozenset({
+        'auth_logout','auth_me','human_charter_get',
         'human_agent_token_create','human_agent_tokens_list','human_agent_token_revoke','admin_agent_tokens_list','admin_agent_token_revoke',
         'human_requirement_baseline_get','human_requirement_baseline_sign','human_requirement_accept','human_customer_confirm','human_changes_list','human_change_approve','human_change_reject','human_requirement_metrics',
         'human_requirement_addition_propose',
@@ -73,7 +71,15 @@ def browser_actor(conn,identity):
         'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
         'human_termination_confirmation_inbox','human_termination_confirm',
-        'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson'}),(),True,'human',row.session_id)
+        'human_retrospective_get','human_retrospective_save','human_lessons_list','human_lessons_draft','human_confirm_lesson',
+})
+BROWSER_OPERATIONS = frozenset(ROUTES) | HUMAN_ONLY_OPERATIONS
+
+
+def browser_actor(conn,identity):
+    row=active_browser_session(conn,sessions.c.token_hash==sha256(identity.cookie.encode()).hexdigest())
+    if not row: raise Failure(401,'UNAUTHORIZED')
+    actor=Actor(row.id,row.person,row.id,row.org_id,BROWSER_OPERATIONS,(),True,'human',row.session_id)
     if identity.writing and not compare_digest(sha256(identity.csrf.encode()).hexdigest(),row.csrf_hash):
         raise Failure(403,'CSRF_INVALID',actor)
     return actor

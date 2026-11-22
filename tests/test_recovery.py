@@ -88,6 +88,15 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         member(conn, archived, owner, owner, 'pm')
         archived_mid = conn.scalar(db.milestones.insert().values(project_id=archived, created_by=owner,
             name=archived_name, ordinal=1, planned_date=date(2020, 3, 7), is_key=True).returning(db.milestones.c.id))
+        # Preserve valid pre-existing receipts, including their original time and answer text.
+        r, l = db.project_retrospectives, db.lessons
+        archived_retro = conn.execute(r.insert().values(project_id=archived, revision=3, completed_at=sa.func.now(),
+            answers=['Met the delivery goal', 'Checked customer results', 'Kept the checklist', 'Record the original evidence'])
+            .returning(r.c.id, r.c.answers, r.c.revision, r.c.completed_at)).one()
+        archived_lesson = conn.execute(l.insert().values(project_id=archived, created_by=owner, confirmed_by=verifier,
+            confirmed_at=sa.func.now(), revision=2, status='confirmed', category='delivery', what='Evidence handoff',
+            root_cause='Handoff was unassigned', advice='Name an owner').returning(l.c.id, l.c.confirmed_by,
+            l.c.confirmed_at, l.c.revision, l.c.advice)).one()
         member(conn, project, owner, owner, 'pm')
         member(conn, project, verifier, owner, 'reviewer')
         customer_assignment = member(conn, project, customer, owner, 'client_representative')
@@ -169,8 +178,12 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         c.execute(transitions.insert().values(**historical, from_revision=2, to_revision=3,
             from_stage='closing_review', to_stage='delivering', request_id=legacy_withdrawal))
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True, env=cli)
+    retro_sql = 'SELECT id, answers, revision, completed_at FROM project_retrospectives WHERE id=%s'
+    lesson_sql = 'SELECT id, confirmed_by, confirmed_at, revision, advice FROM lessons WHERE id=%s'
     with engine.connect() as c:
         assert [tuple(row) for row in c.exec_driver_sql(history_sql, (project,))] == old_cost_history
+        assert tuple(c.exec_driver_sql(retro_sql, (archived_retro.id,)).one()) == tuple(archived_retro)
+        assert tuple(c.exec_driver_sql(lesson_sql, (archived_lesson.id,)).one()) == tuple(archived_lesson)
         assert c.scalar(sa.select(db.milestones.c.name).where(db.milestones.c.id == archived_mid)) == archived_name
         with pytest.raises(sa.exc.IntegrityError, match='Archived project records are read-only'), c.begin_nested():
             c.execute(db.milestones.update().where(db.milestones.c.id == archived_mid).values(name='Unapproved alteration'))
@@ -332,6 +345,16 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert {(r[0],r[3],str(r[4])) for r in rows} == {(original,'milestone',str(milestone)), (external,'project',str(project)),
                 (fact_attachment,'report',report['reportId'])}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
+            assert restored.execute(retro_sql, (archived_retro.id,)).fetchone() == tuple(archived_retro)
+            assert restored.execute(lesson_sql, (archived_lesson.id,)).fetchone() == tuple(archived_lesson)
+            with pytest.raises(psycopg.errors.CheckViolation) as invalid_retro, restored.transaction():
+                restored.execute("INSERT INTO project_retrospectives (project_id, answers, completed_at) VALUES (%s, '[]', now())", (project,))
+            assert invalid_retro.value.diag.constraint_name == 'ck_retrospectives_completed_answers'
+            with pytest.raises(psycopg.errors.CheckViolation) as invalid_lesson, restored.transaction():
+                restored.execute('''INSERT INTO lessons (project_id, status, category, what, root_cause, advice, created_by)
+                    VALUES (%s, 'confirmed', 'delivery', 'Legacy handover', 'Missing evidence', 'Check evidence', %s)''',
+                    (project, owner))
+            assert invalid_lesson.value.diag.constraint_name == 'ck_lessons_confirmation'
             assert restored.execute('SELECT name FROM milestones WHERE id=%s', (archived_mid,)).fetchone() == (archived_name,)
             with pytest.raises(psycopg.errors.CheckViolation) as refused, restored.transaction():
                 restored.execute('UPDATE milestones SET name=%s WHERE id=%s', ('Unapproved alteration', archived_mid))
@@ -408,6 +431,31 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     with pytest.raises(recovery.RecoveryError, match='RECOVERY_OBJECT_MISSING_OR_UNSAFE'):
         recovery.backup(source, originals, output, tools)
     assert [entry.name for entry in output.iterdir()] == [point.name]
+
+
+def test_retrospective_upgrade_rolls_back_on_invalid_existing_answers(recovery_db):
+    _, source, engine, _, _, _ = recovery_db
+    cli = [sys.executable, '-m', 'alembic', 'upgrade']
+    env = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
+    subprocess.run([*cli, '0034'], check=True, env=env, timeout=45)
+    with engine.begin() as c:
+        org = c.scalar(db.organizations.insert().values(name='Legacy synthetic records', status='active')
+                       .returning(db.organizations.c.id))
+        pm = uuid4()
+        c.execute(db.persons.insert().values(id=pm, org_id=org, name='Synthetic PM', created_by=pm, is_active=True))
+        pid = c.scalar(db.projects.insert().values(org_id=org, code='OLD-RETRO', name='Isolated legacy project',
+            initiator_id=pm, created_by=pm, stage='retrospective', revision=3).returning(db.projects.c.id))
+        r = db.project_retrospectives
+        old = c.execute(r.insert().values(project_id=pid, answers=['Only one historical answer'], completed_at=sa.func.now(),
+                                         revision=2).returning(r)).mappings().one()
+
+    failed = subprocess.run([*cli, '0035'], env=env, capture_output=True, text=True, timeout=45)
+    assert failed.returncode != 0 and 'ck_retrospectives_completed_answers' in failed.stderr
+    with engine.connect() as c:
+        assert c.scalar(sa.text('SELECT version_num FROM alembic_version')) == '0034'
+        assert c.execute(sa.select(r).where(r.c.id == old.id)).mappings().one() == old
+        assert c.scalar(sa.text('''SELECT count(*) FROM pg_constraint WHERE connamespace = 'public'::regnamespace
+            AND conname IN ('ck_lessons_confirmation', 'ck_retrospectives_completed_answers')''')) == 0
 
 
 def test_restore_rejects_remote_and_live_evidence_destination(tmp_path, monkeypatch):

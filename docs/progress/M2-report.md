@@ -320,3 +320,11 @@ Windows、隔离 PostgreSQL 16.14、真实 HTTP、合成数据。`tests/test_pos
 - `pmo/weekly_health.py` 只从同项目、已存快照中存在的 `requirement-dispute:<id>@1` 关联当时的客户争议；撤回后仍可解释历史红线，不把新撤回当成旧来源。`web/src/RequirementMetrics.vue`、`Costs.vue` 明确展示不可计算。
 - 中间树 `14a2506bf499df9f5a9f37cdd59265edf68b9078` 全量退出 1：303 PASS、2 FAIL，两个测试仍断言响应缺字段，而冻结向量要求 `UNAVAILABLE`。最终用原向量结果直接比较，不改向量。保留 `.local/signals-backend.log`、`.xml`。
 - 最终针对性验证 3 PASS、退出 0：`test_no_requirement_denominator` 两条原向量和 `test_browser_customer_dispute_has_independent_and_persistent_history`，见 `.local/signals-final-targeted.log` 及同名 JUnit。整体验证命令、退出码和证据见 [M4](M4-report.md#三线候选复验)。
+
+## 人工权限契约、复盘回执和旧三线快照
+
+依据主方案 §4.1、§5.4、§6、§7、§20.5，LR-05/08，工程 DTO 补充 §1/4/7。基准 `d65afae0c4fb8735cc43977a436d679adaa59288`、最终被测树 `ba3eb203ac5f12af9bb196813156f990de943ee0`。Windows、PostgreSQL 16.14、真实回环 HTTP 与 stdio、Edge，合成账号，模型关闭。
+
+- `pmo/api.py` 在 OpenAPI 从既有主体控制和 MCP 路由发布说明，不改变鉴权。`tests/test_runtime.py` 对照冻结标记，并以携带对应动作的 Agent 令牌直调七条人工评审和审批路径，核验 403 和独立 denied 审计。
+- `0035_retrospective_receipts.py` 校验已完成复盘是四条非空字符串、Lesson 草稿没有确认字段、已确认 Lesson 有不同自然人的确认记录及有效时间顺序。确认权仍由服务校验。合法历史不重写；非法存量使迁移整体回滚，不删除、不清零、不作补签。
+- `pmo/weekly_health.py` 仅将快照明示的 `disputed=true` 解释为客户争议。旧快照缺该字段曾使周度读取报错，原红线、出处与哈希保留。`test_weekly_health_reads_pre_dispute_p0_receipt_without_reclassifying` 修复前 FAIL，退出 1（`.local/weekly-legacy-before.log`）。回归覆盖 16 项后端、2 项 Edge，均 PASS、退出 0（`.local/weekly-legacy-verified.log`、`.local/weekly-legacy-edge.log`）；完整命令和恢复见 [M4](M4-report.md#0035-隔离候选和联合恢复)。

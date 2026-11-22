@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 from time import perf_counter
 import os
@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from .request_context import request_id, correlation_id
 from .contracts import CreateProject, ProjectView, ProjectDetail, Page, Result, UpdateDraft
-from .identity import Browser, Failure
+from .identity import Browser, Failure, HUMAN_ONLY_OPERATIONS
 from .contracts import Strict
 from . import projects, sessions
 from .access import Auth, DEEP_OBJECT_FILTERS, Filters
@@ -53,6 +53,7 @@ from .assistant import router as assistant_router
 from .weekly_health import router as weekly_health_router
 from .health_probes import router as health_probes_router
 from .observability import emit
+from .tool_routes import ROUTES
 
 class ErrorResponse(Strict):
     code: str
@@ -60,7 +61,25 @@ class ErrorResponse(Strict):
     requestId: UUID
 
 
-app=FastAPI(title='PMO Lite',version='0.1.0',responses={s:{'model':ErrorResponse} for s in (401,403,404,409,422,429,500)})
+class PMOApi(FastAPI):
+    def openapi(self) -> dict[str, Any]:
+        if self.openapi_schema is not None:
+            return self.openapi_schema
+        schema = super().openapi()
+        # Describe recognized actor types; role and resource checks remain in the services.
+        for path in schema['paths'].values():
+            for route in path.values():
+                if not isinstance(route, dict):
+                    continue
+                operation = route.get('operationId')
+                if operation in ROUTES:
+                    route['x-actorTypes'] = ['human', 'agent']
+                elif operation in HUMAN_ONLY_OPERATIONS:
+                    route.update({'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True})
+        return schema
+
+
+app=PMOApi(title='PMO Lite',version='0.1.0',responses={s:{'model':ErrorResponse} for s in (401,403,404,409,422,429,500)})
 app.include_router(milestone_router)
 app.include_router(requirement_router)
 app.include_router(charter_router)
@@ -159,7 +178,7 @@ class CurrentUser(Strict):
     orgId:UUID
     isSystemAdmin:bool
 
-@app.post('/api/v1/auth/login',operation_id='auth_login')
+@app.post('/api/v1/auth/login',operation_id='auth_login',openapi_extra={'x-actorTypes': ['human']})
 def login(request:Request,response:Response,command:Login)->LoginResult:
     if request.headers.get('Authorization'): raise Failure(403,'FORBIDDEN')
     local=request.url.hostname in ('127.0.0.1','localhost','::1') and os.getenv('PMO_LOCAL_HTTP')=='1'

@@ -267,3 +267,18 @@
 | `python` 分别执行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py` 和 `python -m mypy pmo --ignore-missing-imports` | 0 | PASS：静态规格与 88 文件类型检查。`.local/signals-final-static.log`。 |
 
 本批无迁移或附件引用变化，上一候选恢复证据仍适用；本次全量的两条恢复测试也通过。命令均在导出树运行，证据归原仓库 `.local`。未覆盖真实 Host、真实签核及目标部署环境。
+
+## 0035 隔离候选和联合恢复
+
+依据主方案 §6/§7/§9.1/§20.5、LR-05/08、T10，工程 DTO 补充 §1/4/7。基准 `d65afae0c4fb8735cc43977a436d679adaa59288`，最终固定导出树 `ba3eb203ac5f12af9bb196813156f990de943ee0`，目录 `.local/pmo104-0035-ba3eb203-fixed`。Windows、Python 3.12、PostgreSQL 16.14、Edge `158.0.4370.33`，隔离 schema、专库和回环 Compose，全部合成、模型关闭。实现及拒绝条件见 [M2](M2-report.md#人工权限契约复盘回执和旧三线快照)。`python` 使用原仓库 `.venv/Scripts/python.exe`，日志与 JUnit 输出至原仓库 `.local`。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence ../pmo104-0035-final-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=../pmo104-0035-final-backend.xml` | 0 | PASS：310 项 / 483.65 秒，无跳过。40 项发现、成功调用和动作拒绝；18 读审计、22 写重放。`.local/pmo104-0035-final-backend.log`；逐项 JSON SHA-256 `1847bcb4d1bef4b889032d4a3157a53733d81606d8c30838126abd4b7e1fe1fd`。 |
+| `npm.cmd --prefix web ci`；`python -m pytest -q tests/browser_case.py --tb=short --junitxml=../pmo104-0035-final-edge.xml` | 0 | PASS：Edge 20 项 / 235.37 秒，包括无模型人工三关口与归档。`.local/pmo104-0035-final-npm.log`、`.local/pmo104-0035-final-edge.log`。 |
+| `docker compose -p pmo104-rc-620e8d38 --env-file .local/pmo104-rc-620e8d38.env -f deploy/compose.yaml up --build -d --wait` | 1 / 0 | Docker 默认地址池已耗尽，首次 FAIL（`.local/pmo104-0035-final-compose.log`）。在核对现有网段后为该候选单独配置 bridge，未删除旧网络或卷；同一项目启动 PASS（`.local/pmo104-0035-final-network.log`）。 |
+| `python scripts/deployment_smoke.py pmo104-rc-620e8d38` | 0 | PASS：回环 `18769`，只用受限角色。15 个草稿和 15 个唯一消费回执。停库 `live=200/ready=503`，恢复 `200/200`，项目和回执保留。30 次/操作，本机 p95 筛选 50 ms、详情 60 ms。`.local/pmo104-0035-final-smoke.log`。 |
+| `docker compose … exec -T api alembic current`；容器内 `GET /openapi.json`；`psql` 回读 `pg_constraint.convalidated` | 0 | PASS：`0035 (head)`，137 操作：40 双入口、95 人工或登录、2 公开运行探针；两项新约束均已验证。`.local/pmo104-0035-final-readback-final.log`。先前探针误走 Nginx 页面，并漏计公开探针、独立邀请码接收；退出 1 保留在 `.local/pmo104-0035-final-readback*.log`。 |
+| `python` 分别执行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py`；`python -m mypy pmo --ignore-missing-imports` | 0 | PASS：冻结规格及 88 个源码文件类型检查。`.local/pmo104-0035-final-static.log`。 |
+
+全量命令中 `tests/test_recovery.py` 三项 PASS。由 `0016` 带数据升级至 `0035`，通过实际 `pg_dump/pg_restore` 和私有原件联合恢复，复盘答复和 Lesson 确认原值、原件字节、旧账及归档里程碑保留。恢复库再次校验 Lesson 约束与归档只读。非法存量升级回滚用例早期夹具缺少必填人员启用状态与项目 revision；中间树 `dcff7472cb7ea5f702f78b23a0bed0257b16ec7b` 的 308 PASS / 1 FAIL 记录在 `.local/governance-0035-backend.log`，夹具修正后保留原回滚断言。共享开发库使用只读事务查询仍为 `0016`，退出 0（`.local/pmo104-0035-shared-head.log`）。不是对真实数据、业务签核、目标 Host 或目标部署环境的放行。
