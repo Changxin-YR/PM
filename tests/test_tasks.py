@@ -2,8 +2,10 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
+from queue import Queue
 from secrets import token_urlsafe
 import sys
+from time import monotonic, sleep
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -89,7 +91,7 @@ def project(engine, people, *, foreign=False, stage='feasibility_review'):
         c.execute(sa.text('''INSERT INTO review_submission_snapshots(review_id, rule_version, snapshot_hash, materials, source_refs)
             VALUES (:id, :rule, :digest, jsonb_build_object('reviewers', jsonb_build_array(CAST(:reviewer AS text))), '[]')'''),
             dict(id=review, rule=RULE_VERSION, digest=digest, reviewer=reviewer.id))
-        # Use the production review writer, including its strengthening-task cross-reference and legacy status.
+        # Use the production review writer, including its strengthening-task cross-reference.
         [system_task] = strengthen(c, SimpleNamespace(person=reviewer.id), SimpleNamespace(id=pid),
             SimpleNamespace(id=review), [('dimension:resources', 'System strengthening: resources', owner.id, None)])
         rule = c.scalar(db.rule_events.insert().values(project_id=pid, rule_id='LR-03', rule_version=RULE_VERSION,
@@ -123,9 +125,6 @@ def test_human_task_and_existing_system_task(live, team):
     people, clients = team
     pm, owner = clients['pm'], clients['owner']
     p = project(engine, people)
-    with engine.begin() as c:
-        ignored = c.scalar(db.tasks.insert().values(project_id=p.id, title='Unrelated manual task', status='open',
-            source_type='manual', source_id=p.id, created_by=people['pm'].id).returning(db.tasks.c.id))
     listing = ok(pm.get(p.path))
     assert listing['canCreate'] and listing['projectRevision'] == PROJECT_REVISION and listing['total'] == 1
     assert [(x['taskId'], x['status'], x['sourceType']) for x in listing['items']] == [(p.system, 'todo', 'review')]
@@ -146,7 +145,6 @@ def test_human_task_and_existing_system_task(live, team):
     assert ok(owner.get(p.path))['total'] == 2 and not ok(owner.get(p.path))['canCreate']
     assert ok(clients['peer'].get(p.path))['total'] == 0
     assert all(not row['canUpdate'] for row in ok(clients['reviewer'].get(p.path))['items'])
-    denied(change(pm, ignored, {'status': 'done'}), 404, 'RESOURCE_NOT_FOUND')
     denied(change(clients['peer'], p.system, {'status': 'done'}), 403, 'FORBIDDEN')
     done = change(owner, p.system, {'status': 'done'})
     result = ok(done)
@@ -197,6 +195,76 @@ def test_task_source_and_assignee_are_project_bound(live, team):
     denied(clients['foreign'].get(p.path), 404, 'RESOURCE_NOT_FOUND')
     denied(clients['pending'].get(p.path), 404, 'RESOURCE_NOT_FOUND')
     denied(change(pm, foreign.system, {'status': 'done'}), 404, 'RESOURCE_NOT_FOUND')
+
+
+def test_task_storage_enforces_status_completion_and_source(live, team):
+    from test_postgres_invariants import constraint
+
+    engine, _, _, _ = live
+    people, clients = team
+    local, remote = project(engine, people), project(engine, people, foreign=True)
+    t = db.tasks
+    values = dict(project_id=local.id, source_type='review', source_id=local.sources['review'],
+                  status='todo', title='Synthetic constraint probe', created_by=people['pm'].id)
+    with engine.begin() as c:
+        for change_to, name in (({'status': 'typo'}, 'ck_task_status'), ({'status': 'open'}, 'ck_task_status'),
+                ({'status': 'done'}, 'ck_task_completion'), ({'completed_at': sa.func.now()}, 'ck_task_completion'),
+                ({'status': 'done', 'completed_at': sa.text("'infinity'::timestamptz")}, 'ck_task_completion'),
+                ({'source_type': 'manual'}, 'ck_task_source_scope'), ({'source_id': uuid4()}, 'ck_task_source_scope')):
+            constraint(c, t.insert().values(**{**values, **change_to}), name, '23514')
+        for kind in local.sources:
+            constraint(c, t.insert().values(**{**values, 'source_type': kind, 'source_id': remote.sources[kind]}),
+                       'ck_task_source_scope', '23514')
+        task_id = c.scalar(t.insert().values(**values).returning(t.c.id))
+        constraint(c, t.update().where(t.c.id == task_id).values(source_id=remote.sources['review']),
+                   'ck_task_source_immutable', '23514')
+        rev = db.reviews.c
+        constraint(c, db.reviews.update().where(rev.id == local.sources['review']).values(project_id=remote.id),
+                   'ck_task_source_in_use', '23514')
+        risk_id = local.sources['remediation']
+        c.execute(t.insert().values(**{**values, 'source_type': 'remediation', 'source_id': risk_id}))
+        constraint(c, db.risks.delete().where(db.risks.c.id == risk_id), 'ck_task_source_in_use', '23514')
+
+    completed = ok(change(clients['pm'], task_id, {'status': 'done'}))
+    assert completed['completedAt'] and completed['sourceId'] == str(local.sources['review'])
+    with engine.begin() as c:
+        c.execute(db.projects.update().where(db.projects.c.id == local.id).values(stage='archived'))
+        constraint(c, t.update().where(t.c.id == task_id).values(status='todo', completed_at=None),
+                   'ck_archived_project_read_only', '23514')
+    assert next(row for row in ok(clients['pm'].get(local.path))['items'] if row['taskId'] == str(task_id))['status'] == 'done'
+
+
+def test_task_binding_serializes_against_source_removal(live, team):
+    from test_postgres_invariants import constraint
+
+    engine, _, _, _ = live
+    people, _ = team
+    p = project(engine, people)
+    target = p.sources['remediation']
+    waiter = Queue()
+
+    def remove_source():
+        with engine.begin() as connection:
+            connection.exec_driver_sql("SET LOCAL lock_timeout='8s'")
+            waiter.put(connection.scalar(sa.text('SELECT pg_backend_pid()')))
+            constraint(connection, db.risks.delete().where(db.risks.c.id == target), 'ck_task_source_in_use', '23514')
+
+    with ThreadPoolExecutor(1) as pool:
+        with engine.begin() as c:
+            blocker = c.scalar(sa.text('SELECT pg_backend_pid()'))
+            c.execute(db.tasks.insert().values(project_id=p.id, source_type='remediation', source_id=target,
+                status='todo', title='Source remains bound', created_by=people['pm'].id))
+            competing = pool.submit(remove_source)
+            waiting = waiter.get(timeout=5)
+            with engine.connect() as probe:
+                deadline = monotonic() + 5
+                query = sa.text('SELECT :blocker = ANY(pg_blocking_pids(:waiter))')
+                while not probe.scalar(query, {'blocker': blocker, 'waiter': waiting}):
+                    assert not competing.done() and monotonic() < deadline, 'Source deletion did not await task binding'
+                    sleep(0.02)
+        competing.result(timeout=5)
+    with engine.connect() as c:
+        assert c.scalar(sa.select(db.risks.c.id).where(db.risks.c.id == target)) == target
 
 
 def test_task_revision_race_and_archived_replay(live, team):
@@ -360,7 +428,7 @@ def test_task_outbox_failure_rolls_back_write_and_receipt(live, team):
         with engine.connect() as c:
             assert c.scalar(sa.select(sa.func.count()).select_from(db.tasks).where(db.tasks.c.project_id == p.id)) == 1
             assert c.execute(sa.select(db.tasks.c.status, db.tasks.c.completed_at, db.tasks.c.revision)
-                             .where(db.tasks.c.id == UUID(p.system))).one() == ('open', None, 1)
+                         .where(db.tasks.c.id == UUID(p.system))).one() == ('todo', None, 1)
             for log in (db.idempotency_keys, db.audit_logs):
                 assert c.scalar(sa.select(sa.func.count()).select_from(log).where(log.c.idempotency_key.in_(
                     [create_h['Idempotency-Key'], patch_h['Idempotency-Key']]))) == 0

@@ -28,7 +28,7 @@ from test_evidence import binary
 from test_facts import fact_path, post, proposal, report_path, worksheet
 from test_org_accounts import attend, change, command, inv_state, invite
 from test_report_analysis import answer, gateway, history, request
-from test_reports import body, data, headers, sections
+from test_reports import body, data, deny, headers, sections
 from test_reviews import data_login, member
 
 
@@ -162,6 +162,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         assert len(old_cost_history) == 2
     cli = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', '0029'], check=True, env=cli)
+    task_sql = '''SELECT id, project_id, source_type, source_id, title, status, completed_at,
+                         revision, created_at, updated_at FROM tasks WHERE id=%s'''
     with engine.begin() as c:
         # A separate legacy project emulates an old closing withdrawal, not a new approval.
         legacy_project = c.scalar(db.projects.insert().values(org_id=org, code='OLD-WITHDRAW', name='Legacy withdrawal',
@@ -177,6 +179,14 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         legacy_withdrawal = uuid4()
         c.execute(transitions.insert().values(**historical, from_revision=2, to_revision=3,
             from_stage='closing_review', to_stage='delivering', request_id=legacy_withdrawal))
+        t = db.tasks
+        stored_tasks = []
+        for kind, pid, source_id in (('manual', project, project), ('review', legacy_project, review)):
+            task_id = c.scalar(t.insert().values(project_id=pid, source_type=kind, source_id=source_id, status='open',
+                title='Unchanged historical task', created_by=owner, assignee_id=owner, revision=2).returning(t.c.id))
+            prior_task = tuple(c.exec_driver_sql(task_sql, (task_id,)).one())
+            stored_tasks.append(prior_task if kind == 'manual' else (*prior_task[:5], 'todo', *prior_task[6:]))
+        ignored_task_id = stored_tasks[0][0]
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True, env=cli)
     retro_sql = 'SELECT id, answers, revision, completed_at FROM project_retrospectives WHERE id=%s'
     lesson_sql = 'SELECT id, confirmed_by, confirmed_at, revision, advice FROM lessons WHERE id=%s'
@@ -184,6 +194,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         assert [tuple(row) for row in c.exec_driver_sql(history_sql, (project,))] == old_cost_history
         assert tuple(c.exec_driver_sql(retro_sql, (archived_retro.id,)).one()) == tuple(archived_retro)
         assert tuple(c.exec_driver_sql(lesson_sql, (archived_lesson.id,)).one()) == tuple(archived_lesson)
+        for task in stored_tasks:
+            assert tuple(c.exec_driver_sql(task_sql, (task[0],)).one()) == task
         assert c.scalar(sa.select(db.milestones.c.name).where(db.milestones.c.id == archived_mid)) == archived_name
         with pytest.raises(sa.exc.IntegrityError, match='Archived project records are read-only'), c.begin_nested():
             c.execute(db.milestones.update().where(db.milestones.c.id == archived_mid).values(name='Unapproved alteration'))
@@ -215,6 +227,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         pm.headers['X-CSRF-Token'] = preupgrade_csrf
         identity = pm.get('auth/me')
         assert identity.status_code==200 and identity.json()['personId']==str(owner)
+        assert data(pm.get(path + '/tasks'))['total'] == 0
+        deny(pm.patch(f'tasks/{ignored_task_id}', headers=headers(2), json={'fieldsTask':{'status':'done'}}),
+             404, 'RESOURCE_NOT_FOUND')
         check_costs(pm.get(path + '/costs'))
         dispute_path = f'requirements/{requirement}/disputes'
         saved_dispute, = data(pm.get(dispute_path))['items']
@@ -347,6 +362,11 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
             assert restored.execute(retro_sql, (archived_retro.id,)).fetchone() == tuple(archived_retro)
             assert restored.execute(lesson_sql, (archived_lesson.id,)).fetchone() == tuple(archived_lesson)
+            for task in stored_tasks:
+                assert restored.execute(task_sql, (task[0],)).fetchone() == task
+            with pytest.raises(psycopg.errors.CheckViolation) as invalid_task, restored.transaction():
+                restored.execute("UPDATE tasks SET status='done' WHERE id=%s", (stored_tasks[1][0],))
+            assert invalid_task.value.diag.constraint_name == 'ck_task_completion'
             with pytest.raises(psycopg.errors.CheckViolation) as invalid_retro, restored.transaction():
                 restored.execute("INSERT INTO project_retrospectives (project_id, answers, completed_at) VALUES (%s, '[]', now())", (project,))
             assert invalid_retro.value.diag.constraint_name == 'ck_retrospectives_completed_answers'
@@ -456,6 +476,34 @@ def test_retrospective_upgrade_rolls_back_on_invalid_existing_answers(recovery_d
         assert c.execute(sa.select(r).where(r.c.id == old.id)).mappings().one() == old
         assert c.scalar(sa.text('''SELECT count(*) FROM pg_constraint WHERE connamespace = 'public'::regnamespace
             AND conname IN ('ck_lessons_confirmation', 'ck_retrospectives_completed_answers')''')) == 0
+
+
+def test_task_upgrade_rolls_back_for_a_cross_project_source(recovery_db):
+    _, source, engine, _, _, _ = recovery_db
+    cli = [sys.executable, '-m', 'alembic', 'upgrade']
+    env = {**os.environ, 'DATABASE_URL': source.render_as_string(hide_password=False)}
+    subprocess.run([*cli, '0035'], check=True, env=env, timeout=45)
+    with engine.begin() as c:
+        org = c.scalar(db.organizations.insert().values(name='Legacy task fixture', status='active')
+                       .returning(db.organizations.c.id))
+        pm = uuid4()
+        c.execute(db.persons.insert().values(id=pm, org_id=org, name='Synthetic PM', created_by=pm, is_active=True))
+        local, other = [c.scalar(db.projects.insert().values(org_id=org, code=code, name=code, initiator_id=pm,
+            created_by=pm, stage='drafting', revision=1).returning(db.projects.c.id)) for code in ('LOCAL', 'OTHER')]
+        risk = c.scalar(db.risks.insert().values(project_id=other, created_by=pm, owner_id=pm,
+            statement='Synthetic risk', response='Track', prob=1, impact=1, is_blocking=False, status='open')
+            .returning(db.risks.c.id))
+        t = db.tasks
+        old = c.execute(t.insert().values(project_id=local, created_by=pm, source_type='remediation', source_id=risk,
+            status='open', title='Historical record requiring review').returning(t)).mappings().one()
+
+    failed = subprocess.run([*cli, '0036'], env=env, capture_output=True, text=True, timeout=45)
+    assert failed.returncode != 0 and 'historical remediation source missing or outside the project' in failed.stderr
+    with engine.connect() as c:
+        assert c.scalar(sa.text('SELECT version_num FROM alembic_version')) == '0035'
+        assert c.execute(sa.select(t).where(t.c.id == old.id)).mappings().one() == old
+        assert c.scalar(sa.text("SELECT count(*) FROM pg_constraint WHERE conrelid='tasks'::regclass "
+                               "AND conname IN ('ck_task_status', 'ck_task_completion')")) == 0
 
 
 def test_restore_rejects_remote_and_live_evidence_destination(tmp_path, monkeypatch):

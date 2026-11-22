@@ -17,6 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError
 
 from pmo import schema_v1 as db
+from pmo.contracts import RULE_VERSION
 from pmo.projects import fingerprint
 from pmo.review_scores import ANCHORS, WEIGHTS, FeasibilityDimensions, assess
 
@@ -488,8 +489,10 @@ def test_charter_atomic_decision_acl_replay_and_concurrency(live, team):
     assert owner.post(path + '/decisions', headers=headers(3), json=outcome(state)).json()['code'] == 'INDEPENDENT_REVIEWER_REQUIRED'
     with engine.begin() as c:
         # Unrelated work must not invalidate a pending gate.
+        event = c.scalar(db.rule_events.insert().values(project_id=pid, rule_id='LR-03', business_period='2026-11',
+            rule_version=RULE_VERSION, fingerprint='e'*64, status='open', source_refs=[]).returning(db.rule_events.c.id))
         c.execute(db.tasks.insert().values(project_id=pid, created_by=people['pm'], title='Unrelated task',
-                  source_type='manual', source_id=pid, status='open'))
+                  source_type='rule_event', source_id=event, status='todo'))
         c.exec_driver_sql('CREATE TRIGGER decision_outbox_failure BEFORE INSERT ON outbox_events FOR EACH STATEMENT EXECUTE FUNCTION pmo_append_only()')
     try:
         h = headers(final_state['review']['revision'])

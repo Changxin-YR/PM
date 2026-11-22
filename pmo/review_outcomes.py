@@ -399,7 +399,7 @@ def strengthen(c, a, p, review, specs):
         if one(c, task_refs, task_refs.c.review_id == review.id, task_refs.c.item_key == item_key):
             continue
         tid = c.scalar(db.tasks.insert().values(project_id=p.id, created_by=a.person, title=title, due_at=due,
-            assignee_id=who, source_type='review', source_id=review.id, status='open').returning(db.tasks.c.id))
+            assignee_id=who, source_type='review', source_id=review.id, status='todo').returning(db.tasks.c.id))
         c.execute(task_refs.insert().values(review_id=review.id, task_id=tid, item_key=item_key))
         created.append(str(tid))
     return created
