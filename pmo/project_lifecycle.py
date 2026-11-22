@@ -1,4 +1,5 @@
 """Versioned non-gate stage requests; gate decisions stay in the review service."""
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
@@ -7,6 +8,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Query
 from pydantic import AwareDatetime, Field
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import RowMapping
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
@@ -46,7 +48,17 @@ results = sa.table('project_transition_outcomes', sa.column('approval_id', sa.Uu
 termination_signoffs = sa.table('project_termination_confirmations', sa.column('approval_id', sa.Uuid),
     sa.column('signer_id', sa.Uuid), sa.column('assignment_id', sa.Uuid), sa.column('payload_hash'), sa.column('reason'),
     sa.column('signed_at', sa.DateTime(timezone=True)), sa.column('request_id', sa.Uuid))
+transition_grants = sa.table('project_transition_grants',
+    *(sa.column(k, sa.Uuid) for k in ('id', 'org_id', 'project_id', 'person_id')),
+    *(sa.column(k, sa.String) for k in ('from_stage', 'to_stage', 'source_ref', 'revocation_ref')),
+    *(sa.column(k, sa.DateTime(timezone=True)) for k in ('valid_from', 'expires_at', 'recorded_at', 'revoked_at')))
 approval = db.approval_requests
+
+
+@dataclass(frozen=True)
+class DecisionAuthority:
+    ref: str
+    grant: RowMapping | None = None
 
 
 class Propose(Strict):
@@ -88,6 +100,8 @@ class Entry(TransitionRequest):
     stale: bool
     decisionId: UUID | None = None
     decisionReason: str | None = None
+    authorityRef: str | None = None
+    authoritySourceRef: str | None = None
     holdUntil: datetime | None = None
     awaitsInitiator: bool = False
     initiatorConfirmedAt: datetime | None = None
@@ -128,16 +142,32 @@ def can_request(c, p, person, edge):
             or edge in APPROVED and edge[1] == 'terminated' and role(c, p, person, 'sponsor'))
 
 
-def authority(c, a, p, edge, req):
+def authority(c, a, p, edge, req) -> DecisionAuthority | None:
     if a.kind != 'human' or edge not in APPROVED or a.person in (req.requested_by, req.delegated_by):
         return None
     if edge[1] == 'archived':
         if a.person in (p.initiator_id, p.pm_id, p.sponsor_id):
             return None
         assignment = active_assignment(c, p, a.person, 'reviewer')
-        return f'project-member:{assignment.id}' if assignment else None
+        return DecisionAuthority(f'project-member:{assignment.id}') if assignment else None
     sponsor = active_assignment(c, p, a.person, 'sponsor') if p.sponsor_id == a.person else None
-    return f'project-member:{sponsor.id}' if sponsor else None
+    if sponsor:
+        return DecisionAuthority(f'project-member:{sponsor.id}')
+    if a.org != p.org_id:
+        return None
+    g, m, n = transition_grants, db.project_members, db.persons
+    row = c.execute(sa.select(g, m.c.id.label('membership_id')).select_from(
+        g.join(m, sa.and_(m.c.project_id == g.c.project_id, m.c.person_id == g.c.person_id))
+         .join(n, n.c.id == g.c.person_id)).where(
+        g.c.org_id == a.org, g.c.project_id == p.id, g.c.person_id == a.person, g.c.from_stage == edge[0],
+        g.c.to_stage == edge[1], g.c.revoked_at.is_(None), g.c.valid_from <= sa.func.clock_timestamp(),
+        g.c.expires_at > sa.func.clock_timestamp(), n.c.org_id == a.org, n.c.user_id == a.account, n.c.is_active,
+        m.c.role != 'initiator', m.c.assignment_status == 'accepted', m.c.accepted_at.is_not(None), m.c.revoked_at.is_(None))
+        .order_by(g.c.expires_at.desc(), g.c.id, m.c.id).limit(1).with_for_update(read=True, of=(g, m, n))).mappings().one_or_none()
+    # A grant can expire while SELECT FOR SHARE waits for a concurrent writer.
+    if row is None or not row.valid_from <= c.scalar(sa.select(sa.func.clock_timestamp())) < row.expires_at:
+        return None
+    return DecisionAuthority(f'transition-grant:{row.id}', row)
 
 
 def milestone_basis(c, a, p):
@@ -296,13 +326,15 @@ def entry(c, a, p, req, intent):
     edge = (intent.from_stage, intent.to_stage)
     stale = req.status == 'pending' and not current(c, a, p, req, intent)
     outcome = one(c, results, results.c.approval_id == req.id)
+    evidence = outcome.payload if outcome else {}
     confirmation = valid_termination_confirmation(c, req, intent)
     return Entry(requestId=req.id, projectId=p.id, fromStage=edge[0], toStage=edge[1], status=req.status,
         revision=req.expected_revision, requestedBy=req.requested_by, requestedAt=intent.requested_at, reason=intent.reason,
         canExecute=req.status == 'pending' and not stale and direct_actor(c, a, p, edge), stale=stale,
         canDecide=req.status == 'pending' and not stale and bool(authority(c, a, p, edge, req)) and synthetic_confirmation(c),
-        decisionId=outcome.decision_id if outcome else None, decisionReason=outcome.payload['rationale'] if outcome else None,
-        holdUntil=outcome.payload.get('holdUntil') if outcome and outcome.payload.get('holdUntil') else intent.basis.get('holdUntil'),
+        decisionId=outcome.decision_id if outcome else None, decisionReason=evidence.get('rationale'),
+        authorityRef=evidence.get('authorityRef'), authoritySourceRef=evidence.get('authorityGrant', {}).get('source_ref'),
+        holdUntil=evidence.get('holdUntil') or intent.basis.get('holdUntil'),
         awaitsInitiator=req.status == 'pending' and bool(intent.basis.get('initiatorAssignment')) and confirmation is None,
         initiatorConfirmedAt=confirmation.signed_at if confirmation else None)
 
@@ -312,10 +344,11 @@ def finish(c, a, p, req, op, rid, key, signature, item, refs):
     event = {'projectId': str(p.id), 'approvalRequestId': str(req.id), 'status': item.status, 'toStage': item.toStage}
     decision_id = None
     if op == DECIDE:
-        assert isinstance(item, Entry) and item.decisionId is not None
+        assert isinstance(item, Entry) and item.decisionId is not None and item.authorityRef is not None
         decision_id = item.decisionId
-        sources.append(f'decision:{decision_id}@1')
+        sources.extend((f'decision:{decision_id}@1', item.authorityRef))
         event['decisionId'] = str(decision_id)
+        event['authorityRef'] = item.authorityRef
     result = Result[type(item)](data=item, meta=meta(op, sources))
     response = result.model_dump(mode='json', exclude_none=True)
     record_receipt(c, a, key, op, rid, req.id, p.id, signature, response, fingerprint(response), req.snapshot_hash,
@@ -366,6 +399,9 @@ def record_transition(c, a, p, req, intent, rid, *, judge=None, grant=None):
     approval_of_review_termination = judge and judge.decision == 'approve' and review is not None
     review_id = UUID(review['id']) if approval_of_review_termination else None
     if judge:
+        assert grant is not None
+        if grant.grant is not None and not grant.grant.valid_from <= at < grant.grant.expires_at:
+            raise Failure(403, 'INDEPENDENT_APPROVER_REQUIRED', project_id=p.id)
         why = judge.rationale.strip()
         if len(why) < 4:
             raise Failure(422, 'INVALID_REASON', project_id=p.id)
@@ -380,7 +416,10 @@ def record_transition(c, a, p, req, intent, rid, *, judge=None, grant=None):
             .returning(db.decisions.c.id))
         evidence = {'approvalId': str(req.id), 'proposedBy': str(req.requested_by), 'actorType': intent.actor_type,
             'fromStage': intent.from_stage, 'toStage': intent.to_stage, 'basis': intent.basis, 'ruleVersion': RULE_VERSION,
-            'authorityRef': grant, 'decision': judge.decision, 'rationale': why, 'holdUntil': judge.holdUntil.isoformat() if judge.holdUntil else None}
+            'decidedBy': str(a.person), 'authorityRef': grant.ref, 'decision': judge.decision, 'rationale': why,
+            'holdUntil': judge.holdUntil.isoformat() if judge.holdUntil else None}
+        if grant.grant is not None:
+            evidence['authorityGrant'] = snapshot(grant.grant)
         if confirmation:
             evidence['initiatorConfirmation'] = snapshot(confirmation)
         c.execute(results.insert().values(approval_id=req.id, decision_id=decision, request_id=UUID(rid), payload=evidence,
@@ -414,7 +453,9 @@ def permit_transition(c, a, p, destination, intent_id):
     if direct_actor(c, a, p, edge):
         return True
     decided = one(c, results, results.c.approval_id == req.id)
-    return bool(authority(c, a, p, edge, req) and decided and decided.payload['decision'] == 'approve'
+    grant = authority(c, a, p, edge, req)
+    return bool(synthetic_confirmation(c) and grant and decided and decided.payload['decision'] == 'approve'
+                and decided.payload['decidedBy'] == str(a.person) and decided.payload['authorityRef'] == grant.ref
                 and (edge != ('feasibility_review', 'terminated') or valid_termination_confirmation(c, req, i)))
 
 

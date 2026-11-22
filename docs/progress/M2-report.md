@@ -194,3 +194,16 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py -k pending_charter_cannot_be_decided --tb=short --junitxml=.local/review-submitter-first.xml` | 1 | FAIL：2 项，`.local/review-submitter-first.log`。发起人任命撤销后，人工及 Agent 提交的旧 Review 均被错误终裁，返回 200。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_mcp_transition.py tests/test_reference_vectors_permissions.py tests/test_requirement_exceptions.py --tb=short --junitxml=.local/review-submitter-verified.xml` | 1 | FAIL：3 项 / 47 PASS，`.local/review-submitter-verified.log`。资格函数重构后令牌签发别名仍用旧参数，修正调用点。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_mcp_transition.py tests/test_reference_vectors_permissions.py tests/test_requirement_exceptions.py tests/test_agent_tokens.py --tb=short --junitxml=.local/review-submitter-retested.xml` | 0 | PASS：52 项 / 93.33 秒，`.local/review-submitter-retested.log`。两路失权均 `409 REVIEW_SNAPSHOT_STALE`；不创建 Decision、终裁快照、迁移、成功审计、Outbox 或幂等记录，拒绝审计单独可核；有效 PM 撤回重送、独立 Reviewer 裁决到 `designing`。 |
+
+## 0032 暂停、恢复与终止的独立组织授权
+
+依据：主方案 §4.1、§20.4–20.5、LR-01。实现：`pmo/project_lifecycle.py`、`pmo/database_roles.py`、`migrations/versions/0032_transition_authority.py`、`web/src/ProjectLifecycle.vue`、[ADR 0019](../adr/0019-project-transition-authority.md)。基准 SHA `a03ffea90cc01643c84e48bbc36f9baabb78c922`，最终被测源码树 `7838c3021f8bb500f62dd82468cfbc2021a8c549`（不含本段/矩阵）。Windows、PostgreSQL 16.14、回环 HTTP/stdio、Edge 158.0.4370.33，合成账号，模型关闭。迁移不补授真实权限，记录仍须带外授权，隔离 schema 外保持 `POLICY_PENDING`。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_transition_authority.py -k 'non_sponsor_can or storage_enforces' --tb=short --junitxml=.local/rc0032-authority-reproduced.xml` | 1 | FAIL：在基准服务上仅增授权迁移和反例，有效授权人仍 `canDecide=false`（1 PASS、1 FAIL），`.local/rc0032-authority-reproduced.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_transition_authority.py tests/test_lifecycle.py tests/test_mcp_transition.py tests/test_database_roles.py tests/test_recovery.py tests/test_runtime.py --tb=short --junitxml=.local/rc0032-authority-verified.xml` | 0 | PASS：28 项 / 134.88 秒，`.local/rc0032-authority-verified.log`。普通成员按边批准；无授权、他项目、错边、到期、未生效、撤销、失去参与任命、管理员、本人/委托人自批和 Agent 禁权。并发撤销持锁的真实写事务先提交，审批等锁后拒绝；同/不同键并发裁决只生效一次。落地发起人确认必需；Outbox 注入失败回滚 Decision、状态、历史、审计与回执。运行账号不能增改授权。旧账 `0016→0032` 带数据升级及联合恢复；同时保留有效/已撤销授权和三份原件，旧版降级保护与 `0032` 保护各自实测。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'formal_transition_authority or independent_termination' --tb=short --junitxml=.local/rc0032-authority-edge.xml` | 0 | PASS：2 项 / 145.60 秒，`.local/rc0032-authority-edge.log`。普通成员受权暂停、恢复和终止；Reviewer 未授权不显示操作；刷新状态、理由、权限和组织来源一致。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格与类型，`.local/rc0032-check-first.log`、`.local/rc0032-vue.log`。 |
+
+过程反例保留：`rc0032-authority-before`（FAIL，漏填两处夹具必填字段；修夹具后重现原权限问题）、`rc0032-authority-first`（FAIL，并发新键各有唯一拒绝关联 ID，测试应检查冲突而非把拒绝当成功重放）、`rc0032-authority-api`（FAIL，新降级保护遮住旧保护的探针，把授权夹具移到旧保护断言后）。均退出 1，未移除权限和恢复断言。

@@ -266,6 +266,41 @@ try {
     await button(after,'查看').click()
     await expect(after.getByRole('article',{name:'报告详情'}).getByText(note,{exact:true})).toBeVisible()
     await expect(after.getByRole('row').getByText('已发布',{exact:true})).toBeVisible()
+  } else if(process.env.PMO_TEST_PHASE==='formal-authority') {
+    const delegate=await actor('outsider'), reviewer=await actor('reviewer')
+    const refs=JSON.parse(process.env.PMO_TEST_AUTHORITY_REFS)
+    const steps=[['on_hold','已暂停','SYNTHETIC-HOLD'],['executing','执行中','SYNTHETIC-RESUME'],
+      ['terminated','已终止','SYNTHETIC-TERMINATE']]
+    for (const [next,label,source] of steps) {
+      await pm.reload()
+      const reason=`PM 申请：${label}`
+      await requestStage(pm,reason,next)
+      await reviewer.reload()
+      const noGrant=await open(reviewer,'阶段流转')
+      await expect(noGrant.getByText(reason,{exact:true})).toBeVisible()
+      await expect(button(noGrant,'裁决阶段流转')).toHaveCount(0)
+      await delegate.reload()
+      const panel=await open(delegate,'阶段流转')
+      await button(panel,'裁决阶段流转').click()
+      const form=dialog(delegate,'裁决阶段流转')
+      await form.getByLabel('流转裁决',{exact:true}).selectOption('approve')
+      const rationale=`依据组织授权已独立核对：${label}`
+      await form.getByLabel('裁决理由',{exact:true}).fill(rationale)
+      if(next==='on_hold'){
+        const local=new Date(Date.now()+(60-new Date().getTimezoneOffset())*60_000).toISOString().slice(0,16)
+        await form.getByLabel('暂停至（本地时间）',{exact:true}).fill(local)
+      }
+      const outcome=await write(delegate,'POST','/approvals/[^/]+/decide',button(form,'确认流转裁决'))
+      expect(outcome).toMatchObject({status:'applied',toStage:next,decisionReason:rationale,
+        authorityRef:refs[next],authoritySourceRef:source})
+      await delegate.reload()
+      const history=await open(delegate,'阶段流转')
+      await expect(history.getByText(`当前阶段：${label}`,{exact:true})).toBeVisible()
+      const row=history.getByRole('listitem').filter({hasText:rationale})
+      await row.getByText('记录来源',{exact:true}).click()
+      await expect(row.getByText(refs[next],{exact:true})).toBeVisible()
+      await expect(row.getByText(source,{exact:true})).toBeVisible()
+    }
   } else if(process.env.PMO_TEST_PHASE==='termination') {
     const requestReason='原实施条件已取消，申请终止落地评审。'
     await requestStage(pm,requestReason,'terminated')

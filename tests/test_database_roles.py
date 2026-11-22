@@ -107,6 +107,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as api_db:
             assert api_db.execute('SELECT id FROM user_roles FOR SHARE').fetchall()
+            assert api_db.execute('SELECT id FROM project_transition_grants FOR SHARE').fetchall() == []
             assert api_db.execute("SELECT has_table_privilege('requirement_exception_events', 'SELECT,INSERT')").fetchone() == (True,)
             denied(api_db, [
                 'CREATE TABLE public.unauthorized(id int)', 'CREATE TEMP TABLE unauthorized(id int)',
@@ -117,6 +118,8 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE idempotency_keys SET request_hash=request_hash', 'DELETE FROM idempotency_keys',
                 'UPDATE appointment_authorities SET org_id=org_id',
                 'UPDATE change_approval_grants SET project_id=project_id',
+                'INSERT INTO project_transition_grants DEFAULT VALUES',
+                'UPDATE project_transition_grants SET id=id', 'DELETE FROM project_transition_grants',
                 'UPDATE user_accounts SET password_hash=password_hash',
                 'UPDATE cost_entries SET actual=actual', 'UPDATE alembic_version SET version_num=version_num',
                 'UPDATE requirement_exception_events SET fingerprint=fingerprint', 'TRUNCATE requirement_exception_events',
@@ -136,7 +139,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM project_rule_scan_state',
                                'SELECT * FROM facts', 'SELECT * FROM fact_history',
                                'SELECT * FROM report_analysis_runs',
-                               'SELECT * FROM requirement_disputes',
+                               'SELECT * FROM requirement_disputes', 'SELECT * FROM project_transition_grants',
                                'SELECT * FROM organization_user_invitations', 'SELECT * FROM account_status_changes',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 

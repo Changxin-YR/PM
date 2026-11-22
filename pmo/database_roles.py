@@ -29,6 +29,7 @@ API_READ = frozenset('''alembic_version organizations user_accounts user_roles p
     rule_events review_submission_snapshots project_stage_transitions tasks review_appeals review_confirmations
     review_decision_snapshots review_strengthening_tasks cost_reconciliation_grants cost_reconciliations
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
+    project_transition_grants
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
     health_appeal_decisions health_zero_budgets project_rule_scan_state
     facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
@@ -53,7 +54,7 @@ LOCKS = {
     'user_roles': 'id', 'persons': 'id', 'appointment_authorities': 'org_id',
     'change_approval_grants': 'project_id', 'agent_project_grants': 'project_id',
     'decisions': 'id', 'stakeholders': 'id',
-    'cost_reconciliation_grants': 'id',
+    'cost_reconciliation_grants': 'id', 'project_transition_grants': 'id',
 }
 API_EDIT = {
     'reports': 'content_hash narrative structured_fields status is_current is_current_confirmed revision submitted_at submitted_by confirmed_at confirmed_by updated_at',

@@ -386,3 +386,21 @@ def test_browser_independent_termination_confirmation(live, team):
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm', 'initiator', 'sponsor')),
             'PMO_TEST_PHASE':'termination'})
     assert stage(users['pm'], project)['stage'] == 'terminated'
+
+
+def test_browser_formal_transition_authority_without_model(live, team):
+    from test_lifecycle import begin_execution
+    from test_reviews import member
+    from test_transition_authority import grant
+
+    pid, people, users, _ = team
+    project, _, _ = begin_execution(live, team)
+    with live[0].begin() as c:
+        member(c, pid, people['outsider'], people['initiator'], 'member')
+        refs = {dest: f'transition-grant:{grant(c, pid, people["outsider"], (origin, dest), source=source)}'
+                for origin, dest, source in [('executing', 'on_hold', 'SYNTHETIC-HOLD'),
+                    ('on_hold', 'executing', 'SYNTHETIC-RESUME'), ('executing', 'terminated', 'SYNTHETIC-TERMINATE')]}
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'outsider', 'reviewer')),
+            'PMO_TEST_PHASE': 'formal-authority', 'PMO_TEST_AUTHORITY_REFS': json.dumps(refs)})
+    assert stage(users['pm'], project)['stage'] == 'terminated'

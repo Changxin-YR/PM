@@ -19,6 +19,7 @@ import sqlalchemy as sa
 from pmo import evidence_storage, recovery, schema_v1 as db
 from pmo.audit_store import audit
 from pmo.health_calculation import TZ, week_key
+from pmo.project_lifecycle import transition_grants
 from pmo.requirement_disputes import t as disputes
 from pmo.reviews import snapshots as review_snapshots, transitions
 from pmo.session_schema import sessions
@@ -249,6 +250,21 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         fact_attachment = c.scalar(sa.select(db.evidence_files.c.storage_key).where(db.evidence_files.c.id==att['evidenceId']))
     failed = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0028'], capture_output=True, text=True, env=cli)
     assert failed.returncode != 0 and 'Refusing to discard written audit reference history' in failed.stderr
+    with engine.begin() as c:
+        grants = transition_grants
+        assert c.scalar(sa.select(sa.func.count()).select_from(grants)) == 0
+        now = datetime.now(UTC)
+        values = dict(org_id=org, project_id=project, person_id=verifier, valid_from=now,
+                      expires_at=now+timedelta(hours=2), recorded_at=now)
+        c.execute(grants.insert().values(**values, from_stage='executing', to_stage='on_hold', source_ref='DRILL-AUTH-1'))
+        revoked = c.scalar(grants.insert().values(**values, from_stage='executing', to_stage='terminated',
+            source_ref='DRILL-AUTH-2').returning(grants.c.id))
+        c.execute(grants.update().where(grants.c.id==revoked).values(revoked_at=sa.func.clock_timestamp(), revocation_ref='DRILL-REVOKE-1'))
+        authority_sql = '''SELECT id, org_id, project_id, person_id, from_stage, to_stage, valid_from, expires_at,
+            recorded_at, source_ref, revoked_at, revocation_ref FROM project_transition_grants ORDER BY source_ref'''
+        saved_authority = c.exec_driver_sql(authority_sql).all()
+    guarded = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0031'], capture_output=True, text=True, env=cli)
+    assert guarded.returncode != 0 and 'Refusing destructive downgrade of transition authority history' in guarded.stderr
     book = json.dumps({'schemaVersion': 1, 'projectId': str(project), 'coveredThrough': datetime.now(UTC).isoformat(),
         'lines': [{'type': 'money', 'netActual': '100.00', 'sourceRef': 'SYNTHETIC-GL'},
                   {'type': 'effort', 'netActual': '10.00', 'sourceRef': 'SYNTHETIC-TIMESHEET'}]}).encode()
@@ -291,6 +307,7 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert {(r[0],r[3],str(r[4])) for r in rows} == {(original,'milestone',str(milestone)), (external,'project',str(project)),
                 (fact_attachment,'report',report['reportId'])}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
+            assert restored.execute(authority_sql).fetchall() == saved_authority
             assert restored.execute('''SELECT project_id, review_id, from_stage, to_stage, from_revision, to_revision
                 FROM project_stage_transitions WHERE request_id=%s''', (legacy_withdrawal,)).fetchone() == (
                 legacy_project, review, 'closing_review', 'delivering', 2, 3)
