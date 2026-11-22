@@ -125,14 +125,16 @@ def update_draft(header,pid,expected,command,key):
     payload_hash=fingerprint({'projectId':str(pid),'fields':fields,'expectedRevision':expected})
     def write(c,a,request_id):
         project=db.projects
-        row=c.execute(sa.select(project).where(visible(a),project.c.id==pid).with_for_update()).mappings().one_or_none()
+        row=c.execute(sa.select(project).where(visible(a,include_initiator=True),project.c.id==pid).with_for_update()).mappings().one_or_none()
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
-        if row.initiator_id!=a.person or row.stage!='drafting': raise Failure(403,'FORBIDDEN')
+        if row.initiator_id!=a.person: raise Failure(403,'FORBIDDEN',project_id=pid)
         idem=db.idempotency_keys
         old=c.execute(sa.select(idem).where(idem.c.actor_type==a.kind,idem.c.actor_id==a.credential,idem.c.operation==op,idem.c.idempotency_key==key)).mappings().one_or_none()
         if old:
-            if old.request_hash!=payload_hash: raise Failure(409,'IDEMPOTENCY_CONFLICT')
+            if old.request_hash!=payload_hash: raise Failure(409,'IDEMPOTENCY_CONFLICT',project_id=pid)
             return Result[ProjectView].model_validate(old.response_body)
+        # A receipt is replayable after submission; a fresh write is still draft-only.
+        if row.stage!='drafting': raise Failure(403,'FORBIDDEN',project_id=pid)
         if expected!=row.revision: raise Failure(409,'VERSION_CONFLICT')
         updated=c.execute(project.update().where(project.c.id==pid,project.c.revision==expected).values(**fields,revision=expected+1,updated_at=sa.func.now()).returning(project)).mappings().one()
         result=Result[ProjectView](data=view(updated),meta=meta(op,[f'project:{pid}@{updated.revision}']))

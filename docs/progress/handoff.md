@@ -14,9 +14,9 @@
 
 候选源码之后补齐了[复盘四问完整原文](M2-report.md#复盘四问原文)。录入、归档回读和结项回顾助理按相同顺序展示，定向后端 48 项、Edge 3 项 PASS；没有迁移或附件变化，独立部署容器仍为前述固定候选。
 
-[三线输入读取契约](M2-report.md#三线输入的读取契约)已补齐已知字段、Decimal 字符串和时点；历史空值、快照哈希及 Agent 摘要保持不变。定向后端 38 项、Edge 4 项 PASS；存储和规则没有变化。
+[三线输入读取契约](M2-report.md#三线输入的读取契约)已补齐已知字段、Decimal 字符串和时点；历史空值、快照哈希及 Agent 摘要保持不变。定向后端 38 项、Edge 4 项 PASS；存储和规则没有变化。[草稿编辑重放](M3-report.md#立项后草稿编辑请求重放)在立项裁决后回读原回执，不恢复写权；撤销仍阻断，定向后端 55 项 PASS。
 
-测试命令和失败修复见 [M2](M2-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。静态检查、SDK 联调和合成数据不能替代真实试点、目标 Host 或签核；逐项口径见[追踪矩阵](../acceptance/traceability.csv)和[阻断项](blockers.md)。上游 `origin/main`；桌面运行时 Git 实际执行 `ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1`（退出 0，`.local/rc0034-remote.log`）仅回 `refs/heads/main`（`45307c20ed94bf9347306f5983a7b695ed5c3ebb`），未返回目标开发分支 SHA。没有推送。
+测试命令和失败修复见 [M2](M2-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。静态检查、SDK 联调和合成数据不能替代真实试点、目标 Host 或签核；逐项口径见[追踪矩阵](../acceptance/traceability.csv)和[阻断项](blockers.md)。上游 `origin/main`；终端默认 Git 缺 HTTPS helper（退出 128，`.local/pmo104-contracts-remote.log`）。用桌面运行时 Git 执行 `ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1`（退出 0，`.local/pmo104-contracts-remote-desktop.log`）仅回 `refs/heads/main`（`45307c20ed94bf9347306f5983a7b695ed5c3ebb`），未返回目标开发分支 SHA。没有推送。
 
 ## 续接顺序
 

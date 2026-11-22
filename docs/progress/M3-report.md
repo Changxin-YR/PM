@@ -48,3 +48,14 @@
 |---|---|---|
 | Codex Desktop | `26.1117.3838.0`；自带 CLI `0.171.0-alpha.13`，CLI 实查未登录。未验证目标 Host 枚举、读/写草稿、拒绝和撤销 | BLOCKED_EXTERNAL |
 | DSH | 独立桥接探测 `auth_required`；无足以完成本项目隔离连接的授权，Host 版本未核实 | BLOCKED_EXTERNAL |
+
+## 立项后草稿编辑请求重放
+
+依据主方案 §6.1/§20.3、领域不变量 §8、T05。基准 `a3cac31e844c56e979b1edc4ef4cce33d201c231`；最终源码及已移动的同一测试体 `9fceb0ab9b8943420225aa431fbc481f12517952`。Windows、回环 REST/stdio、隔离 PostgreSQL 16.14、合成账号，模型关闭。
+
+`pmo/projects.py` 在查询真实组织和项目范围、核对仍有效的发起人身份后先查该主体的既有草稿编辑回执，再对首次写入检查 `drafting` 和 revision。审批后仍有权的原人、显式授权 Agent 可重放原状态码和响应，不能更新冻结草稿。同键异参冲突、其他主体越权和已撤销令牌仍拒绝；人和 Agent 的同字面键不混用。不增加角色、跨阶段写权限或迁移。
+
+| 实际命令（本机 `.venv/Scripts/python.exe`） | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_reference_vectors_permissions.py::test_draft_update_replay_after_submission_preserves_live_authority --tb=short --junitxml=.local/draft-replay-before.xml` | 1 | FAIL：实际独立裁决进入 `designing` 后，原发起人重试得到 404 而非原 200；`.local/draft-replay-before.log`。 |
+| `python -m pytest -q tests/test_reference_vectors_permissions.py tests/test_agent_tokens.py tests/test_scope_migration.py tests/test_human.py tests/test_mcp_action_matrix.py tests/test_runtime.py tests/test_reviews.py --tb=short --junitxml=.local/draft-replay-backend.xml` | 0 | PASS：55 项 / 72.61 秒。当前权限、两种主体分别重放、直接 HTTP 与 stdio 一致、撤销拒绝、成功审计和 Outbox 不双写。`.local/draft-replay-backend.log`。新用例随后原样移到 `tests/test_project_draft_replay.py`，避免混入冻结向量索引。 |
