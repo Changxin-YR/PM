@@ -207,3 +207,14 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格与类型，`.local/rc0032-check-first.log`、`.local/rc0032-vue.log`。 |
 
 过程反例保留：`rc0032-authority-before`（FAIL，漏填两处夹具必填字段；修夹具后重现原权限问题）、`rc0032-authority-first`（FAIL，并发新键各有唯一拒绝关联 ID，测试应检查冲突而非把拒绝当成功重放）、`rc0032-authority-api`（FAIL，新降级保护遮住旧保护的探针，把授权夹具移到旧保护断言后）。均退出 1，未移除权限和恢复断言。
+
+## 阶段申请的有效重复判定与 Web 选项
+
+依据：§20.5、LR-01、领域不变量的受控迁移与独立批准。基准 `9e62c2ea87126acfa8d235c58c6f749777592ad4`，被测源码树 `6f934ad47aa12d51614be099a913dec2a2cfab5d`（不含补录）。`pmo/project_lifecycle.py::competing_request` 供列表和写入共用；只有同状态边、当前版本、申请人仍有权且材料/负载匹配的申请会占用待审位置。既有 Sponsor 自提申请不会遮住独立 PM；过期申请保留可读、不可裁决。`ProjectLifecycle.vue` 只使用服务端选项，提交仍做幂等与版本检查。Windows、PostgreSQL 16.14 隔离 schema、Edge 158.0.4370.33，回环 HTTP/stdio，模型关闭、合成账号。迁移及附件引用不变。
+
+| 实际命令 | 退出码 | 结果及证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py -k 'stale_termination_request or termination_pending_from_sponsor' --tb=short --junitxml=.local/rc0032-application-before.xml` | 1 | FAIL：仅增测试，列表未裁剪申请人的有效重复；停用 PM 后，旧待审错误阻断新申请，3 项，`.local/rc0032-application-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k formal_transition_authority --tb=short --junitxml=.local/rc0032-application-edge-before.xml` | 1 | FAIL：旧 Web 在 Sponsor 先提后丢失 PM 可用的终止选项，`.local/rc0032-application-edge-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_lifecycle.py tests/test_transition_authority.py tests/test_mcp_transition.py tests/test_reference_vectors_permissions.py tests/test_runtime.py --tb=short --junitxml=.local/rc0032-application-verified.xml` | 0 | PASS：48 项 / 78.51 秒，`.local/rc0032-application-verified.log`。执行与暂停两边重复判定、停用后旧申请仍在但不可裁决、新申请可独立终止、MCP 只提不批。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'formal_transition_authority or drafting_through_archive_without_model or independent_termination' --tb=short --junitxml=.local/rc0032-application-edge.xml` | 0 | PASS：3 项 / 75.83 秒，`.local/rc0032-application-edge.log`。Edge 独立申请、授权裁决与刷新回读，正常无模型归档和发起人确认回归通过。 |

@@ -401,6 +401,6 @@ def test_browser_formal_transition_authority_without_model(live, team):
                 for origin, dest, source in [('executing', 'on_hold', 'SYNTHETIC-HOLD'),
                     ('on_hold', 'executing', 'SYNTHETIC-RESUME'), ('executing', 'terminated', 'SYNTHETIC-TERMINATE')]}
     with vite(live[2]) as (root, url):
-        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'outsider', 'reviewer')),
+        run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'outsider', 'reviewer', 'sponsor')),
             'PMO_TEST_PHASE': 'formal-authority', 'PMO_TEST_AUTHORITY_REFS': json.dumps(refs)})
     assert stage(users['pm'], project)['stage'] == 'terminated'

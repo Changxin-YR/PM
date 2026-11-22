@@ -28,12 +28,7 @@ const error=ref(''),formError=ref(''),notice=ref('')
 const intent=ref<Intent|null>(null),destination=ref(''),reason=ref(''),decision=ref<Decision|''>(''),holdUntil=ref('')
 const busy=computed(()=>loading.value||saving.value)
 const outdated=computed(()=>!!state.value&&(props.projectRevision??0)>state.value.projectRevision)
-const destinations=computed(()=>{
-  const inbox=state.value
-  if(!inbox)return []
-  return inbox.requestable.filter(stage=>!inbox.items.some(item=>item.toStage===stage&&item.fromStage===inbox.stage&&
-    item.revision===inbox.projectRevision&&item.status==='pending'&&!item.stale))
-})
+const destinations=computed(()=>state.value?.requestable??[])
 let attempt:{signature:string;key:string}|undefined
 
 function stageName(stage:string){return stages[stage]??stage}

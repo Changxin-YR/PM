@@ -391,8 +391,11 @@ def test_termination_pending_from_sponsor_does_not_block_independent_pm_request(
     assert judgment(sponsor, self_request).json()['code'] == 'INDEPENDENT_APPROVER_REQUIRED'
     assert judgment(pm, self_request).status_code == 403
     assert propose(sponsor, project, 'terminated').json()['code'] == 'TRANSITION_REQUEST_PENDING'
+    assert 'terminated' not in data(sponsor.get('approvals', params={'projectId': pid}))['requestable']
+    assert 'terminated' in data(pm.get('approvals', params={'projectId': pid}))['requestable']
     independent = data(propose(pm, project, 'terminated'))
     assert independent['requestId'] != self_request['requestId']
+    assert 'terminated' not in data(pm.get('approvals', params={'projectId': pid}))['requestable']
     assert propose(pm, project, 'terminated').json()['code'] == 'TRANSITION_REQUEST_PENDING'
     assert judgment(outsider, independent).status_code == 404
     assert judgment(reviewer, independent).status_code == 403
@@ -435,6 +438,37 @@ def test_termination_pending_from_sponsor_does_not_block_independent_pm_request(
             visited = c.execute(sa.text('SELECT to_stage FROM project_stage_transitions WHERE project_id=:id ORDER BY to_revision'),
                                 {'id': pid}).scalars().all()
             assert visited[-3:] == ['terminated', 'retrospective', 'archived'] and 'closed' not in visited
+
+
+def test_stale_termination_request_does_not_block_an_authorized_replacement(live, team):
+    from test_transition_authority import grant
+
+    engine, _, _, _ = live
+    pid, people, users, _ = team
+    pm, sponsor, reviewer, admin = (users[r] for r in ('pm', 'sponsor', 'reviewer', 'initiator'))
+    project, _, _ = begin_execution(live, team)
+    original = data(propose(pm, project, 'terminated'))
+    admin_id = admin.get('auth/me').json()['accountId']
+    pm_id = pm.get('auth/me').json()['accountId']
+    with engine.begin() as c:
+        c.execute(db.user_roles.insert().values(user_id=admin_id, role='system_admin'))
+        grant(c, pid, people['reviewer'], ('executing', 'terminated'))
+    data(admin.patch(f'admin/users/{pm_id}/status', headers=headers(1),
+                     json={'isActive': False, 'reason': 'Synthetic requester loses office.'}))
+    panel = data(sponsor.get('approvals', params={'projectId': pid}))
+    assert panel['projectRevision'] == original['revision'] and panel['items'][0]['stale']
+    assert 'terminated' in panel['requestable']
+    assert judgment(sponsor, original).json()['code'] == 'TRANSITION_STALE'
+    replacement = data(propose(sponsor, project, 'terminated'))
+    assert replacement['requestId'] != original['requestId'] and replacement['revision'] == original['revision']
+    assert propose(sponsor, project, 'terminated').json()['code'] == 'TRANSITION_REQUEST_PENDING'
+    assert data(judgment(reviewer, replacement))['status'] == 'applied'
+    assert stage(sponsor, project)['stage'] == 'terminated'
+    with engine.connect() as c:
+        q = db.approval_requests
+        rows = dict(c.execute(sa.select(q.c.id, q.c.status).where(q.c.id.in_(
+            [UUID(original['requestId']), UUID(replacement['requestId'])]))).all())
+        assert rows == {UUID(original['requestId']): 'pending', UUID(replacement['requestId']): 'applied'}
 
 
 def test_failed_feasibility_and_delivery_rework_return_only_to_allowed_stage(live, team):

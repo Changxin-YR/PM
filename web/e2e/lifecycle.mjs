@@ -267,11 +267,15 @@ try {
     await expect(after.getByRole('article',{name:'报告详情'}).getByText(note,{exact:true})).toBeVisible()
     await expect(after.getByRole('row').getByText('已发布',{exact:true})).toBeVisible()
   } else if(process.env.PMO_TEST_PHASE==='formal-authority') {
-    const delegate=await actor('outsider'), reviewer=await actor('reviewer')
+    const delegate=await actor('outsider'), reviewer=await actor('reviewer'), sponsor=await actor('sponsor')
     const refs=JSON.parse(process.env.PMO_TEST_AUTHORITY_REFS)
     const steps=[['on_hold','已暂停','SYNTHETIC-HOLD'],['executing','执行中','SYNTHETIC-RESUME'],
       ['terminated','已终止','SYNTHETIC-TERMINATE']]
     for (const [next,label,source] of steps) {
+      if(next==='terminated'){
+        await sponsor.reload()
+        await requestStage(sponsor,'Sponsor 的终止申请，保留独立 PM 申请。',next)
+      }
       await pm.reload()
       const reason=`PM 申请：${label}`
       await requestStage(pm,reason,next)
@@ -281,7 +285,8 @@ try {
       await expect(button(noGrant,'裁决阶段流转')).toHaveCount(0)
       await delegate.reload()
       const panel=await open(delegate,'阶段流转')
-      await button(panel,'裁决阶段流转').click()
+      const pending=panel.getByRole('listitem').filter({hasText:reason})
+      await button(pending,'裁决阶段流转').click()
       const form=dialog(delegate,'裁决阶段流转')
       await form.getByLabel('流转裁决',{exact:true}).selectOption('approve')
       const rationale=`依据组织授权已独立核对：${label}`

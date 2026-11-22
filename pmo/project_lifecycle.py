@@ -298,7 +298,7 @@ def lookup(c, pid, approval_id):
     return req, i
 
 
-def current(c, a, p, req, intent):
+def current(c, a, p, req, intent, *, contents=None):
     edge = (intent.from_stage, intent.to_stage)
     if (req.expected_revision != p.revision or req.rule_version != RULE_VERSION or p.stage != intent.from_stage
         or req.delegated_by != (req.requested_by if intent.actor_type == 'agent' else None)
@@ -306,10 +306,32 @@ def current(c, a, p, req, intent):
         or fingerprint(payload(p, edge, req.requested_by, intent.actor_type, intent.reason, intent.basis)) != req.payload_hash):
         return False
     try:
-        contents, _ = basis(c, a, p, edge)
+        if contents is None:
+            contents, _ = basis(c, a, p, edge)
         return req.snapshot_hash == fingerprint(contents) == fingerprint(intent.basis)
     except Failure:
         return False
+
+
+def competing_request(c, a, p, edge, *, contents=None):
+    q, i = approval.c, intents.c
+    query = sa.select(q.id).join(intents, i.approval_id == q.id).where(
+        q.project_id == p.id, q.action == ACTION, q.status == 'pending', q.rule_version == RULE_VERSION,
+        q.expected_revision == p.revision, i.from_stage == edge[0], i.to_stage == edge[1])
+    if edge[1] == 'terminated' and a.person == p.pm_id and p.sponsor_id not in (None, a.person):
+        # The Sponsor cannot approve their own intent; the independent PM may still apply.
+        query = query.where(q.requested_by != p.sponsor_id)
+    if contents is not None:
+        query = query.where(q.snapshot_hash == fingerprint(contents))
+    ids = c.execute(query).scalars().all()
+    if not ids:
+        return False
+    if contents is None:
+        try:
+            contents, _ = basis(c, a, p, edge)
+        except Failure:
+            return False
+    return any(current(c, a, p, *lookup(c, p.id, aid), contents=contents) for aid in ids)
 
 
 def persist(c, a, p, edge, why, contents, refs):
@@ -376,14 +398,7 @@ def propose(projectId: UUID, command: Propose, authorization: Auth, key: Key, ex
         if len(why) < 3:
             raise Failure(422, 'TRANSITION_REASON_REQUIRED', project_id=p.id)
         contents, refs = basis(c, a, p, edge)
-        duplicate = sa.select(approval.c.id).join(intents, intents.c.approval_id == approval.c.id).where(
-            approval.c.project_id == p.id, approval.c.action == ACTION, approval.c.status == 'pending',
-            approval.c.expected_revision == p.revision, approval.c.snapshot_hash == fingerprint(contents),
-            intents.c.from_stage == edge[0], intents.c.to_stage == edge[1])
-        if edge[1] == 'terminated' and a.person == p.pm_id and p.sponsor_id not in (None, a.person):
-            # The Sponsor cannot approve their own intent. Preserve it without blocking the PM's independent request.
-            duplicate = duplicate.where(approval.c.requested_by != p.sponsor_id)
-        if c.scalar(duplicate.limit(1)):
+        if competing_request(c, a, p, edge, contents=contents):
             raise Failure(409, 'TRANSITION_REQUEST_PENDING', project_id=p.id)
         req, i = persist(c, a, p, edge, why, contents, refs)
         item = TransitionRequest(requestId=req.id, projectId=p.id, fromStage=i.from_stage, toStage=i.to_stage,
@@ -571,7 +586,8 @@ def inbox(authorization: Auth, projectId: UUID = Query(...)) -> Result[Page]:
                 can_resubmit = True
             except Failure:
                 pass
-        choices = sorted(dest for origin, dest in DIRECT | APPROVED if origin == p.stage and can_request(c, p, a.person, (origin,dest)))
+        choices = sorted(edge[1] for edge in DIRECT | APPROVED if edge[0] == p.stage and
+                         can_request(c, p, a.person, edge) and not competing_request(c, a, p, edge))
         return Result[Page](data=Page(items=items, projectId=p.id, projectRevision=p.revision, stage=p.stage, requestable=choices,
                                    canResubmit=can_resubmit, policyPending=not synthetic_confirmation(c)),
                             meta=meta(INBOX, [f'project:{p.id}@{p.revision}']))

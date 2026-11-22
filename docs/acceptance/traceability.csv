@@ -76,7 +76,7 @@
 "ENG-204","§20.3 (implementation-only)","Outbox调度重试租约与死信去重","T10","VERIFIED_LOCAL_EVENT_CONSUMER","pmo/outbox.py;migrations/versions/0006_outbox_consumer.py","tests/test_outbox.py"
 "ENG-205","§20.6 (implementation-only)","Agent组织级创建后仅本令牌新项目草稿续写","T02,T09","PARTIAL_PROJECT_DRAFT_ONLY","pmo/projects.py","tests/test_runtime.py"
 "ENG-206","§20.4 (implementation-only)","立项人工Decision/状态迁移/审计同事务，Outbox故障全回滚","T03,T07","PASS","pmo/review_outcomes.py;migrations/versions/0017_review_decisions.py","tests/test_reviews.py::test_charter_atomic_decision_acl_replay_and_concurrency"
-"ENG-207","§20.5 (implementation-only)","23 条合法边已与 CHECK 对表；送审人失权与非 Sponsor 正式授权已验，逐边角色和副作用待验齐","T03,T04","NOT_RUN","pmo/gates.py;pmo/reviews.py;pmo/project_lifecycle.py","tests/test_reviews.py;tests/test_lifecycle.py;tests/test_transition_authority.py;docs/progress/M2-report.md"
+"ENG-207","§20.5 (implementation-only)","23 条合法边已与 CHECK 对表；有效正式授权、送审/阶段申请人失权、Web 与服务端独立申请选项已验；逐边角色和副作用待验齐","T03,T04","NOT_RUN","pmo/gates.py;pmo/reviews.py;pmo/project_lifecycle.py;web/src/ProjectLifecycle.vue","tests/test_reviews.py;tests/test_lifecycle.py;tests/test_transition_authority.py;tests/browser_case.py;docs/progress/M2-report.md"
 "ENG-208","§20.3 (implementation-only)","同周当前确认版本唯一，草稿不覆盖正式发布；历史与生成依据可回读和恢复","T06","PASS","pmo/reports.py;pmo/weekly_drafts.py","tests/test_reports.py;tests/test_weekly_drafts.py;tests/test_recovery.py"
 "ENG-209","§20.3 (implementation-only)","当前预算版本唯一不混合历史","Q2,T05","NOT_TESTED","",""
 "ENG-210","§20.6 (implementation-only)","40项MCP工具封闭业务返回DTO","T01,T09","PARTIAL_STDIO_SDK","pmo/tool_routes.py;pmo/review_routes.py","tests/test_runtime.py;tests/test_reviews.py"
