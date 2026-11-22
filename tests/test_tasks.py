@@ -78,7 +78,8 @@ def project(engine, people, *, foreign=False, stage='feasibility_review'):
                         (reviewer, 'reviewer', 'accepted'), (people['pending'], 'member', 'pending')]
     with engine.begin() as c:
         pid = c.scalar(db.projects.insert().values(code=uuid4().hex, org_id=pm.org, name='Task project',
-            pm_id=pm.id, created_by=pm.id, initiator_id=pm.id, stage=stage, revision=PROJECT_REVISION).returning(db.projects.c.id))
+            pm_id=pm.id, created_by=pm.id, initiator_id=pm.id, stage='feasibility_review' if stage == 'archived' else stage,
+            revision=PROJECT_REVISION).returning(db.projects.c.id))
         for person, role, assignment in memberships:
             c.execute(db.project_members.insert().values(project_id=pid, person_id=person.id, assigned_by=pm.id,
                 role=role, assignment_status=assignment, accepted_at=sa.func.now() if assignment == 'accepted' else None))
@@ -96,6 +97,8 @@ def project(engine, people, *, foreign=False, stage='feasibility_review'):
         risk = c.scalar(db.risks.insert().values(project_id=pid, created_by=pm.id, owner_id=pm.id,
             statement='Remediation risk', response='Track the risk', is_blocking=False, prob=2, impact=2,
             status='open').returning(db.risks.c.id))
+        if stage == 'archived':
+            c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage=stage))
     return SimpleNamespace(id=pid, path=f'projects/{pid}/tasks', system=system_task,
                            sources={'review': review, 'rule_event': rule, 'remediation': risk})
 

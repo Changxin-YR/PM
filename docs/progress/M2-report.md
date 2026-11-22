@@ -305,3 +305,9 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_admin_audit.py tests/test_reviews.py tests/test_lifecycle.py tests/test_error_contract.py tests/test_runtime.py tests/test_database_roles.py --tb=short --junitxml=.local/audit-detail-final.xml` | 0 | PASS：36 项 / 112.80 秒。来源、摘要与实际写入对表，拒绝和跨组织不泄漏、读审计故障不返回数据。首轮 1 FAIL / 35 PASS：测试误用空描述默认值，保留 `.local/audit-detail-verified.log`。最终 `.local/audit-detail-final.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_draft_workflow --tb=short --junitxml=.local/audit-edge-verified.xml` | 0 | PASS：1 项 / 53.32 秒。独立立项评分及裁决，刷新后凭请求号打开审计详情、核对版本化来源和摘要。此前健康/归档三项 PASS，新增用例因测试期望漏 `@1`、刷新后读取已释放的响应体两次 FAIL；见 `.local/audit-health-edge.log`、`audit-health-edge-final.log`、`audit-edge-verified.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格、mypy、Vue 类型。`.local/audit-detail-check.log`、`.local/audit-detail-vue.log`。 |
+
+## 归档只读的数据库约束
+
+依据：主方案 §4.1、§20.5、LR-08，领域不变量 §4/§6。基准 `4739d033d9a31ba4239cdfe10ea00a297b96b4a9`。`0034_archived_core_read_only.py` 在 `0033` 后加项目及 15 张受保护表的触发器。评分和 Decision 已有的追加式保护不变；数据库额外拒绝向归档项目追加记录或重挂归属，校验新增评分及有关口 Decision 同 Review 的项目一致。非关口 Decision 仍可不引用 Review。子记录写入按 ID 排序锁定相关项目；需要等并发归档提交后重新判断阶段。此约束不授予审批权限，也不拦截成功归档本身、审计或 Outbox 消费。
+
+Windows、隔离 PostgreSQL 16.14、真实 HTTP、合成数据。`tests/test_postgres_invariants.py` 的 `test_archived_project_core_records_are_read_only_in_storage` 和 `test_archive_serializes_storage_writes_against_the_project_lock` 在基准 `0033` 上均复现失败：退出 1，`.local/archive-storage-reproduced.log` 与同名 JUnit。测试在 `0034` 确认两种拒绝、无部分写入、其他活动项目可写；库角色用例确认非所有者账号有相关列权限仍被拒绝。定向 61 项 PASS，退出 0，`.local/archive-storage-verified.log`。前两次夹具初始化失败保留于 `.local/archive-storage-before.log` 和 `.local/archive-storage-first.log`，不计为业务失败证据。全量、候选和带数据升级/联合恢复见 [M4](M4-report.md#0034-归档候选与联合恢复)。

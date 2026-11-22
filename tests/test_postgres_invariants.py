@@ -2,10 +2,13 @@
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from csv import DictReader
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from queue import Queue
+from time import monotonic, sleep
 from uuid import UUID, uuid4
 
 import pytest
@@ -121,6 +124,78 @@ def test_review_versions_decision_and_audit_are_append_only(live, team):
         assert c.execute(cards).mappings().all() == saved
     history = bench(reviewer, path)
     assert history['decision'] == decision and len(history['scores']) == 2
+
+
+def test_archived_project_core_records_are_read_only_in_storage(live, team):
+    pid, people, users, _ = team
+    reviewer = users['reviewer']
+    review = start_charter(pid, users)
+    score(reviewer, review, [3, 4, 4, 4])
+    decision = data(decide(reviewer, review))['decision']
+    p, m, s, d, e, t = db.projects, db.milestones, db.scorecards, db.decisions, db.cost_entries, db.cost_postings
+    who = people['pm']
+    with live[0].begin() as c:
+        project = c.execute(p.select().where(p.c.id == pid)).mappings().one()
+        other = c.scalar(p.insert().values(org_id=project.org_id, created_by=who, initiator_id=who,
+            name='Unrelated active control', code='ARCH-'+uuid4().hex[:10], stage='designing', revision=1).returning(p.c.id))
+        milestone = dict(project_id=pid, created_by=who, name='Synthetic archive milestone', ordinal=1,
+            planned_date=MONTH, is_key=True)
+        mid = c.scalar(m.insert().values(**milestone).returning(m.c.id))
+        eid = c.scalar(e.insert().values(**entry(pid, who)).returning(e.c.id))
+        invoice = posting(pid, who, people['reviewer'], eid)
+        receipt = c.scalar(t.insert().values(**invoice).returning(t.c.id))
+        card = dict(c.execute(s.select().where(s.c.project_id == pid)).mappings().one())
+        card.pop('id')
+        card['round'] += 1
+        action = dict(c.execute(d.select().where(d.c.id == decision['decisionId'])).mappings().one())
+        action.pop('id')
+        action.update(review_id=None, subject='Synthetic additional decision', option='approve')
+        # Only seed the final stage here. The product lifecycle tests perform and audit the transition.
+        c.execute(p.update().where(p.c.id == pid).values(stage='archived'))
+        for stmt in (
+            m.update().where(m.c.id == mid).values(name='After archive'),
+            m.update().where(m.c.id == mid).values(project_id=other),
+            m.insert().values(**{**milestone, 'ordinal': 2}), m.delete().where(m.c.id == mid),
+            s.insert().values(**card), d.insert().values(**action),
+            t.insert().values(**{**invoice, 'source_fingerprint': 'e'*64}),
+            e.update().where(e.c.id == eid).values(budget=Decimal('145.00')),
+            p.update().where(p.c.id == pid).values(stage='executing'),
+        ):
+            constraint(c, stmt, 'ck_archived_project_read_only', '23514')
+        constraint(c, s.insert().values(**{**card, 'project_id': other}), 'ck_review_record_project_scope', '23514')
+        assert c.scalar(sa.select(m.c.name).where(m.c.id == mid)) == milestone['name']
+        assert c.scalar(sa.select(t.c.amount_signed).where(t.c.id == receipt)) == invoice['amount_signed']
+        assert c.scalar(sa.select(e.c.budget).where(e.c.id == eid)) == Decimal('120.00')
+        c.execute(m.insert().values(**{**milestone, 'project_id': other}))
+        assert c.scalar(sa.select(sa.func.count()).select_from(s).where(s.c.project_id == pid)) == 1
+        assert c.scalar(sa.select(sa.func.count()).select_from(d).where(d.c.project_id == pid)) == 1
+
+
+def test_archive_serializes_storage_writes_against_the_project_lock(live, team):
+    pid, people, _, _ = team
+    eng = live[0]
+    backend_ids = Queue()
+
+    def try_milestone():
+        with eng.begin() as conn:
+            conn.exec_driver_sql("SET LOCAL statement_timeout='10s'")
+            backend_ids.put(conn.scalar(sa.text('SELECT pg_backend_pid()')))
+            constraint(conn, db.milestones.insert().values(project_id=pid, created_by=people['pm'],
+                name='Concurrent storage write', ordinal=1, planned_date=MONTH, is_key=True), 'ck_archived_project_read_only', '23514')
+
+    with ThreadPoolExecutor(max_workers=1) as pool, eng.connect() as probe:
+        with eng.begin() as archive:
+            blocker = archive.scalar(sa.text('SELECT pg_backend_pid()'))
+            archive.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='archived'))
+            write = pool.submit(try_milestone)
+            waiter = backend_ids.get(timeout=5)
+            deadline = monotonic() + 5
+            while not probe.scalar(sa.text('SELECT :blocker = ANY(pg_blocking_pids(:waiter))'),
+                                   {'blocker': blocker, 'waiter': waiter}):
+                assert not write.done() and monotonic() < deadline, 'Write did not serialize against archive'
+                sleep(.025)
+        write.result(timeout=10)
+        assert probe.scalar(sa.select(sa.func.count()).select_from(db.milestones).where(db.milestones.c.project_id == pid)) == 0
 
 
 def test_current_confirmed_report_uniqueness_preserves_prior_receipt(live, team):

@@ -239,6 +239,15 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as runtime:
             denied(runtime, ["""INSERT INTO cost_entries(project_id,created_by,type,category,period_start,period_end,budget,actual,forecast_remaining,baseline_version)
                 SELECT id,created_by,'money','forbidden','2020-02-01','2020-02-29',0,99,0,1 FROM projects"""])
+            # The runtime login has the column privilege, but an archived object is still immutable.
+            with owner.transaction():
+                owner.execute("UPDATE projects SET stage='archived' WHERE id=%s", (pid,))
+            for query, value in [('UPDATE milestones SET name=name WHERE id=%s', milestone),
+                                 ("UPDATE projects SET stage='executing' WHERE id=%s", pid)]:
+                with pytest.raises(psycopg.errors.CheckViolation) as archived:
+                    runtime.execute(query, (value,))
+                assert archived.value.diag.constraint_name == 'ck_archived_project_read_only'
+            assert runtime.execute('SELECT name FROM milestones WHERE id=%s', (milestone,)).fetchone() == ('Evidence target',)
         assert owner.execute('SELECT count(*) FROM cost_baseline_history').fetchone() == (1,)
         worker_process = subprocess.run([sys.executable, '-m', 'pmo.outbox'], check=True, capture_output=True, text=True,
                                        env={**os.environ, 'DATABASE_URL': urls['worker'].render_as_string(hide_password=False)})

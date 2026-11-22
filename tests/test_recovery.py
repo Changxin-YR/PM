@@ -60,6 +60,7 @@ def recovery_db(tmp_path, monkeypatch):
 def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monkeypatch):
     admin, source, engine, originals, tools, control = recovery_db
     png = binary('png')
+    archived_name = 'Historical archived milestone retained'
     owner, verifier, customer = uuid4(), uuid4(), uuid4()
     password = uuid4().hex
     preupgrade_session, preupgrade_csrf = uuid4().hex, uuid4().hex
@@ -82,6 +83,11 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
                              request_id=legacy_request_id, result='success'))
         project = conn.scalar(db.projects.insert().values(org_id=org, code='DRILL', name='Recovery fixture', stage='drafting',
                              revision=1, initiator_id=owner, created_by=owner, pm_id=owner).returning(db.projects.c.id))
+        archived = conn.scalar(db.projects.insert().values(org_id=org, code='DRILL-ARCHIVED', name='Archived recovery fixture',
+            stage='archived', revision=5, initiator_id=owner, created_by=owner, pm_id=owner).returning(db.projects.c.id))
+        member(conn, archived, owner, owner, 'pm')
+        archived_mid = conn.scalar(db.milestones.insert().values(project_id=archived, created_by=owner,
+            name=archived_name, ordinal=1, planned_date=date(2020, 3, 7), is_key=True).returning(db.milestones.c.id))
         member(conn, project, owner, owner, 'pm')
         member(conn, project, verifier, owner, 'reviewer')
         customer_assignment = member(conn, project, customer, owner, 'client_representative')
@@ -165,6 +171,9 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True, env=cli)
     with engine.connect() as c:
         assert [tuple(row) for row in c.exec_driver_sql(history_sql, (project,))] == old_cost_history
+        assert c.scalar(sa.select(db.milestones.c.name).where(db.milestones.c.id == archived_mid)) == archived_name
+        with pytest.raises(sa.exc.IntegrityError, match='Archived project records are read-only'), c.begin_nested():
+            c.execute(db.milestones.update().where(db.milestones.c.id == archived_mid).values(name='Unapproved alteration'))
     with pytest.raises(sa.exc.IntegrityError, match='ck_project_stage_closing_rework'), engine.begin() as c:
         # A fresh review ID avoids the existing one-exit-per-review index masking the new check.
         fresh = c.scalar(db.reviews.insert().values(project_id=legacy_project, created_by=owner, type='closing', status='pending',
@@ -323,6 +332,10 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             assert {(r[0],r[3],str(r[4])) for r in rows} == {(original,'milestone',str(milestone)), (external,'project',str(project)),
                 (fact_attachment,'report',report['reportId'])}
             assert restored.execute('SELECT version_num FROM public.alembic_version').fetchone() == (manifest.revision,)
+            assert restored.execute('SELECT name FROM milestones WHERE id=%s', (archived_mid,)).fetchone() == (archived_name,)
+            with pytest.raises(psycopg.errors.CheckViolation) as refused, restored.transaction():
+                restored.execute('UPDATE milestones SET name=%s WHERE id=%s', ('Unapproved alteration', archived_mid))
+            assert refused.value.diag.constraint_name == 'ck_archived_project_read_only'
             assert restored.execute(history_sql, (project,)).fetchall() == old_cost_history
             assert restored.execute(authority_sql).fetchall() == saved_authority
             assert restored.execute('''SELECT project_id, review_id, from_stage, to_stage, from_revision, to_revision

@@ -238,3 +238,18 @@
 | `docker compose ... exec -T api alembic current`；容器内 `GET /openapi.json` 与冻结目录、嵌套契约对表 | 0 | PASS：`0033 (head)`，95/95 基线 + 42 工程操作、40 MCP 路由、双口径顺序、非成员窄回执及六项 human-only 标记。`.local/rc0033-contract-openapi-final.log`。首轮探针退出 1，误以为兼容的固定 `false` 字段应删除；修正探针以核对常量。 |
 
 无迁移或附件引用改动，沿用上一批 `0016→0033` 联合恢复。旧候选 `18763` 和共享开发库未动。这不是目标 Host、目标环境性能或业务验收结论。
+
+## 0034 归档候选与联合恢复
+
+源条款：主方案 §4.1、§9.1、§20.5、LR-08、T10。基准 `4739d033d9a31ba4239cdfe10ea00a297b96b4a9`，构建和 Edge 被测树 `b219d694a68b054fa09eac86af147ba32eb35915`；仅补测试夹具后的全量后端源树 `8dad07608a1bb3eda42e52f4f30698d41ec1b78c`。两树运行源码相同，从 Git 树导出后执行。Windows、Python 3.12.15、PostgreSQL 16.14 隔离 schema/专库及 Compose、Edge `158.0.4370.33`，模型关闭，全部合成。约束与基准反例见 [M2](M2-report.md#归档只读的数据库约束)。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0034-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0034-backend.xml` | 1 | FAIL：304 PASS、1 FAIL。任务夹具曾在归档后插入 Review，正确触发新约束；调整为先建记录再归档，保留 API 和 stdio 拒绝断言。`.local/rc0034-backend.log`。 |
+| `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0034-mcp-final.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0034-backend-final.xml` | 0 | PASS：305 项 / 516.61 秒，无跳过。40 项实际发现、调用、动作拒绝，18 项读审计，22 项写重放。`.local/rc0034-backend-final.log`；SDK 逐项 JSON SHA-256 `b34bfe29ac319cb289e132169c9e26163e0a2b8093199d4210d763ec88cd0aa4`，与上一结项契约候选证据一致。 |
+| `npm.cmd --prefix web ci`；`python -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0034-edge.xml` | 0 | PASS：Edge 20 项 / 269.58 秒，含模型关闭的三关口及归档。`.local/rc0034-npm.log`、`.local/rc0034-edge.log`。 |
+| `docker compose -p pmo104-rc-0591b604 --env-file .local/pmo104-rc-0591b604.env -f deploy/compose.yaml up --build -d --wait` | 1 / 0 | 默认 Python 镜像仓库连接超时 FAIL，`.local/rc0034-compose.log`。使用上一候选的同一 Python 镜像摘要 `cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2` 重跑 PASS，`.local/rc0034-compose-verified.log`；保留前端包体积告警。 |
+| `python scripts/deployment_smoke.py pmo104-rc-0591b604`；`docker compose ... exec -T api alembic current`；容器内回读 OpenAPI 和 `pg_trigger` | 0 | PASS：仅回环 `18765`。`0034 (head)`、137 个操作（95 基线、42 工程）、40 工具映射、16 个归档写保护。受限账号、15 草稿及 15 个唯一消费回执；停库 `live=200 / ready=503`，恢复 `200/200`，原项目和消费回执保留。30 次/操作，本机 p95 筛选 43 ms、详情 52 ms。`.local/rc0034-smoke.log`、`.local/rc0034-openapi.log`。 |
+| `.venv/Scripts/python.exe` 运行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py`；`python -m mypy pmo --ignore-missing-imports` | 0 | PASS：冻结规格及 88 源文件类型检查。`.local/rc0034-static.log`；静态证据不替代系统验收。 |
+
+同一全量命令中的 `tests/test_recovery.py` 两项 PASS，见 `.local/rc0034-backend-final.xml`。`0016→0034` 有数据升级，实际 `pg_dump/pg_restore` 和私有原件联合恢复；旧预算、阶段授权、归档里程碑、日报引用和原件完整回读，恢复库再次拒绝修改归档里程碑。共享开发库只读查询仍为 `0016`，旧候选未覆盖。所有日志和 JUnit 路径属于原仓库 `.local`；上述 `python` 为本机 `.venv/Scripts/python.exe`。不代表真实签核、目标 Host 兼容、目标环境运维或生产放行。
