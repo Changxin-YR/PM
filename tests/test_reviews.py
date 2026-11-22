@@ -316,12 +316,16 @@ def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
     asyncio.run(scenario())
 
 
+def prepare_charter(owner, path):
+    charter = data(owner.get(path + '/charter'))
+    data(owner.put(path + '/charter', headers=headers(charter['expectedRevision']), json={'fieldsCharter': CHARTER}))
+
+
 def start_charter(pid, users):
     owner = users['initiator']
     path = f'projects/{pid}'
     old = data(owner.get(path))['project']
-    charter = data(owner.get(path + '/charter'))
-    data(owner.put(path + '/charter', headers=headers(charter['expectedRevision']), json={'fieldsCharter': CHARTER}))
+    prepare_charter(owner, path)
     review = data(owner.post(path + '/reviews', headers=headers(old['revision']), json={'reviewType': 'charter'}))
     return f"reviews/{review['reviewId']}"
 

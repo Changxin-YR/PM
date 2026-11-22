@@ -228,3 +228,21 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py -k runtime_review_score_contract --tb=short --junitxml=.local/rc0032-score-contract-before.xml` | 1 | FAIL：仅增测试，两关口的发布 Schema 都误收额外历史维度，但 HTTP 写入已拒绝非法数据，`.local/rc0032-score-contract-before.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_reviews.py tests/test_requirement_exceptions.py tests/test_reference_vectors_governance.py tests/test_postgres_invariants.py tests/test_runtime.py --tb=short --junitxml=.local/rc0032-score-contract-verified.xml` | 0 | PASS：52 项 / 77.03 秒，`.local/rc0032-score-contract-verified.log`。同一真实写入与历史回读通过发布的 Schema，三种非法评分同时被 HTTP 与 Schema 拒绝；无多余评分或版本推进，复议/阈值/权限/结项例外及数据库保护保持。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：三套冻结规格校验及 mypy 87 源文件，`.local/rc0032-check-final.log`。 |
+
+## 23 条阶段边的角色和事务回执
+
+依据：主方案 §4.1、§20.4–20.5、LR-01、T03/T04/T07。基准 `efa0f3a332bb4635d53624005268a8a07c790311`，被测源码树 `9105757dce6d457f7c59e5cbc360031313b61440`（不含补录文档）。Windows、隔离 PostgreSQL 16.14、回环 HTTP/真实 stdio、合成账号，关闭模型。`tests/test_stage_edges.py` 不用 SQL 推阶段，通过真实送审、评分、获批计划、附件与结项材料准备合法阶段。
+
+| 场景 | 实际走到的边 |
+|---|---|
+| `test_normal_and_rework_edges_have_role_bound_receipts` | 15 条：三次入关；立项批准/方向调整，落地批准/退回，结项批准/撤回；暂停、恢复、进入交付、交付返工、正常复盘、审核归档。 |
+| `test_formal_rejection_and_one_retry_have_role_bound_receipts` | 新覆盖 4 条：立项拒绝、一次重报、再拒后终止、终止复盘。 |
+| `test_other_termination_edges_have_role_bound_receipts` | 新覆盖 4 条：落地评审（需发起人确认）、执行、暂停、结项评审分别终止，评审中终止验证原评审与 Decision 关联。 |
+
+逐边用无权人工及适用的 Agent 直调验证拒绝和独立 denied；合法执行核对前后 revision、真实主体、审批状态、材料哈希、适用 Decision 和快照、成功审计、Outbox 及原响应重放。与实际 PostgreSQL CHECK 的 23 边对表互补；不是全排列权限测试或真实签核。组织管理员、失权、跨项目、并发和故障回滚另由原定向用例覆盖。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_stage_edges.py --tb=short --junitxml=.local/stage-edges-first.xml` | 1 | FAIL：测试将审计 `request_id` 的 `varchar` 当作 UUID 比较；按实际类型查询并保留原断言，`.local/stage-edges-first.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_stage_edges.py --tb=short --junitxml=.local/stage-edges-second.xml` | 0 | PASS：6 路径 / 24.38 秒，`.local/stage-edges-second.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_stage_edges.py tests/test_reviews.py tests/test_lifecycle.py tests/test_transition_authority.py tests/test_mcp_transition.py tests/test_runtime.py::test_runtime_stage_catalog_matches_frozen_graph --tb=short --junitxml=.local/stage-edges-regression.xml` | 0 | PASS：35 项 / 91.53 秒，`.local/stage-edges-regression.log`。 |
