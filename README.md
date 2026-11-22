@@ -36,6 +36,8 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 
 「补强任务」和「日报周报」支持翻页；`pmo_task_list`、`pmo_report_list` 支持可选 `page`、`pageSize`，后者可按 `reportType` 筛选。普通成员只读本人报告及其关联 Fact 和附件；项目主管角色按任命范围读取，私有草稿仅作者和现任 PM 的人工会话可读。工具和 Web 走同一 REST 服务；令牌不扩大委托人资源范围。详见 [ADR 0020](docs/adr/0020-task-and-report-reads.md)。
 
+工作台的「我的补强待办」跨授权项目查看本人未办结任务，按期限排序，标注来源与读取时点。打开条目会重读原任务台账中的对应任务；办结后重新打开待办，已完成项不再显示。
+
 「日报周报」中的已提交报告可展开「Fact 证据与澄清」。候选引用该版本的原话，核验时会重读来源；高可信还需从本报告已独立核验的附件选取客观证据。冲突进入 PM 澄清任务，完成后仍保留原话及前后核验记录。模型关闭时可人工完成，候选与争议不进入正式三线。见 [Fact 出处和权限](docs/adr/0012-fact-source-and-clarification.md)。
 
 同一工作区的「报告分析」仅对报告作者与本项目 PM 开放。模型默认关闭，此时可转人工任务，也可直接手工提报。显式启用后，由 `python -m pmo.report_analysis_worker --watch` 领取作业；本地已迁移的隔离库可用 `scripts/dev.ps1 analysis` 处理一批。建议与 Fact 分开保存，须由人工选用、保存、核验。开关、网关配置与隐私边界见[数据库运行账号隔离](docs/ops/database-roles.md)和 [ADR 0013](docs/adr/0013-report-analysis-jobs.md)。

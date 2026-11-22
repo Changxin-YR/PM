@@ -11,7 +11,7 @@ from sqlalchemy.engine import Connection, RowMapping
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
-from .contracts import Result, Strict
+from .contracts import ProjectView, Result, Strict
 from .identity import Actor, Failure, explicit_grants, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
@@ -20,6 +20,7 @@ from .report_analysis import OPEN_TASK, TASK_SOURCE
 LIST = 'pmo_task_list'
 CREATE = 'human_task_create'
 UPDATE = 'pmo_task_update'
+QUEUE = 'human_strengthening_queue'
 
 Source = Literal['review', 'rule_event', 'remediation']
 Status = Literal['todo', 'in_progress', 'blocked', 'done', 'cancelled']
@@ -101,6 +102,18 @@ class TaskPage(Strict):
     projectRevision: int | None = None
 
 
+class QueueEntry(Strict):
+    project: ProjectView
+    task: Task
+
+
+class QueuePage(Strict):
+    items: list[QueueEntry] = Field(max_length=100)
+    page: int
+    pageSize: int
+    total: int
+
+
 def _project(c: Connection, a: Actor, project_id: UUID | None = None, *, task_id: UUID | None = None,
              write: bool = False) -> RowMapping:
     p = db.projects
@@ -162,7 +175,7 @@ def _task(row: RowMapping, *, can_update: bool | None = None) -> Task:
 
 @router.get('/projects/{projectId}/tasks', operation_id=LIST, response_model_exclude_none=True)
 def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
-            pageSize: int = Query(20, ge=1, le=100)) -> Result[TaskPage]:
+            pageSize: int = Query(20, ge=1, le=100), taskId: UUID | None = Query(None)) -> Result[TaskPage]:
     def query(c, a, _):
         p = _project(c, a, projectId)
         roles = _roles(c, p, a.person)
@@ -174,6 +187,8 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         cond = [t.c.project_id == p.id, t.c.source_type.in_(VISIBLE_SOURCES if a.kind == 'human' else AGENT_SOURCES)]
         if not project_wide:
             cond.append(t.c.assignee_id == a.person)
+        if taskId is not None:
+            cond.append(t.c.id == taskId)
         total = c.execute(sa.select(sa.func.count()).select_from(t).where(*cond)).scalar_one()
         offset = (page - 1) * pageSize
         rows = c.execute(sa.select(t).where(*cond).order_by(t.c.created_at.desc(), t.c.id)
@@ -185,6 +200,32 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
                           canCreate=writable and pm if human else None, projectRevision=p.revision if human else None)
         return Result[TaskPage](data=result, meta=meta(LIST, [f'task:{i.taskId}@{i.revision}' for i in items], project_id=p.id))
     return run(authorization, LIST, query)
+
+
+@router.get('/me/strengthening-tasks', operation_id=QUEUE, response_model_exclude_none=True)
+def personal_queue(authorization: Auth, page: int = Query(1, ge=1),
+                   pageSize: int = Query(20, ge=1, le=100)) -> Result[QueuePage]:
+    def read(c, a, _):
+        p = db.projects
+        authorized = sa.select(t, p.c.name, p.c.code, p.c.stage, p.c.org_id, p.c.revision.label('project_revision'),
+            p.c.created_at.label('project_created_at')).join(p, p.c.id == t.c.project_id).where(
+            t.c.assignee_id == a.person, t.c.source_type.in_(VISIBLE_SOURCES), t.c.status.in_(OPEN_TASK),
+            p.c.stage != 'archived', visible(a)).cte('assigned_tasks')
+        counts = sa.select(sa.func.count().label('total')).select_from(authorized).subquery()
+        order = (authorized.c.due_at.asc().nulls_last(), authorized.c.created_at.desc(), authorized.c.id)
+        selected = sa.select(authorized).order_by(*order).limit(pageSize).offset(
+            min((page - 1) * pageSize, 2**63 - 1)).subquery('assigned_task_page')
+        # An empty page still returns its scoped count and database read time.
+        rows = c.execute(sa.select(selected, counts.c.total, sa.func.statement_timestamp().label('read_at'))
+                        .select_from(counts.outerjoin(selected, sa.true())).order_by(
+            selected.c.due_at.asc().nulls_last(), selected.c.created_at.desc(), selected.c.id)).mappings().all()
+        items = [QueueEntry(project=ProjectView(projectId=r.project_id, code=r.code, name=r.name, stage=r.stage,
+                    orgId=r.org_id, revision=r.project_revision, createdAt=r.project_created_at),
+                    task=_task(r, can_update=r.source_type not in SYSTEM_SOURCES)) for r in rows if r.id is not None]
+        info = meta(QUEUE, [f'task:{item.task.taskId}@{item.task.revision}' for item in items])
+        info.asOf = rows[0].read_at
+        return Result[QueuePage](data=QueuePage(items=items, page=page, pageSize=pageSize, total=rows[0].total), meta=info)
+    return run(authorization, QUEUE, read)
 
 
 def _open_project(p: RowMapping) -> None:

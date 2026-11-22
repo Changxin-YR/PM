@@ -19,6 +19,7 @@ from argon2 import PasswordHasher
 from pmo import schema_v1 as db
 from test_lifecycle import ANSWERS, close_materials, complete_milestones, execution_fixture, stage
 from test_reviews import team as team
+from test_tasks import team as task_team
 
 def test_browser_draft_workflow(live,actor):
     engine,_,api_port,_=live
@@ -382,6 +383,30 @@ def test_browser_tasks_and_reports(live, team):
         run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
             'PMO_TEST_PHASE':'tasks_reports'})
     assert stage(users['pm'], project)['stage'] == 'executing'
+
+
+def test_browser_personal_strengthening_queue(live, task_team):
+    from test_tasks import command, headers, ok, project, PROJECT_REVISION
+
+    people, users = task_team
+    first, second = (project(live[0], people) for _ in range(2))
+    pm, owner = users['pm'], users['owner']
+    assignee = {'assigneeId': str(people['owner'].id)}
+    task = ok(pm.post(first.path, headers=headers(PROJECT_REVISION), json=command(first, 'rule_event', **assignee,
+        title='Target: reconcile supporting figures', dueAt='2027-01-10T16:00:00+08:00')))
+    for i in range(20):
+        ok(pm.post(first.path, headers=headers(PROJECT_REVISION), json=command(first, 'remediation', **assignee,
+            title=f'Synthetic follow-up {i:02}', dueAt='2027-01-12T16:00:00+08:00')))
+    ok(pm.post(second.path, headers=headers(PROJECT_REVISION), json=command(second, 'review', **assignee,
+        title='Second project follow-up')))
+    ok(pm.post(second.path, headers=headers(PROJECT_REVISION), json=command(second, 'review',
+        assigneeId=str(people['peer'].id), title='Only for the other assignee')))
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'personal-tasks', {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'owner')),
+            'PMO_TEST_TASK': json.dumps(task)})
+    saved, = ok(owner.get(first.path, params={'taskId': task['taskId']}))['items']
+    assert saved['status'] == 'done' and saved['completedAt'] and saved['revision'] == task['revision'] + 1
+    assert ok(owner.get('me/strengthening-tasks'))['total'] == 23
 
 
 def test_browser_model_free_weekly_draft_and_publish(live, team):

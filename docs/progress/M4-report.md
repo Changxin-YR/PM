@@ -408,3 +408,14 @@
 | `python -m pytest -q tests/test_project_overview_detail.py tests/test_project_overview.py tests/test_runtime.py tests/test_health.py tests/test_transition_authority.py --tb=short --junitxml=.local/pmo104-project-detail-api.xml`；补流转版本出处后单跑 `tests/test_project_overview_detail.py` 输出 `-api-final.xml` | 0 / 0 | PASS：定向 35 项 / 65.13 秒，最终详情两项 / 14.47 秒。与原健康端点一致、未采样时不制造数据、不可信无旧色、真实流转版本和回执、待批准申请不冒充流转、受限发起人及 Agent 拒绝。`.local/pmo104-project-detail-{api,api-final}.log`。 |
 | `python -m pytest -q -s tests/browser_case.py -k 'project_overview or local_workbench_latency' --tb=short --junitxml=.local/pmo104-project-detail-edge.xml` | 0 | PASS：2 项 / 61.73 秒，含移动端摘要权限、历史采样和当前四指标分离。Edge `158.0.4370.33`，15 个合成草稿、30 次取样，本机筛选/概览/里程碑 p95 69/114/854 ms；`.local/pmo104-project-detail-edge.log`。本机结果不代表目标环境。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；`18773` 登录后取列表和详情，`18774` 读探针和 OpenAPI | 0 | PASS：规格、Python/Vue 类型和构建（仍有 chunk 体积提示）；95 基线、44 工程、40 双入口，详情仅人工。`.local/pmo104-project-detail-{check,build,openapi}.log`。 |
+
+## 本人补强待办
+
+依据主方案 §2 UI-01/UI-09、§3.2 Task、§7 与 [ADR 0021](../adr/0021-project-overview.md)。基准 `667d3fcdfe42ebbbb07762614e7c0bfcd91d1072`，被测源码树 `e27fbc3b8651968e15fffe7defec02c1c3b6f2b6`，不含本节记录。Windows、PostgreSQL 16.14 隔离 schema、回环 HTTP/stdio、Edge；合成、模型关闭。实现 `pmo/tasks.py`、`web/src/PersonalTasks.vue`、`web/src/Tasks.vue`。无迁移或附件引用变更，未重复恢复演练。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_task_queue.py --tb=short --junitxml=.local/pmo104-personal-tasks-red.xml` | 1 | FAIL：基准没有本人任务读取，返回 `ROUTE_NOT_FOUND`；`.local/pmo104-personal-tasks-red.log`。 |
+| `python -m pytest -q tests/test_task_queue.py tests/test_tasks.py tests/test_runtime.py --tb=short --junitxml=.local/pmo104-personal-tasks-api.xml` | 0 | PASS：22 项 / 31.94 秒。含授权后计数/分页、撤销成员、归档和跨组织、来源与时点、Agent 直接拒绝及 denied 审计、精确定位保持原项目和责任人范围，原任务幂等/并发/回滚及 stdio。`.local/pmo104-personal-tasks-api.log`。 |
+| `python -m pytest -q tests/browser_case.py -k 'personal_strengthening_queue or tasks_and_reports or project_overview' --tb=short --junitxml=.local/pmo104-personal-tasks-edge.xml`，修复选择器后同命令写 `-edge-retest.xml` | 1 / 0 | 首轮 FAIL：两个浏览器选择器不够精确（分页项被算入清单、首页阶段选项误匹配任务来源），保留原 `.log`。复验 PASS：3 项 / 29.97 秒。移动宽度的两页跨项目队列、点击定位原台账、真实 PATCH 带版本与幂等头，刷新后已完成任务移出。`.local/pmo104-personal-tasks-edge-retest.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；`GET http://127.0.0.1:18774/health/ready` 和 `/openapi.json` 与冻结 YAML 比对 | 0 | PASS：冻结规格与 Python/Vue 类型、构建（已有 chunk 提示）；含 95 基线、45 工程接口、40 双入口，待办标记仅人工。`.local/pmo104-personal-tasks-{check,build-final,openapi}.log`。 |

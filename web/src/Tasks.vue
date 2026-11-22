@@ -16,7 +16,8 @@ type Page={items:Task[];page:number;pageSize:number;total:number;canCreate:boole
 type Member={personId:string;name:string}
 type SourceRow={reviewId?:string;riskId?:string;alertId?:string;type?:string;statement?:string;ruleId?:string;milestoneName?:string}
 type Choice={id:string;label:string}
-const props=defineProps<{projectId:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{projectId:string;focusTaskId?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{clearFocus:[]}>()
 const path=computed(()=>
   'projects/'+props.projectId+'/tasks')
 const pageSize=20,rows=ref<Task[]>([]),page=ref(1),total=ref(0),canCreate=ref(false),projectRevision=ref(0)
@@ -33,7 +34,9 @@ const message=(e:unknown)=>e instanceof TypeError?'无法连接服务，请检�
 async function load(next=page.value){
   const id=++loadId;loading.value=true;error.value=''
   try{
-    const {data}:{data:Page}=await props.api(path.value+'?page='+next+'&pageSize='+pageSize)
+    const params=new URLSearchParams({page:String(next),pageSize:String(pageSize)})
+    if(props.focusTaskId)params.set('taskId',props.focusTaskId)
+    const {data}:{data:Page}=await props.api(path.value+'?'+params)
     if(id!==loadId)return
     if(next>1&&!data.items.length){await load(Math.max(1,Math.ceil(data.total/pageSize)));return}
     rows.value=data.items;page.value=data.page;total.value=data.total
@@ -115,7 +118,7 @@ async function save(){
   finally{if(props.projectId===pid)busy.value=false}
 }
 
-watch(()=>props.projectId,()=>{
+watch(()=>[props.projectId,props.focusTaskId],()=>{
   closeForm();busy.value=false;canCreate.value=false;notice.value='';rows.value=[];members.value=[];total.value=0
   void load(1);void loadMembers()
 },{immediate:true})
@@ -124,8 +127,9 @@ watch(()=>props.projectId,()=>{
 <template>
   <section class="task-panel" aria-label="补强任务">
     <div class="toolbar task-toolbar">
-      <span>补强任务 · {{total}}</span>
-      <el-button v-if="canCreate" :disabled="!!mode||loading||busy" @click="openForm(null)"><Plus :size="15"/>新建补强任务</el-button>
+      <span>{{focusTaskId?'选中的任务':'补强任务'}} · {{total}}</span>
+      <el-button v-if="focusTaskId" :disabled="!!mode||loading||busy" @click="emit('clearFocus')">查看全部任务</el-button>
+      <el-button v-else-if="canCreate" :disabled="!!mode||loading||busy" @click="openForm(null)"><Plus :size="15"/>新建补强任务</el-button>
       <el-button title="刷新补强任务" aria-label="刷新补强任务" :disabled="!!mode||loading||busy" @click="refresh"><RefreshCw :size="15"/></el-button>
     </div>
     <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon/>
@@ -168,7 +172,7 @@ watch(()=>props.projectId,()=>{
         <el-button native-type="submit" type="primary" :loading="busy"><Save :size="15"/>保存任务</el-button>
       </div>
     </form>
-    <el-table :data="rows" row-key="taskId" v-loading="loading" :empty-text="error?'任务未读取':'暂无补强任务'">
+    <el-table :data="rows" row-key="taskId" v-loading="loading" :empty-text="error?'任务未读取':focusTaskId?'此任务已不可见':'暂无补强任务'">
       <el-table-column label="任务" min-width="170">
         <template #default="{row}"><strong class="task-title">{{row.title}}</strong><small>版本 {{row.revision}}</small></template>
       </el-table-column>

@@ -241,7 +241,7 @@ try {
     await button(panel,'新建补强任务').click()
     await panel.getByLabel('标题',{exact:true}).fill(title)
     await panel.getByRole('combobox',exact('来源记录')).click()
-    await pm.getByRole('option',{name:/落地评审/}).click()
+    await pm.getByRole('option',{name:/^落地评审 · [0-9a-f]{8}$/}).click()
     const task=await write(pm,'POST','/tasks',button(panel,'保存任务'))
     expect(task).toMatchObject({status:'todo',sourceType:'review',title})
     const row=panel.getByRole('row').filter({hasText:title})

@@ -61,7 +61,7 @@ HUMAN_ONLY_OPERATIONS = frozenset({
         'human_review_confirm','human_review_withdraw','human_closing_check',
         'human_cost_reconciliation_get','human_cost_reconciliation_create',
         'human_requirement_exception_get','human_requirement_exception_sign','human_requirement_exception_revoke',
-        'human_task_create','human_report_draft_create','human_report_draft_update','human_report_submit_existing','human_report_confirm',
+        'human_task_create','human_strengthening_queue','human_report_draft_create','human_report_draft_update','human_report_submit_existing','human_report_confirm',
         'human_weekly_report_generate',
         'human_health_history','human_health_refresh','human_health_zero_budget','human_appeal_health','human_review_health_appeal',
         'human_report_fact_list','human_fact_verify','human_fact_clarify','human_fact_history',
