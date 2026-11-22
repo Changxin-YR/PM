@@ -465,3 +465,12 @@
 |---|---:|---|
 | `.venv/Scripts/python.exe -m pytest -q tests/test_project_overview_detail.py tests/browser_case.py -k 'overview_detail or browser_project_overview' --tb=short --junitxml=.local/pmo104-recent-activity.xml` | 0 | PASS：HTTP 2、Edge 1；验证风险与变更出处、拒绝实时时点、私有报告不入流、基本资料权限及 Agent 拒绝。`.local/pmo104-recent-activity.log`。 |
 | `npm.cmd --prefix web run build` | 0 | PASS：Vue 类型和构建；保留包大小提示。`.local/pmo104-recent-activity-build.log`。 |
+
+## 变更历史资源权限与分页
+
+依据主方案 §5.4、§6、§7–8。基准 `e479127`，差异 `db62edbb86e4db27de69490e5209cf38f8206231`。合成 PostgreSQL `0036` 隔离 schema、回环 HTTP 和真实 SDK stdio，模型关闭。授权同一人工账号可读两个项目，单项目令牌不可通过另一项目的需求 ID 读取历史；404 与不存在一致并审计。允许读取时比对 OpenAPI、闭合 MCP DTO、共同来源与旧快照脱敏。变更台账和需求变更历史的超大页返回空项及正确总数；没有存储和授权规则变更。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_change_contracts.py tests/test_change_history.py tests/test_forecast_governance.py tests/test_scope_quality.py --tb=short --junitxml=.local/pmo104-resource-contracts.xml` | 0 | PASS：5 项，资源隔离、DTO、LR-05 和范围权重。`.local/pmo104-resource-contracts.log`。 |
+| `scripts/dev.ps1 check`；回查 `18774` 的 OpenAPI 与就绪探针及 `18773` 页面 | 0 | PASS：规格、92 文件类型；141 操作、40 双入口，概览含最近活动。两次首次探针命令自身参数/语法有误，修正后通过；`.local/pmo104-resource-check.log`、`.local/pmo104-resource-preview-final.log`。 |

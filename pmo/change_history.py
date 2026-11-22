@@ -72,7 +72,7 @@ def history(requirementId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSiz
         target=sa.select(r.c.id,r.c.project_id).join(p,p.c.id==r.c.project_id).where(r.c.id==requirementId,visible(a)).cte('target')
         matched=with_decision(t).join(target,sa.and_(t.c.target_id==target.c.id,t.c.project_id==target.c.project_id)).where(t.c.target_type=='requirement').cte('matched')
         counts=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
-        rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset((page-1)*pageSize).limit(pageSize).subquery()
+        rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset(min((page-1)*pageSize,2**63-1)).limit(pageSize).subquery()
         records=c.execute(sa.select(counts.c.total,rows,target.c.project_id.label('authorized_project_id'),sa.func.statement_timestamp().label('at')).select_from(
             target.join(counts,sa.true()).outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         if not records: raise Failure(404,'RESOURCE_NOT_FOUND')

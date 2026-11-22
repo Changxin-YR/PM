@@ -8,6 +8,8 @@ from mcp.client.stdio import stdio_client
 import sqlalchemy as sa
 
 from pmo import schema_v1 as db
+from pmo.mcp_server import tools
+from test_approval_queue import another_project
 from test_lifecycle import begin_execution
 from test_reference_vectors_permissions import bearer, denied_audit, mcp_calls
 from test_requirement_additions import COMMAND, grant_reviewers
@@ -156,9 +158,25 @@ def test_change_history_keeps_addition_and_opaque_legacy_snapshots(live, team):
     unchecked = {'items': [{key: value for key, value in legacy.items() if key != 'legacySnapshot'}]}
     assert not history_validator.is_valid({**history.json(), 'data': {**data(history), **unchecked}})
     assert users['outsider'].get(path).status_code == 404
+    for paged_path in (path, project + '/changes'):
+        past_end = data(pm.get(paged_path, params={'page': str(10**21), 'pageSize': 1}))
+        assert past_end['items'] == [] and past_end['total'] == 2
+    other_pid = another_project(engine, people, users)
+    other = data(users['initiator'].post(f'projects/{other_pid}/requirements', headers=headers(), json={
+        'desc': 'Synthetic material in another project', 'priority': 'P1', 'acceptanceCriteria': 'Check scope'}))['requirementId']
+    other_path = f'requirements/{other}/changes'
+    assert data(pm.get(other_path))['items'] == []  # The human has access to both projects.
     token = issue(pm, pid, ['pmo_requirement_change_history'])
-    called, = mcp_calls(live, token, [('pmo_requirement_change_history', {'requirementId': req_id})])
+    op = 'pmo_requirement_change_history'
+    for requirement_id in (other, str(uuid4())):
+        denied = api.get(f'/api/v1/requirements/{requirement_id}/changes', headers=bearer(token))
+        assert (denied.status_code, denied.json()['code']) == (404, 'RESOURCE_NOT_FOUND')
+        denied_audit(engine, denied, op)
+    called, denied_mcp = mcp_calls(live, token, [(op, {'requirementId': id_}) for id_ in (req_id, other)])
+    assert denied_mcp.isError and denied_mcp.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'
     assert not called.isError, called.content
+    validator(tools[op].outputSchema).validate(called.structuredContent)
+    assert called.structuredContent['meta']['sourceRefs'] == history.json()['meta']['sourceRefs']
     mcp_rows = {item['changeId']: item for item in called.structuredContent['data']['items']}
     assert mcp_rows[row['changeId']]['before'] == row['before'] and mcp_rows[row['changeId']]['after'] == row['after']
     assert {'before', 'after'}.isdisjoint(mcp_rows[str(legacy_id)])
