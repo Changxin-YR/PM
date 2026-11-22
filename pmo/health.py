@@ -1,11 +1,11 @@
 """Project health API. Live observations never mutate state or fill in history."""
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import AwareDatetime, Field, StringConstraints
+from pydantic import AwareDatetime, Field, StringConstraints, ValidationError, field_serializer
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
@@ -14,6 +14,7 @@ from .costs import DisplayedRate, Kind, cost_basis
 from .dto import Proportion, Unavailable
 from .health_calculation import ACTIVE, observe
 from .health_schema import appeals, appeal_decisions, zero_budgets
+from .health_trace import HealthTrace
 from .identity import Failure, explicit_project_scope, visible
 from .materials import finish, replay
 from .projects import fingerprint, meta, run
@@ -86,12 +87,17 @@ class Health(Strict):
     inputHash: str | None = None
     eventIds: list[UUID] | None = None
     gaps: list[str] | None = None
-    inputs: dict[str, Any] | None = None
+    inputs: HealthTrace | None = None
     appeal: Appeal | None = None
     projectRevision: int | None = None
     canAppeal: bool | None = None
     canRefresh: bool | None = None
     zeroBudgetHashes: dict[str, str] | None = None
+
+    @field_serializer('inputs', when_used='unless-none')
+    def _serialize_trace(self, value: HealthTrace):
+        # Top-level exclusions must not remove observed nulls or fill absent historical fields.
+        return value.model_dump(mode='json', exclude_unset=True)
 
 
 class History(Strict):
@@ -152,13 +158,18 @@ def _dto(project, at, values, refs, *, row=None, inputs=None, historical=False, 
         data.inputHash = row.input_hash if row else None
         data.eventIds = [UUID(value) for value in (row.rule_event_ids or [])] if row else None
         data.gaps = gaps
-        data.inputs = inputs
+        if inputs is not None:
+            try:
+                data.inputs = HealthTrace.model_validate(inputs, extra='ignore')
+            except ValidationError as exc:
+                raise Failure(500, 'HEALTH_TRACE_INVALID', project_id=project.id) from exc
         data.appeal = appeal
         data.projectRevision = project.revision
         data.canRefresh = pm and project.stage in ACTIVE and not historical
         data.canAppeal = pm and row is not None and _appeal_allowed(row) and appeal is None
-        if data.canRefresh and inputs is not None:
-            data.zeroBudgetHashes = {kind: fingerprint(line['budgetRefs']) for kind, line in inputs['cost'].items()
+        if data.canRefresh and data.inputs is not None:
+            cost = data.inputs.cost
+            data.zeroBudgetHashes = {kind: fingerprint(line.budgetRefs) for kind, line in (('money', cost.money), ('effort', cost.effort))
                 if f'{kind.upper()}_ZERO_BUDGET_UNDECLARED' in (gaps or [])}
     return data
 

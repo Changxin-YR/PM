@@ -1,4 +1,5 @@
 """Q7 evidence is tied to the saved observation, not today's mutable inputs."""
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 
 import sqlalchemy as sa
@@ -92,6 +93,11 @@ def test_weekly_health_reads_pre_dispute_p0_receipt_without_reclassifying(live, 
         assert obs.results['dataTrust'] == 'trusted' and requirement['color'] == 'red' and not requirement['disputed']
         # This flag was introduced only with customer disputes. Preserve the old receipt format.
         del requirement['disputed']
+        public_trace = deepcopy(obs.inputs)
+        assert public_trace['time'][0]['completion'] is None
+        # Extra storage diagnostics must not become part of the public DTO or its calculated values.
+        obs.inputs['internalDiagnostic'] = 'synthetic private trace'
+        requirement['internalReviewerNote'] = 'synthetic private note'
         snapshots = db.health_snapshots
         saved = c.execute(snapshots.insert().values(project_id=pid, as_of=at, input_hash=obs.digest,
             data_trust='trusted', rule_version=RULE_VERSION, input_revisions=obs.inputs, results=obs.results,
@@ -105,4 +111,8 @@ def test_weekly_health_reads_pre_dispute_p0_receipt_without_reclassifying(live, 
     assert cause['sourceRefs'] == [f"requirement:{requirement['requirement_id']}@{requirement['revision']}"]
     old = data(pm.get(project + '/health', params={'asOf': at.isoformat()}))
     assert old['historical'] and old['inputHash'] == saved.input_hash
-    assert old['inputs']['quality']['schedule'] == [requirement]
+    assert old['inputs'] == public_trace
+    with live[0].connect() as c:
+        persisted = c.execute(sa.select(snapshots.c.input_revisions, snapshots.c.input_hash)
+                              .where(snapshots.c.id == saved.id)).one()
+        assert (persisted.input_revisions, persisted.input_hash) == (obs.inputs, obs.digest)

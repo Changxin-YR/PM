@@ -341,3 +341,16 @@ Windows、隔离 PostgreSQL 16.14、真实 HTTP、合成数据。`tests/test_pos
 | `python -m pytest -q tests/test_retrospectives.py tests/test_assistant.py tests/test_assistant_preview.py tests/test_lifecycle.py tests/test_runtime.py tests/test_reference_vectors_governance.py --tb=short --junitxml=.local/retrospective-questions-backend.xml` | 0 | PASS：48 项 / 101.00 秒（`.local/retrospective-questions-backend.log`）。在最终浏览器定位调整前运行，后端代码和断言未再修改；正常、终止、权限、重放及只读归档通过。 |
 | `python -m pytest -q tests/browser_case.py -k 'drafting_through_archive or assistant or preview' --tb=short --junitxml=.local/retrospective-questions-edge-verified.xml` | 0 | PASS：3 项 / 61.96 秒。四问在填写和归档回读中逐项匹配，手机视口助理和单独模拟网关预览通过。首轮 2 FAIL：旧短标题定位、错误模式定位（`.local/retrospective-questions-edge.log`）；修正定位后保留业务断言（`.local/retrospective-questions-edge-verified.log`）。 |
 | `python -m mypy pmo --ignore-missing-imports`；在 `web` 下运行 `node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：88 个 Python 文件与 Vue 类型检查。`.local/retrospective-questions-mypy.log`、`.local/retrospective-questions-vue.log`。 |
+
+## 三线输入的读取契约
+
+依据主方案 §5.2–5.5、§6、领域不变量 §6、工程 DTO 补充 §1/3/4/7。基准 `7871a77bee1303bab65f79f864ebdbc3b35ae551`，被测源码树 `941004e7686fd2acaf1f4ea0ce7c970398d3da57`。Windows、PostgreSQL 16.14 隔离库、回环 HTTP/stdio、Edge `158.0.4370.33`、合成凭据，模型关闭。
+
+`pmo/health_trace.py` 为人工快照的时间线、两类成本、需求计划、报告申报和原件核验回执提供封闭 DTO。历史明确的空值和十进制字符串原样返回，缺失的旧争议标记不补写；未定义的存储诊断不发送。`pmo/health.py` 只在授权人工读取后投影，未改变三线规则、持久化、哈希或 MCP 摘要。新旧人工快照仍按原 `asOf` 回读。API 无新操作；无迁移或附件引用变化。
+
+| 实际命令（本机 `.venv/Scripts/python.exe`） | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_health.py::test_live_snapshot_appeal_and_stdio_scope tests/test_weekly_health.py::test_weekly_health_reads_pre_dispute_p0_receipt_without_reclassifying --tb=short --junitxml=.local/health-trace-reproduced.xml` | 1 | FAIL：OpenAPI 嵌套金额接受浮点数，人工接口原样带出额外存储字段。`.local/health-trace-reproduced.log`。此前共享测试辅助函数造成导入循环，退出 4，`.local/health-trace-before.log`。 |
+| `python -m pytest -q tests/test_health.py tests/test_weekly_health.py tests/test_assistant.py tests/test_weekly_drafts.py tests/test_requirement_disputes.py tests/test_recovery.py tests/test_runtime.py tests/test_mcp_action_matrix.py --tb=short --junitxml=.local/health-trace-backend.xml` | 0 | PASS：38 项 / 114.04 秒。人工刷新原回执重放、旧存储/哈希不变、联合恢复、双入口摘要一致；同委托人可见但不在令牌范围的项目在直调和 stdio 均拒绝。`.local/health-trace-backend.log`。 |
+| `python -m pytest -q tests/browser_case.py -k 'health or same_snapshot or weekly_draft' --tb=short --junitxml=.local/health-trace-edge.xml` | 0 | PASS：4 项 / 51.54 秒。Edge 三线回读、只读来源、申诉及无模型周报，`.local/health-trace-edge.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规则和 89 个源码文件类型检查。`.local/health-trace-static.log`。 |

@@ -1,12 +1,14 @@
 """Deterministic health, alerts and immutable receipts against the running services."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import UTC, date, datetime, time, timedelta
 import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+from jsonschema import Draft202012Validator
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import pytest
@@ -72,7 +74,10 @@ def test_live_snapshot_appeal_and_stdio_scope(live, team):
     assert (preview['timeLine'], preview['costLine'], preview['qualityLine'], preview['health']) == ('yellow','green','green','green')
     assert preview['publication'] == 'preview' and 'snapshotId' not in preview
     assert any(ref.startswith('cost-entry:') for ref in preview['sourceRefs'])
-    snapshot = sample(pm, project)
+    refresh_key = headers(stage(pm, project)['revision'])
+    refreshed = pm.post(project + '/health/refresh', headers=refresh_key)
+    snapshot = data(refreshed)
+    assert pm.post(project + '/health/refresh', headers=refresh_key).json() == refreshed.json()
     assert snapshot['publication'] == 'official' and snapshot['requirementSatisfactionRate'] == '0.000000'
     assert snapshot['timeLine'] == 'yellow' and snapshot['canAppeal'] is True
     assert sample(pm, project)['snapshotId'] == snapshot['snapshotId']
@@ -80,12 +85,28 @@ def test_live_snapshot_appeal_and_stdio_scope(live, team):
     assert data(pm.get(project + '/health', params={'asOf': snapshot['asOf']}))['historical']
     code(outsider.get(project + '/health'), 404, 'RESOURCE_NOT_FOUND')
 
+    spec = api.get('/openapi.json').raise_for_status().json()
+    response_schema = spec['paths']['/api/v1/projects/{projectId}/health']['get']['responses']['200']
+    schema = Draft202012Validator({**response_schema['content']['application/json']['schema'],
+                                 'components': spec['components']})
+    schema.validate(refreshed.json())
+    invalid = deepcopy(refreshed.json())
+    invalid['data']['inputs']['cost']['money']['actual'] = 1.25
+    assert not schema.is_valid(invalid)
+    invalid = deepcopy(refreshed.json())
+    invalid['data']['inputs']['quality']['schedule'][0]['internalNote'] = 'synthetic'
+    assert not schema.is_valid(invalid)
+
     token = issue(pm, pid, ['pmo_health_get'])
     bearer = {'Authorization': 'Bearer ' + token}
     agent_health = data(api.get('/api/v1/' + project + '/health', headers=bearer))
     for field, val in agent_health.items():
         assert snapshot[field] == val
     assert 'inputs' not in agent_health and 'canAppeal' not in agent_health
+    other = data(pm.post('projects', headers=headers(), json={'code': 'HEALTH-SCOPE', 'name': 'Second synthetic project'}))
+    other_path = f"projects/{other['projectId']}/health"
+    assert data(pm.get(other_path))['health'] == 'unavailable'
+    code(api.get('/api/v1/' + other_path, headers=bearer), 404, 'RESOURCE_NOT_FOUND')
     params = StdioServerParameters(command=sys.executable, args=['-m','pmo.mcp_server'],
                                    env={'PMO_AGENT_TOKEN':token,'PMO_API_PORT':str(port),'PYTHONUTF8':'1'})
 
@@ -97,6 +118,8 @@ def test_live_snapshot_appeal_and_stdio_scope(live, team):
                 assert 'pmo_health_get' in {tool.name for tool in tools.tools}
                 response = await client.call_tool('pmo_health_get', {'projectId': pid})
                 assert not response.isError and response.structuredContent['data'] == agent_health
+                out_of_scope = await client.call_tool('pmo_health_get', {'projectId': other['projectId']})
+                assert out_of_scope.isError and out_of_scope.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'
                 denied = await client.call_tool('pmo_health_get', {'projectId': pid, 'role':'pm'})
                 assert denied.isError and denied.structuredContent['error']['code'] == 'VALIDATION_FAILED'
     asyncio.run(stdio())
