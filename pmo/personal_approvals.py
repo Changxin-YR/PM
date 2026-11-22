@@ -1,4 +1,4 @@
-"""Read-only inbox of actionable gate reviews and stage decisions."""
+"""Read-only inbox of actionable gate reviews, stage decisions and changes."""
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -9,9 +9,12 @@ from pydantic import Field
 
 from . import project_lifecycle as lifecycle, review_outcomes as outcomes, schema_v1 as db
 from .access import Auth
+from .change_contract import Target
+from .change_requests import OPEN as CHANGE_STAGES, ChangeAction, decision_options
 from .contracts import RULE_VERSION, ProjectView, Result, Stage, Strict
 from .gates import REVIEW, Gate, lock_project
 from .identity import Failure, visible
+from .materials import project_access
 from .projects import meta, run, view
 from .requirement_delivery import synthetic_confirmation
 from .reviews import APPROVAL_ACTION
@@ -43,7 +46,17 @@ class PendingTransition(Strict):
     actions: list[Literal['approve_transition', 'reject_transition']] = Field(min_length=1, max_length=2)
 
 
-Pending = Annotated[PendingReview | PendingTransition, Field(discriminator='kind')]
+class PendingChange(Strict):
+    kind: Literal['change'] = 'change'
+    project: ProjectView
+    changeId: UUID
+    targetType: Target
+    revision: int
+    submittedAt: datetime
+    actions: list[ChangeAction] = Field(min_length=1, max_length=2)
+
+
+Pending = Annotated[PendingReview | PendingTransition | PendingChange, Field(discriminator='kind')]
 
 
 class QueuePage(Strict):
@@ -77,7 +90,15 @@ def candidates(a, allow_stage_decisions):
         sa.tuple_(i.c.from_stage, i.c.to_stage).in_(sorted(lifecycle.APPROVED)), q.c.requested_by != a.person,
         q.c.delegated_by.is_distinct_from(a.person),
         sa.or_(p.c.sponsor_id == a.person, sa.and_(i.c.to_stage == 'archived', reviewer), delegated))
-    combined = sa.union_all(gates, stages).subquery()
+    ch = db.change_entries
+    grant = sa.table('change_approval_grants', sa.column('project_id'), sa.column('person_id'), sa.column('target_type'),
+                     sa.column('revoked_at'), sa.column('expires_at')).c
+    authorized = sa.exists(sa.select(1).where(grant.project_id == p.c.id, grant.person_id == a.person,
+        grant.target_type == ch.c.target_type, grant.revoked_at.is_(None), grant.expires_at > sa.func.clock_timestamp()))
+    changes = sa.select(ch.c.id, ch.c.project_id, ch.c.created_at, sa.literal('change')).select_from(
+        ch.join(p, p.c.id == ch.c.project_id)).where(visible(a), ch.c.status == 'pending', p.c.stage.in_(CHANGE_STAGES),
+        ch.c.requested_by != a.person, authorized, sa.or_(reviewer, p.c.sponsor_id == a.person))
+    combined = sa.union_all(gates, stages, changes).subquery()
     return sa.select(combined).order_by(combined.c.created_at.desc(), combined.c.id)
 
 
@@ -104,6 +125,22 @@ def stage_entry(c, a, candidate) -> PendingTransition | None:
         actions=['reject_transition'] if item.awaitsInitiator else ['approve_transition', 'reject_transition'])
 
 
+def change_entry(c, a, candidate) -> PendingChange | None:
+    p = project_access(c, a, candidate.project_id)
+    t = db.change_entries
+    row = c.execute(sa.select(t).where(t.c.project_id == p.id, t.c.id == candidate.id)).mappings().one_or_none()
+    if row is not None and (actions := decision_options(c, a, p, row)):
+        return PendingChange(project=view(p), changeId=row.id, targetType=row.target_type, revision=row.revision,
+                             submittedAt=row.created_at, actions=actions)
+    return None
+
+
+def source_ref(item: Pending) -> str:
+    if isinstance(item, PendingReview): return f'review:{item.reviewId}@{item.revision}'
+    if isinstance(item, PendingChange): return f'change:{item.changeId}@{item.revision}'
+    return f'approval:{item.approvalId}'
+
+
 @router.get('/me/approval-queue', operation_id=OP, response_model_exclude_none=True)
 def queue(authorization: Auth, page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le=100)) -> Result[QueuePage]:
     def read(c, a, _):
@@ -112,7 +149,8 @@ def queue(authorization: Auth, page: int = Query(1, ge=1), pageSize: int = Query
         offset = (page - 1) * pageSize
         for candidate in c.execute(candidates(a, synthetic_confirmation(c))).mappings().all():
             try:
-                item = review_entry(c, a, candidate) if candidate.kind == 'review' else stage_entry(c, a, candidate)
+                handler = {'review': review_entry, 'transition': stage_entry, 'change': change_entry}[candidate.kind]
+                item = handler(c, a, candidate)
             except Failure as error:
                 # Access may have changed since candidate selection. Never disclose the missing resource.
                 if error.status != 404 or error.code != 'RESOURCE_NOT_FOUND':
@@ -122,7 +160,6 @@ def queue(authorization: Auth, page: int = Query(1, ge=1), pageSize: int = Query
                 if offset <= total < offset + pageSize:
                     matches.append(item)
                 total += 1
-        info = meta(OP, [f'review:{item.reviewId}@{item.revision}' if isinstance(item, PendingReview)
-                         else f'approval:{item.approvalId}' for item in matches])
+        info = meta(OP, [source_ref(item) for item in matches])
         return Result[QueuePage](data=QueuePage(items=matches, page=page, pageSize=pageSize, total=total), meta=info)
     return run(authorization, OP, read)

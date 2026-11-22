@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -8,16 +9,17 @@ from . import charter_models, milestones, requirements, schema_v1 as db
 from .access import Auth, Key, Revision
 from .change_contract import PROPOSAL, Target, valid_proposal
 from .change_history import Entry, Page, entry, with_decision
-from .change_intents import authority, capture
+from .change_intents import authority, capture, lookup, independent, payload, snapshot
 from .scope_quality import scope_event
-from .contracts import Result, Strict
+from .contracts import RULE_VERSION, Result, Strict
 from .costs import Amount
 from .identity import Failure, visible
 from .materials import finish, replay
 from .materials import project_access
 from .projects import fingerprint, meta, run
-from .requirement_delivery import can_deliver
-from .requirement_additions import Addition, OP as ADD_REQUIREMENT, initial_signature, origin
+from .requirement_baselines import active_member
+from .requirement_delivery import can_deliver, synthetic_confirmation
+from .requirement_additions import Addition, Fields as AdditionFields, OP as ADD_REQUIREMENT, addition, initial_signature, origin, valid_origin
 
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
 OPEN=('designing','executing','on_hold','delivering')
@@ -40,29 +42,33 @@ class Budget(Strict):
 class Ledger(Page):
     canPropose: bool
     decidableIds: list[UUID]
+    approvableIds: list[UUID]
     policyPending: bool
     additionProjectRevision: int | None = None
 
 
 @router.get('/projects/{projectId}/changes',operation_id='human_changes_list',response_model_exclude_none=True)
-def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100))->Result[Ledger]:
+def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),changeId:UUID|None=None)->Result[Ledger]:
     op='human_changes_list'
     def read(c,a,_):
         p=project_access(c,a,projectId); t=db.change_entries
         targets=[sa.and_(t.c.target_type==kind,sa.exists(sa.select(1).select_from(table).where(table.c.id==t.c.target_id,table.c.project_id==projectId))) for kind,table in TARGETS.items()]
         targets.append(sa.and_(t.c.target_type=='requirement',t.c.before.contains({'present':False})))
-        matched=with_decision(t).where(t.c.project_id==projectId,sa.or_(*targets)).cte('matched')
+        query=with_decision(t).where(t.c.project_id==projectId,sa.or_(*targets))
+        if changeId is not None: query=query.where(t.c.id==changeId)
+        matched=query.cte('matched')
         total=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
         rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset((page-1)*pageSize).limit(pageSize).subquery()
         records=c.execute(sa.select(total.c.total,rows).select_from(total.outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         items=[entry(r) for r in records if r.id]; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items])
-        from .requirement_delivery import synthetic_confirmation
-        scopes={kind for kind in {i.targetType for i in items if i.status=='pending' and i.requestedBy!=a.person} if authority(c,a,p,kind)}
+        policy=synthetic_confirmation(c)
+        actions={r.id:decision_options(c,a,p,r) for r in records if r.id} if policy else {}
         permitted=p.stage in OPEN and can_deliver(c,a,p)
         can_add=permitted and a.kind=='human' and origin(p.id,initial_signature(c,p.id)) is not None
         return Result[Ledger](data=Ledger(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=info.asOf,canPropose=permitted,
             additionProjectRevision=p.revision if can_add else None,
-            decidableIds=[i.changeId for i in items if i.targetType in scopes and i.status=='pending' and i.requestedBy!=a.person and p.stage in OPEN],policyPending=not synthetic_confirmation(c)),meta=info)
+            decidableIds=[cid for cid, options in actions.items() if options],
+            approvableIds=[cid for cid, options in actions.items() if 'approve_change' in options],policyPending=not policy),meta=info)
     return run(authorization,op,read)
 
 
@@ -87,6 +93,50 @@ def changes(kind,row,after):
         current=charter_models.full(row).model_dump(mode='json'); data=charter_models.Fields.model_validate(after)
         if 'roughDuration' in after: current['roughDuration']=current['roughDurationDays']
     return {k:current[k] for k in after},data.model_dump(mode='json',exclude_unset=True)
+
+
+def decision_target(c,p,i,*,lock=False):
+    t=TARGETS[i.target_type]
+    query=sa.select(t).where(t.c.id==i.target_id,t.c.project_id==p.id)
+    old=c.execute(query.with_for_update() if lock else query).mappings().one_or_none()
+    added=addition(i)
+    if added == (old is not None): raise Failure(409,'APPROVAL_STALE')
+    return old, i.before if added else snapshot(old)
+
+
+def check_frozen(c,p,i,intent,old,frozen):
+    if (not intent or intent.status!='pending' or intent.rule_version!=RULE_VERSION or intent.expected_revision!=i.base_revision
+        or intent.payload_hash!=payload(i) or intent.snapshot_hash!=fingerprint(frozen) or intent.requested_by!=p.pm_id
+        or not active_member(c,p,i.requested_by,'pm')): raise Failure(409,'APPROVAL_STALE')
+    try:
+        if addition(i):
+            stamp=origin(p.id,initial_signature(c,p.id))
+            if not valid_origin(i.before,stamp) or i.base_revision!=stamp['initialBaselineRevision']:
+                raise Failure(409,'APPROVAL_STALE')
+            before,after=stamp,AdditionFields.model_validate(i.after).model_dump(mode='json')
+        else:
+            if i.base_revision!=old.revision: raise Failure(409,'APPROVAL_STALE')
+            before,after=changes(i.target_type,old,i.after)
+    except ValidationError: raise Failure(409,'APPROVAL_STALE') from None
+    if fingerprint(before)!=fingerprint(i.before) or fingerprint(after)!=fingerprint(i.after): raise Failure(409,'APPROVAL_STALE')
+
+
+ChangeAction = Literal['approve_change', 'reject_change']
+
+
+def decision_options(c,a,p,i) -> list[ChangeAction]:
+    if i.status!='pending' or p.stage not in OPEN or not authority(c,a,p,i.target_type,lock=False): return []
+    intent=lookup(c,p.id,i.id)
+    if not independent(a,i,intent): return []
+    try:
+        old,frozen=decision_target(c,p,i)
+    except Failure:
+        return []
+    try:
+        check_frozen(c,p,i,intent,old,frozen)
+    except Failure:
+        return ['reject_change']
+    return ['approve_change','reject_change']
 
 
 @router.post('/projects/{projectId}/changes',operation_id='pmo_change_propose',response_model_exclude_none=True)

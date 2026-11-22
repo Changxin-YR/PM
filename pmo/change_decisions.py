@@ -5,21 +5,20 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter
-from pydantic import Field, ValidationError
+from pydantic import Field
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .change_history import Entry, entry
-from .change_intents import authority, payload, snapshot
-from .requirement_additions import Fields as AdditionFields, addition, initial_signature, origin, valid_origin
-from .change_requests import OPEN, TARGETS, changes
+from .change_intents import authority, independent, lookup, snapshot
+from .requirement_additions import Fields as AdditionFields, addition
+from .change_requests import OPEN, TARGETS, check_frozen, decision_target
 from .charters import COLUMNS
-from .contracts import RULE_VERSION, Result, Strict
+from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import finish, replay
 from .milestone_forecasts import reconcile
 from .projects import fingerprint, meta, run
-from .requirement_baselines import active_member
 from .requirement_delivery import baseline_evidence_time, synthetic_confirmation
 from .scope_quality import scope_event
 
@@ -71,35 +70,19 @@ def decide(auth,approve,cid,command,key,rev):
         if not project: raise Failure(404,'RESOURCE_NOT_FOUND')
         i=c.execute(sa.select(ch).where(ch.c.id==cid).with_for_update()).mappings().one()
         grant=authority(c,a,project,i.target_type)
-        if not grant or i.requested_by==a.person: raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
+        if not grant or not independent(a,i,None): raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
         if not synthetic_confirmation(c): raise Failure(403,'POLICY_PENDING')
+        intent=lookup(c,project.id,cid,lock=True)
+        if not independent(a,i,intent): raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
         prior=replay(c,a,op,key,sig,Result[Entry])
         if prior: return prior
         if len(reason)<3: raise Failure(422,'INVALID_REASON')
         if rev!=i.revision: raise Failure(409,'VERSION_CONFLICT')
         if i.status!='pending' or project.stage not in OPEN: raise Failure(422,'CHANGE_NOT_PENDING')
-        intent=c.execute(sa.select(ar).where(ar.c.id==cid,ar.c.project_id==project.id,ar.c.action=='baseline_change').with_for_update()).mappings().one_or_none()
-        if intent and (intent.delegated_by==a.person or intent.requested_by==a.person): raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
-        table=TARGETS[i.target_type]; old=c.execute(sa.select(table).where(table.c.id==i.target_id,table.c.project_id==project.id).with_for_update()).mappings().one_or_none()
-        added=addition(i)
-        if (added and old is not None) or (not added and old is None): raise Failure(409,'APPROVAL_STALE')
-        frozen=i.before if added else snapshot(old)
+        old,frozen=decision_target(c,project,i,lock=True)
         result=None
         if approve:
-            if (not intent or intent.status!='pending' or intent.rule_version!=RULE_VERSION or intent.expected_revision!=i.base_revision
-                or intent.payload_hash!=payload(i) or intent.snapshot_hash!=fingerprint(frozen) or intent.requested_by!=project.pm_id
-                or not active_member(c,project,i.requested_by,'pm')): raise Failure(409,'APPROVAL_STALE')
-            try:
-                if added:
-                    stamp=origin(project.id,initial_signature(c,project.id))
-                    if not valid_origin(i.before,stamp) or i.base_revision!=stamp['initialBaselineRevision']:
-                        raise Failure(409,'APPROVAL_STALE')
-                    before,after=stamp,AdditionFields.model_validate(i.after).model_dump(mode='json')
-                else:
-                    if i.base_revision!=old.revision: raise Failure(409,'APPROVAL_STALE')
-                    before,after=changes(i.target_type,old,i.after)
-            except ValidationError: raise Failure(409,'APPROVAL_STALE') from None
-            if fingerprint(before)!=fingerprint(i.before) or fingerprint(after)!=fingerprint(i.after): raise Failure(409,'APPROVAL_STALE')
+            check_frozen(c,project,i,intent,old,frozen)
             c.execute(ch.update().where(ch.c.id==cid).values(status='approved',approved_by=a.person,revision=rev+1))
             result=apply(c,project,a,i,old)
         status='applied' if approve else 'rejected'

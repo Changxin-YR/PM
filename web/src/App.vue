@@ -43,16 +43,17 @@ const csrf=ref(sessionStorage.getItem('pmo.csrf')||'');let sequence=0,attempt=''
 const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿')
 const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('overview'),focusTaskId=ref<string>()
-const focusReviewId=ref<string>(),focusApprovalId=ref<string>()
+const focusReviewId=ref<string>(),focusApprovalId=ref<string>(),focusChangeId=ref<string>()
 function materials(row:Project){
-  materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=undefined
+  materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=focusChangeId.value=undefined
   materialTab.value='overview';showMaterials.value=true
 }
 function openTask(project:Project,taskId:string){materials(project);focusTaskId.value=taskId;materialTab.value='tasks'}
-function openApproval(project:Project,kind:'review'|'transition',id:string){
+function openApproval(project:Project,kind:'review'|'transition'|'change',id:string){
   materials(project)
   if(kind==='review'){focusReviewId.value=id;materialTab.value='reviews'}
-  else{focusApprovalId.value=id;materialTab.value='lifecycle'}
+  else if(kind==='transition'){focusApprovalId.value=id;materialTab.value='lifecycle'}
+  else{focusChangeId.value=id;materialTab.value='changes'}
 }
 function stageRead(projectId:string,stage:string,revision:number){
   if(materialProject.value?.projectId===projectId&&revision>=materialProject.value.revision){
@@ -183,7 +184,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane name="requirements" label="需求" lazy><Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="baseline" label="需求基线" lazy><RequirementBaseline :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
     <el-tab-pane name="exceptions" v-if="['delivering','closing_review'].includes(materialProject.stage)" label="需求例外" lazy><RequirementExceptions :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
-    <el-tab-pane name="changes" label="变更台账" lazy><Changes :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="changes" label="变更台账" lazy><Changes :project-id="materialProject.projectId" :focus-change-id="focusChangeId" :api="api" @clear-focus="focusChangeId=undefined"/></el-tab-pane>
     <el-tab-pane name="evidence" label="证据附件" lazy><Evidence :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="charter" label="立项卡" lazy><Charter :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>
     <el-tab-pane name="stakeholders" label="联系台账" lazy><Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/></el-tab-pane>

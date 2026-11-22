@@ -22,7 +22,17 @@ def capture(c,a,i,target):
         requested_by=a.person,delegated_by=a.person if a.kind=='agent' else None,payload_hash=payload(i),snapshot_hash=fingerprint(snapshot(target)),rule_version=RULE_VERSION))
 
 
-def authority(c,a,p,kind):
+def lookup(c,pid,cid,*,lock=False):
+    t=db.approval_requests
+    query=sa.select(t).where(t.c.id==cid,t.c.project_id==pid,t.c.action=='baseline_change')
+    return c.execute(query.with_for_update() if lock else query).mappings().one_or_none()
+
+
+def independent(a,i,intent):
+    return i.requested_by!=a.person and (not intent or a.person not in (intent.requested_by,intent.delegated_by))
+
+
+def authority(c,a,p,kind,*,lock=True):
     if a.kind!='human' or not (active_member(c,p,a.person,'reviewer') or (p.sponsor_id==a.person and active_member(c,p,a.person,'sponsor'))): return None
     return c.scalar(sa.text('''SELECT authority_ref FROM change_approval_grants WHERE project_id=:p AND person_id=:u AND target_type=:kind
-        AND revoked_at IS NULL AND expires_at>clock_timestamp() FOR SHARE'''),dict(p=p.id,u=a.person,kind=kind))
+        AND revoked_at IS NULL AND expires_at>clock_timestamp()''' + (' FOR SHARE' if lock else '')),dict(p=p.id,u=a.person,kind=kind))

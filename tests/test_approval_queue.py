@@ -6,8 +6,9 @@ import sqlalchemy as sa
 
 from pmo import schema_v1 as db
 from test_database_roles import serve
-from test_lifecycle import propose, start_feasibility, upload
+from test_lifecycle import begin_execution, propose, stage, start_feasibility, upload
 from test_reference_vectors_permissions import bearer, denied_audit
+from test_requirement_additions import COMMAND as ADDITION, grant_reviewers
 from test_reviews import bench, data, decide, headers, member, score, score_command, start_charter, team as team
 from test_transition_authority import grant, revoke
 
@@ -151,3 +152,69 @@ def test_invalid_score_attachment_removes_confirmations_and_decision(live, team)
         assert any(row['role'] == role and row['current'] for row in saved['confirmations'])
     assert owner.get(download).status_code == 404
     assert data(decide(reviewer, path))['decision']['stage'] == 'designing'
+
+
+def test_change_queue_locates_only_independent_current_work(live, team, actor, tmp_path):
+    engine, api, _, _ = live
+    pid, people, users, _ = team
+    pm, reviewer, sponsor, outsider = (users[k] for k in ('pm', 'reviewer', 'sponsor', 'outsider'))
+    project, _, _ = begin_execution(live, team)
+    grant_reviewers(live, team)
+    changes = project + '/changes'
+    rev = stage(pm, project)['revision']
+    first = data(pm.post(changes+'/requirement-additions', headers=headers(rev), json=ADDITION))['changeId']
+    stale = data(pm.post(changes+'/requirement-additions', headers=headers(rev),
+                         json={**ADDITION, 'desc': 'Provide an independent schedule worksheet'}))['changeId']
+    other_pid = another_project(engine, people, users)
+    with engine.begin() as c:
+        t = db.approval_requests
+        c.execute(t.update().where(t.c.id == stale).values(payload_hash='0'*64))
+
+    for page, cid, actions in [(1, stale, ['reject_change']), (2, first, ['approve_change', 'reject_change'])]:
+        response = reviewer.get(PATH, params={'page': page, 'pageSize': 1})
+        result = data(response)
+        row, = result['items']
+        assert result['total'] == 2 and row['project']['projectId'] == pid
+        assert (row['kind'], row['changeId'], row['targetType'], row['actions']) == ('change', cid, 'requirement', actions)
+        assert response.json()['meta']['sourceRefs'] == [f'change:{cid}@{row["revision"]}']
+        exact = data(reviewer.get(changes, params={'changeId': cid}))
+        assert exact['total'] == 1 and [item['changeId'] for item in exact['items']] == [cid]
+        assert exact['decidableIds'] == [cid] and exact['approvableIds'] == ([cid] if page == 2 else [])
+    assert data(reviewer.get(f'projects/{other_pid}/changes', params={'changeId': first}))['total'] == 0
+    assert outsider.get(changes, params={'changeId': first}).status_code == 404
+    assert data(outsider.get(PATH))['total'] == data(pm.get(PATH))['total'] == 0
+
+    grant_date = sa.text('''UPDATE change_approval_grants SET expires_at=now()+make_interval(hours=>:hours)
+        WHERE project_id=:p AND person_id=:u AND target_type='requirement' ''')
+    with engine.begin() as c:
+        c.execute(grant_date, {'hours': -1, 'p': pid, 'u': people['reviewer']})
+    assert data(reviewer.get(PATH))['total'] == 0
+    assert data(reviewer.get(changes, params={'changeId': first}))['decidableIds'] == []
+    assert reviewer.post(f'changes/{first}/reject', headers=headers(1),
+                         json={'rationale': 'Expired authority cannot reject.'}).json()['code'] == 'INDEPENDENT_APPROVER_REQUIRED'
+    with engine.begin() as c:
+        c.execute(grant_date, {'hours': 1, 'p': pid, 'u': people['reviewer']})
+
+    token, _ = actor(extra_actions=('human_changes_list', 'human_change_approve'))
+    agent = api.get('/api/v1/' + changes, params={'changeId': first}, headers=bearer(token))
+    assert (agent.status_code, agent.json()['code']) == (403, 'FORBIDDEN')
+    denied_audit(engine, agent, 'human_changes_list')
+    with serve(engine.url, tmp_path, extra_env={'PMO_SYNTHETIC_POLICY_SCHEMA': ''}) as restricted:
+        restricted.cookies.update(reviewer.cookies)
+        assert data(restricted.get(PATH))['total'] == 0
+        ledger = data(restricted.get(changes, params={'changeId': first}))
+        assert ledger['policyPending'] and ledger['approvableIds'] == []
+
+    verdict = {'rationale': 'Reviewed the bound baseline and synthetic deliverable.'}
+    with engine.begin() as c:
+        t = db.approval_requests
+        c.execute(t.update().where(t.c.id == first).values(delegated_by=people['reviewer']))
+    assert [row['changeId'] for row in data(reviewer.get(PATH))['items']] == [stale]
+    assert data(reviewer.get(changes, params={'changeId': first}))['decidableIds'] == []
+    assert reviewer.post(f'changes/{first}/approve', headers=headers(1), json=verdict).json()['code'] == 'INDEPENDENT_APPROVER_REQUIRED'
+    assert data(sponsor.post(f'changes/{first}/approve', headers=headers(1), json=verdict))['status'] == 'applied'
+    assert reviewer.post(f'changes/{stale}/approve', headers=headers(1), json=verdict).json()['code'] == 'APPROVAL_STALE'
+    assert data(reviewer.post(f'changes/{stale}/reject', headers=headers(1), json=verdict))['status'] == 'rejected'
+    assert data(sponsor.get(PATH))['total'] == 0
+    history = data(pm.get(changes, params={'changeId': first}))['items'][0]
+    assert history['status'] == 'applied' and history['decisionReason'] == verdict['rationale']

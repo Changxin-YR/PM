@@ -442,3 +442,17 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'lr08_monthly or weekly_health or browser_and_stdio_same_snapshot' --tb=short --junitxml=.local/pmo104-alert-reads-edge-final.xml` | 0 | PASS：3 项 / 35.35 秒。截止月份、原事件时间、读取时间、每周三线和浏览器/MCP 同资源一致通过。`.local/pmo104-alert-reads-edge-final.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；预览 `GET /health/ready`、`GET /openapi.json`；查询 `alembic_version` | 0 | PASS：规格、Python 92 文件、Vue 类型和构建，95 基线、46 工程、40 双入口。源码与隔离预览 `0036`，共享 `public` `0016`。收窄共享 HTTP 函数的首轮 Vue 类型失败已保留，最终类型限定于预警调用；构建仍有 chunk 提示。`.local/pmo104-alert-reads-{check,vue,build,openapi,db-heads}.log`。 |
 | `git -c http.version=HTTP/1.1 ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1` | 128 | BLOCKED_EXTERNAL：本机 Git 缺 HTTPS helper，远端 SHA 未重新验证；未推送。`.local/pmo104-alert-reads-remote.log`。 |
+
+## 变更审批定位
+
+依据主方案 UI-01/UI-07、LR-05、Q8/T05 与 ADR 0009。基准 `159d0f38a4bd12711f32d0ba8b33e386e8ca47a1`，产品及测试差异 `9c2fe628032107e7cc86556ef3033e7fbf29f99a`。Windows、独立 PostgreSQL 合成 schema `0036`、真实回环 HTTP/Edge、模型关闭；共享 `public` 保持 `0016`。收件箱和原台账复用原裁决的角色、授权、独立性和冻结校验。批准/拒绝仍由原服务锁定并写入，不新增接口；政策未签核时不展示可操作项。预览 `18774` OpenAPI 已返回 `changeId` 参数。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_approval_queue.py::test_change_queue_locates_only_independent_current_work --tb=short --junitxml=.local/pmo104-change-queue-red.xml` | 1 | FAIL：原收件箱缺变更项。`.local/pmo104-change-queue-red.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_approval_queue.py tests/test_change_requests.py tests/test_requirement_additions.py --tb=short --junitxml=.local/pmo104-change-queue-backend.xml` | 0 | PASS：7 项；项目范围、Agent、自批、委托、旧材料、政策、并发、同键回读和 Outbox 失败时成功审计回滚。`.local/pmo104-change-queue-backend.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_approval_queue.py::test_change_queue_locates_only_independent_current_work --tb=short --junitxml=.local/pmo104-change-queue-authority.xml` | 0 | PASS：追加验证过期授权在收件箱和原台账消失，直接写入亦被拒绝。`.local/pmo104-change-queue-authority.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'independent_requirement_addition or personal_review_and_stage_approvals' --tb=short --junitxml=.local/pmo104-change-queue-edge-final.xml` | 0 | PASS：2 项；定位、裁决、生效回读和收件箱刷新。首轮因空态及关闭按钮定位断言返回 1（FAIL），保留 `.local/pmo104-change-queue-edge.log`；最终 `.local/pmo104-change-queue-edge-final.log`。 |
+| `.venv/Scripts/python.exe -m mypy pmo --ignore-missing-imports`；`npm.cmd --prefix web run build` | 0 | PASS：类型、Vue 构建。`.local/pmo104-change-queue-build.log`。 |
+
+全量回归、重复升级恢复 NOT_RUN，留至综合候选验证；真实审批授权 BLOCKED_EXTERNAL。

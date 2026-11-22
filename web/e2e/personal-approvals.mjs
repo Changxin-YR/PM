@@ -8,7 +8,7 @@ const exact = name => ({name,exact:true})
 const button = (scope,name) => scope.getByRole('button',exact(name))
 const dialog = (page,name) => page.getByRole('dialog',exact(name))
 const inbox = page=>dialog(page,'我的审批收件箱')
-const empty='暂无可处理的关口评审或阶段审批。'
+const empty='暂无可处理的审批。'
 const openInbox=page=>button(page,'我的审批收件箱').click()
 async function actor(role,width){
   const context=await browser.newContext({viewport:{width,height:850}})
