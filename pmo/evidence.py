@@ -75,6 +75,16 @@ def stmt():
     return sa.select(e,links.c.resource_type,links.c.resource_id,links.c.description,links.c.revision).join(links,links.c.evidence_id==e.c.id)
 
 
+def visible_evidence(a):
+    from .reports import report_read_scope, reports
+
+    report = reports.c
+    reader = sa.exists(sa.select(report.id).where(report.id == links.c.resource_id,
+        report.project_id == e.c.project_id, report_read_scope(a)).correlate(e, links, db.projects))
+    return stmt().join(db.projects, db.projects.c.id == e.c.project_id).where(
+        visible(a), sa.or_(links.c.resource_type != 'report', reader))
+
+
 def member(c,a,pid,role):
     m=db.project_members.c
     return bool(c.scalar(sa.select(m.id).where(m.project_id==pid,m.person_id==a.person,m.role==role,m.assignment_status=='accepted',m.accepted_at.is_not(None),m.revoked_at.is_(None)).with_for_update(read=True)))
@@ -87,7 +97,7 @@ def item(row,can=None):
 
 
 def lookup(c,a,eid,lock=False,*,shared=False):
-    q=stmt().join(db.projects,db.projects.c.id==e.c.project_id).where(e.c.id==eid,visible(a))
+    q=visible_evidence(a).where(e.c.id==eid)
     row=c.execute(q.with_for_update(of=e,read=shared) if lock else q).mappings().one_or_none()
     if row is None: raise Failure(404,'RESOURCE_NOT_FOUND')
     return row
@@ -101,6 +111,11 @@ def upload_write(auth,pid,key,expected,link,name,mime,data,digest):
         t=tables[link.linkedResourceType]
         if link.linkedResourceType=='project':
             if link.linkedResourceId!=pid: raise Failure(404,'RESOURCE_NOT_FOUND')
+        elif link.linkedResourceType=='report':
+            from .reports import readable_reports, reports
+
+            if not c.scalar(readable_reports(a,pid).with_only_columns(reports.c.id).where(reports.c.id==link.linkedResourceId)):
+                raise Failure(404,'RESOURCE_NOT_FOUND')
         elif not c.scalar(sa.select(t.c.id).where(t.c.id==link.linkedResourceId,t.c.project_id==pid).with_for_update(read=True)):
             raise Failure(404,'RESOURCE_NOT_FOUND')
         prior=replay(c,a,op,key,sig,Result[Evidence])
@@ -159,7 +174,7 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
     op='human_evidence_list'
     def read(c,a,_):
         project_access(c,a,projectId); reviewer=member(c,a,projectId,'reviewer')
-        query=stmt().where(e.c.project_id==projectId)
+        query=visible_evidence(a).where(e.c.project_id==projectId)
         if requirementId is not None: query=query.where(links.c.resource_type=='requirement',links.c.resource_id==requirementId)
         if reportId is not None: query=query.where(links.c.resource_type=='report',links.c.resource_id==reportId)
         if currentBaselineOnly:

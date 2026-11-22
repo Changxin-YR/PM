@@ -16,7 +16,7 @@ from sqlalchemy.types import TypeEngine
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import Result, Strict
-from .identity import Failure, explicit_grants, explicit_project_scope, visible
+from .identity import Actor, Failure, explicit_grants, explicit_project_scope, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_member
@@ -312,6 +312,29 @@ def can_submit_report(c, a, p) -> bool:
     return p.stage != 'archived' and _author_role(c, a, p, _is_pm(c, a, p))
 
 
+def report_read_scope(a: Actor) -> sa.ColumnElement[bool]:
+    """Row scope within an already authorized project. Also used by report attachments."""
+    m, p = db.project_members.c, projects.c
+
+    def assigned(*roles: str):
+        return sa.exists(sa.select(m.id).where(m.project_id == p.id, m.person_id == a.person,
+            m.role.in_(roles), m.assignment_status == 'accepted', m.accepted_at.is_not(None),
+            m.revoked_at.is_(None)).correlate(projects))
+
+    pm = sa.and_(p.pm_id == a.person, assigned('pm'))
+    project_read = sa.or_(pm, sa.and_(p.sponsor_id == a.person, assigned('sponsor')),
+                          assigned('reviewer', 'client_representative'))
+    own, submitted = r.author_id == a.person, r.status.in_(('submitted', 'confirmed'))
+    if a.kind == 'human':
+        return sa.or_(own, pm, sa.and_(submitted, project_read))
+    return sa.and_(submitted, sa.or_(own, project_read))
+
+
+def readable_reports(a: Actor, project_id: UUID):
+    return sa.select(reports).join(projects, projects.c.id == r.project_id).where(
+        r.project_id == project_id, report_read_scope(a))
+
+
 def _context(c, a, *, project_id=None, report_id=None, write=False):
     scope = [visible(a)]
     if a.kind == 'agent':
@@ -332,8 +355,8 @@ def _context(c, a, *, project_id=None, report_id=None, write=False):
     pm = a.kind == 'human' and _is_pm(c, a, p)
     row = None
     if report_id is not None:
-        row = c.execute(sa.select(reports).where(r.project_id == p.id, r.id == report_id)).mappings().one_or_none()
-        if row is None or (row.status == 'draft' and not (a.kind == 'human' and (pm or row.author_id == a.person))):
+        row = c.execute(readable_reports(a, p.id).where(r.id == report_id)).mappings().one_or_none()
+        if row is None:
             raise Failure(404, 'RESOURCE_NOT_FOUND')
     return p, row, pm
 
@@ -419,14 +442,12 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
             pageSize: int = Query(20, ge=1, le=100), reportType: Kind | None = None) -> Result[Page]:
     def read(c, a, _):
         p, _, pm = _context(c, a, project_id=projectId)
-        filters = [r.project_id == p.id]
+        query = readable_reports(a, p.id)
         if reportType is not None:
-            filters.append(r.type == reportType)
-        if not pm:
-            filters.append(sa.or_(r.status != 'draft', r.author_id == a.person) if a.kind == 'human' else r.status != 'draft')
-        total = c.execute(sa.select(sa.func.count()).select_from(reports).where(*filters)).scalar_one()
+            query = query.where(r.type == reportType)
+        total = c.execute(sa.select(sa.func.count()).select_from(query.with_only_columns(r.id).subquery())).scalar_one()
         offset = (page - 1) * pageSize
-        rows = c.execute(sa.select(reports).where(*filters).order_by(r.period_start.desc(), r.type, r.version_no.desc(), r.id)
+        rows = c.execute(query.order_by(r.period_start.desc(), r.type, r.version_no.desc(), r.id)
                          .offset(offset).limit(pageSize)).mappings().all() if offset < total else []
         info = meta(LIST, [_ref(row) for row in rows], project_id=p.id)
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)

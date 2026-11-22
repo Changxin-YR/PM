@@ -34,7 +34,7 @@ OpenAPI：`http://127.0.0.1:8000/openapi.json`。API 只在回环地址开发。
 
 「预警中心」可查看规则事件、落地条件任务到期和「每周三线」。每周按北京时间周一至周日汇总授权项目的已记录采样：总体绿时仍显示单条黄线；最近一次采样不可信时，旧黄红记录只作单独历史展示。展开可查触发线、快照编号和规则来源；无采样不当作绿色。
 
-「补强任务」和「日报周报」支持翻页；`pmo_task_list`、`pmo_report_list` 支持可选 `page`、`pageSize`，后者可按 `reportType` 筛选。工具和 Web 走同一 REST 服务；令牌不扩大委托人资源范围。详见 [ADR 0020](docs/adr/0020-task-and-report-reads.md)。
+「补强任务」和「日报周报」支持翻页；`pmo_task_list`、`pmo_report_list` 支持可选 `page`、`pageSize`，后者可按 `reportType` 筛选。普通成员只读本人报告及其关联 Fact 和附件；项目主管角色按任命范围读取，私有草稿仅作者和现任 PM 的人工会话可读。工具和 Web 走同一 REST 服务；令牌不扩大委托人资源范围。详见 [ADR 0020](docs/adr/0020-task-and-report-reads.md)。
 
 「日报周报」中的已提交报告可展开「Fact 证据与澄清」。候选引用该版本的原话，核验时会重读来源；高可信还需从本报告已独立核验的附件选取客观证据。冲突进入 PM 澄清任务，完成后仍保留原话及前后核验记录。模型关闭时可人工完成，候选与争议不进入正式三线。见 [Fact 出处和权限](docs/adr/0012-fact-source-and-clarification.md)。
 

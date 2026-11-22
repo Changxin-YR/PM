@@ -334,3 +334,14 @@
 | `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/pmo104-paged-reads-mcp.json --pmo-mcp-check-replays -q tests/test_tasks.py tests/test_reports.py tests/test_runtime.py tests/test_mcp_action_matrix.py --tb=short --junitxml=.local/pmo104-paged-reads-backend.xml` | 1 | FAIL：26 项用例通过，但证据插件要求所有工具实调和审计/重放，该定向集只覆盖 29 项实际成功调用。保留 `.local/pmo104-paged-reads-backend.log`，未更新全量 MCP 证据。 |
 | `python -m pytest -q tests/test_tasks.py tests/test_reports.py tests/test_runtime.py tests/test_mcp_action_matrix.py --tb=short --junitxml=.local/pmo104-paged-reads-targeted.xml` | 0 | PASS：26 项 / 30.48 秒。任务仅在受委派人可见任务内分页；报告筛选、后续页、空页和超大页正常，REST/stdio 数据与来源一致。任务/报告写入、并发、回滚及作用域回归。`.local/pmo104-paged-reads-targeted.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；回环 `18772` 的 `GET /openapi.json` | 0 | PASS：三套冻结规格与 89 个 Python 文件类型检查；实时目录仍 137 项，任务和报告均标记 `human,agent`，页参数和报告类型与运行工具一致。`.local/pmo104-paged-reads-check.log`、`.local/pmo104-paged-reads-openapi.log`。 |
+
+## 报告资源范围
+
+依据 §6.1、§6.3、§20.3、工程 DTO §6；基准 `b1dcd4579a3b938dda07b78de89c25b9b7fe9e32`、被测源码树 `646ec635b895c857e415a539f04d0d9c5612a701`（不含证据文档）。`pmo/reports.py::report_read_scope` 与 `pmo/evidence.py::visible_evidence`；Fact 沿用既有报告详情服务。Windows、Python 3.12、PostgreSQL 16.14 隔离 schema、回环 HTTP 和真实 stdio；合成账号/PDF，模型关闭。不改变确认权、附件格式、存储或业务规则，无迁移。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_reports.py::test_report_related_reads_use_the_same_resource_scope --tb=short --junitxml=.local/pmo104-report-scope-red.xml` | 1 | FAIL：基准新增用例，普通成员页总数包含他人报告。`.local/pmo104-report-scope-red.log`。 |
+| `python -m pytest -q tests/test_reports.py tests/test_facts.py tests/test_evidence.py tests/test_report_analysis.py tests/test_weekly_drafts.py tests/test_postgres_invariants.py --tb=short --junitxml=.local/pmo104-report-scope-targeted.xml` | 1 | FAIL：30 项通过；新测试的简化 PDF 不是可解析原件。保留格式硬校验，改用仓库合成 PDF 夹具。`.local/pmo104-report-scope-targeted.log`。 |
+| 同一测试集合，`--junitxml=.local/pmo104-report-scope-retest.xml` | 0 | PASS：31 项 / 41.51 秒。列表/来源、详情、Fact、附件上传与访问均实测同项目非作者拒绝；当前 PM、作者及独立 Reviewer 的合法路径和真实字节/SHA-256 回读通过；同一委托人的 REST/stdio 查询权限一致。`.local/pmo104-report-scope-retest.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`SELECT version_num FROM <schema>.alembic_version` | 0 | PASS：三套规格、89 文件类型检查。源码 head、隔离预览 `0035`，共享 `public` 保持 `0016`。`.local/pmo104-report-scope-check.log`、`.local/pmo104-read-scope-db-heads.log`。 |

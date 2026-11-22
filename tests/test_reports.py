@@ -180,6 +180,66 @@ def _token(team, *, person='reporter', actions=(LIST, GET, SUBMIT), explicit=Tru
     return {'Authorization': 'Bearer ' + secret}
 
 
+def test_report_related_reads_use_the_same_resource_scope(live, team):
+    from test_evidence import binary
+
+    pm, author, peer, reviewer = (team.users[k] for k in ('pm', 'reporter', 'outsider', 'reviewer'))
+    peer_id = team.people['outsider'].id
+    with team.engine.begin() as c:
+        c.execute(db.project_members.insert().values(project_id=team.pid, person_id=peer_id, role='member',
+            assigned_by=team.people['pm'].id, assignment_status='accepted', accepted_at=sa.func.now()))
+    mine = data(peer.post(team.path, headers=headers(), json=body(narrative='Own report')))
+    published = data(author.post(team.path, headers=headers(), json=body(narrative='Another member report')))
+    path = f"reports/{published['reportId']}"
+    data(pm.post(path + '/confirm', headers=headers(1), json={}))
+    newer = data(author.post(team.path, headers=headers(), json=body(narrative='Unpublished report')))
+    draft = data(author.post(team.path+'/drafts', headers=headers(), json=body(narrative='Private draft')))
+
+    listing = peer.get(team.path, params={'pageSize': 1})
+    assert data(listing)['total'] == 1 and [i['reportId'] for i in data(listing)['items']] == [mine['reportId']]
+    assert listing.json()['meta']['sourceRefs'] == [f"report:{mine['reportId']}@1"]
+    for item in (published, newer, draft):
+        target = f"reports/{item['reportId']}"
+        deny(peer.get(target), 404, 'RESOURCE_NOT_FOUND')
+        deny(peer.get(target + '/facts'), 404, 'RESOURCE_NOT_FOUND')
+    assert data(pm.get(team.path))['total'] == 4
+    assert data(reviewer.get(team.path))['total'] == 3
+    assert data(reviewer.get(path))['narrative'] == 'Another member report'
+    deny(reviewer.get(f"reports/{draft['reportId']}"), 404, 'RESOURCE_NOT_FOUND')
+
+    evidence_path = f'projects/{team.pid}/evidence'
+    pdf = binary('pdf')
+    form = {'linkedResourceType': 'report', 'linkedResourceId': published['reportId']}
+    params = {'reportId': published['reportId']}
+    deny(peer.post(evidence_path, headers=headers(1), data=form, files={'file': ('study.pdf', pdf, 'application/pdf')}),
+         404, 'RESOURCE_NOT_FOUND')
+    file = data(author.post(evidence_path, headers=headers(1), data=form, files={'file': ('study.pdf', pdf, 'application/pdf')}))
+    file_path = f"evidence/{file['evidenceId']}"
+    assert file['sha256'] == hashlib.sha256(pdf).hexdigest()
+    assert data(peer.get(evidence_path))['total'] == data(peer.get(evidence_path, params=params))['total'] == 0
+    deny(peer.get(file_path), 404, 'RESOURCE_NOT_FOUND')
+    deny(peer.get(file_path, params={'download': True}), 404, 'RESOURCE_NOT_FOUND')
+    assert data(reviewer.get(evidence_path, params=params))['items'][0]['evidenceId'] == file['evidenceId']
+    assert reviewer.get(file_path, params={'download': True}).content == pdf
+
+    auth = _token(team, person='outsider', actions=(LIST, GET))
+    assert data(live[1].get('/api/v1/'+team.path, headers=auth))['total'] == 1
+    deny(live[1].get('/api/v1/'+path, headers=auth), 404, 'RESOURCE_NOT_FOUND')
+
+    async def flow():
+        params = StdioServerParameters(command=sys.executable, args=['-B', '-m', 'pmo.mcp_server'],
+            env={'PMO_API_PORT': str(live[2]), 'PMO_AGENT_TOKEN': auth['Authorization'].split(' ', 1)[1], 'PYTHONUTF8': '1'})
+        async with stdio_client(params) as streams, ClientSession(*streams) as session:
+            await session.initialize()
+            listed = await session.call_tool(LIST, {'projectId': str(team.pid), 'pageSize': 1})
+            assert not listed.isError and listed.structuredContent['data']['total'] == 1
+            assert listed.structuredContent['data']['items'][0]['reportId'] == mine['reportId']
+            refused = await session.call_tool(GET, {'reportId': published['reportId']})
+            assert refused.isError and refused.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'
+
+    asyncio.run(flow())
+
+
 def test_agent_scope_and_closed_mcp_dtos(team):
     specs = json.loads(next((Path(__file__).resolve().parents[1] / 'docs/spec').glob('11_*.json')).read_text(encoding='utf-8'))
     tools = {tool['name']: tool['outputSchema'] for tool in specs['tools']}
