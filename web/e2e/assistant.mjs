@@ -26,7 +26,7 @@ try {
   await expect(area.getByText('模型关闭',{exact:true})).toBeVisible()
   await expect(area.getByRole('heading',{name:/周报预览/})).toBeVisible()
   await mode('结项回顾').click()
-  await expect(area.getByText('可复用资产',{exact:true})).toBeVisible()
+  await expect(area.getByText('可复用资产：哪些做法 / 模板 / 方案值得沉淀，下次直接用？',{exact:true})).toBeVisible()
   await expect(area.getByText('暂无可引用的复盘回答。',{exact:true})).toBeVisible()
   await mode('台账问答').click()
   await area.getByLabel('查询主题').selectOption('fact')

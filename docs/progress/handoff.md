@@ -12,6 +12,8 @@
 | [M3 MCP](M3-report.md) | 真实 stdio 40/40 枚举、成功调用及未授权拒绝；18 读逐项审计、22 写逐项重放，关键并发实测；仓库外安装并实测 `pmo-mcp` | 各目标 Host 验收未过；没有穷举全部角色、资源状态和并发组合 |
 | [M4 恢复与综合验收](M4-report.md) | Q1–Q8、T01～T08/T10 有合成产品证据；四模式回环模拟网关、无模型周报及 PM 发布；候选部署、带数据升级、联合恢复和本机性能 | 真实模型网关和外发许可；目标环境部署、告警、周期恢复和性能；T09、两个真实试点和签核 |
 
+候选源码之后补齐了[复盘四问完整原文](M2-report.md#复盘四问原文)。录入、归档回读和结项回顾助理按相同顺序展示，定向后端 48 项、Edge 3 项 PASS；没有迁移或附件变化，独立部署容器仍为前述固定候选。
+
 测试命令和失败修复见 [M2](M2-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。静态检查、SDK 联调和合成数据不能替代真实试点、目标 Host 或签核；逐项口径见[追踪矩阵](../acceptance/traceability.csv)和[阻断项](blockers.md)。上游 `origin/main`；桌面运行时 Git 实际执行 `ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1`（退出 0，`.local/rc0034-remote.log`）仅回 `refs/heads/main`（`45307c20ed94bf9347306f5983a7b695ed5c3ebb`），未返回目标开发分支 SHA。没有推送。
 
 ## 续接顺序

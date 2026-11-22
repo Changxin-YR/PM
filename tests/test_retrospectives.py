@@ -24,6 +24,12 @@ ANSWERS = ['Actual cost reached the approved budget; scope stayed fixed.',
            'A supplier delay affected delivery, not the requirement baseline.',
            'Reuse the signed delivery checklist.',
            'Validate dependencies at charter and price them in the plan.']
+SPEC_QUESTIONS = [
+    '目标对照：立项卡承诺的收益 / 成本 / 周期，实际各是多少？差异主要原因？',
+    '过程表现：三线偏差各发生在哪个阶段？是估算问题、执行问题还是范围问题？',
+    '可复用资产：哪些做法 / 模板 / 方案值得沉淀，下次直接用？',
+    '教训与建议：如果重来一次，立项和方案阶段分别会做什么不同的事？（写入 Lesson，带分类标签）',
+]
 LESSON = {'category': 'technical', 'what': 'An early prototype exposed the delivery dependency.',
           'rootCause': 'The dependency was not exercised in the design review.',
           'advice': 'Add a dependency exercise to the plan.'}
@@ -121,7 +127,8 @@ def test_retrospective_and_independent_lesson_then_archived_replay(live, team):
     retro = f'projects/{pid}/retrospective'
     lessons = f'projects/{pid}/lessons'
     assert data(pm.get(retro)) == {'projectId': str(pid), 'stage': 'retrospective', 'kind': 'normal',
-        'fromStage': 'closed', 'retrospectiveId': None, 'revision': 1, 'answers': [], 'completedAt': None, 'canSave': True}
+        'fromStage': 'closed', 'retrospectiveId': None, 'revision': 1, 'answers': [], 'completedAt': None, 'canSave': True,
+        'questions': SPEC_QUESTIONS}
     assert not data(reviewer.get(retro))['canSave']
     error(other.get(retro), 404)
     error(other.get(lessons), 404)
@@ -139,6 +146,7 @@ def test_retrospective_and_independent_lesson_then_archived_replay(live, team):
     save_key = headers(1)
     saved = pm.put(retro, headers=save_key, json=body)
     assert data(saved)['revision'] == 2 and data(saved)['completedAt']
+    assert 'questions' not in data(saved)  # Keep the stored write receipt stable across updates.
     assert pm.put(retro, headers=save_key, json=body).json() == saved.json()
     error(pm.put(retro, headers=save_key, json={'answers': ANSWERS[::-1]}), 409, 'IDEMPOTENCY_CONFLICT')
     error(pm.put(retro, headers=headers(1), json=body), 409, 'VERSION_CONFLICT')
@@ -182,6 +190,7 @@ def test_retrospective_and_independent_lesson_then_archived_replay(live, team):
         c.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='archived', revision=3))
     archived = data(pm.get(retro))
     assert archived['stage'] == 'archived' and archived['fromStage'] == 'closed' and not archived['canSave']
+    assert archived['questions'] == SPEC_QUESTIONS and archived['answers'] == revised_answers
     assert pm.put(retro, headers=save_key, json=body).json() == saved.json()
     assert pm.post(lessons, headers=drafts, json=LESSON).json() == draft.json()
     assert reviewer.post(path, headers=confirm_key).json() == signed.json()
@@ -216,7 +225,10 @@ def test_termination_origin_and_revision_race(live, team):
     assert (exc.value.status, exc.value.code) == (422, 'RETROSPECTIVE_ORIGIN_REQUIRED')
     pid = project(engine, team, origin='terminated')
     retro = f'projects/{pid}/retrospective'
-    assert data(pm.get(retro))['fromStage'] == 'terminated'
+    view = data(pm.get(retro))
+    assert view['fromStage'] == 'terminated' and view['questions'] == SPEC_QUESTIONS
+    closing = data(pm.get(f'projects/{pid}/assistant/closing'))
+    assert closing['retrospectiveKind'] == 'terminated' and closing['retrospectiveQuestions'] == view['questions']
 
     def save(i):
         return pm.put(retro, headers=headers(1), json={'answers': [f'Termination cause {i}: dependency lost.', *ANSWERS[1:]]})

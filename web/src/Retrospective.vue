@@ -3,7 +3,7 @@ import {computed,onMounted,ref,watch} from 'vue'
 import {FileCheck2,Pencil,Plus,RefreshCw,Save,Search} from 'lucide-vue-next'
 
 type State={projectId:string;stage:string;kind:'normal'|'terminated'|null;fromStage:'closed'|'terminated'|null;
-  retrospectiveId:string|null;revision:number;answers:string[];completedAt:string|null;canSave:boolean}
+  retrospectiveId:string|null;revision:number;answers:string[];questions:string[];completedAt:string|null;canSave:boolean}
 type LessonContent={category:string;what:string;rootCause:string;advice:string}
 type Lesson=LessonContent & {lessonId:string;projectId:string;revision:number;status:'draft'|'confirmed';
   createdBy:string;createdAt:string;confirmedBy:string|null;confirmedAt:string|null;canConfirm:boolean}
@@ -14,7 +14,6 @@ type SearchCriteria={keyword:string;category:string}
 type Intent={kind:'answers';revision:number}|{kind:'draft'}|{kind:'confirm';lessonId:string;revision:number}
 
 const props=defineProps<{projectId:string;projectRevision?:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const questions=['目标与实际结果','交付表现及原因','可复用资产','经验教训与建议']
 const fields=[{name:'category',label:'教训分类'},{name:'what',label:'发生了什么'},
   {name:'rootCause',label:'根因'},{name:'advice',label:'建议'}] as const
 const prompts={answers:{title:'填写项目复盘',submit:'保存复盘',icon:Save},draft:{title:'新增教训草稿',submit:'保存教训草稿',icon:Save},
@@ -26,6 +25,7 @@ const notice=ref(''),error=ref(''),formError=ref('')
 const keyword=ref(''),category=ref(''),searching=ref(false),searchError=ref(''),hits=ref<SearchPage|null>(null)
 const criteria=ref<SearchCriteria|null>(null),pageSize=20
 const busy=computed(()=>loading.value||saving.value)
+const questions=computed(()=>state.value?.questions??[])
 const selectedLesson=computed(()=>{
   const action=intent.value
   return action?.kind==='confirm'?lessons.value?.items.find(item=>item.lessonId===action.lessonId):undefined
@@ -57,7 +57,7 @@ function begin(kind:Intent['kind'],lesson?:Lesson){
     intent.value={kind,lessonId:lesson.lessonId,revision:lesson.revision}
   }else{
     if(retro.canSave!==true)return
-    if(kind==='answers'){intent.value={kind,revision:retro.revision};answers.value=questions.map((_,i)=>retro.answers[i]??'')}
+    if(kind==='answers'){intent.value={kind,revision:retro.revision};answers.value=retro.questions.map((_,i)=>retro.answers[i]??'')}
     else{intent.value={kind};draft.value={category:'',what:'',rootCause:'',advice:''}}
   }
   formError.value='';notice.value='';attempt=undefined;dialog.value=true
@@ -73,7 +73,7 @@ const command=computed(()=>{
   // Saving answers and drafting a lesson share the same PM and retrospective-entry checks.
   if(retro.canSave!==true)return null
   if(action.kind==='answers'){
-    if(retro.revision!==action.revision||!questions.every((_,i)=>explicit(answers.value[i]??'')))return null
+    if(retro.revision!==action.revision||!retro.questions.every((_,i)=>explicit(answers.value[i]??'')))return null
     return {path:`${base()}/retrospective`,method:'PUT',revision:action.revision,payload:{answers:answers.value.map(value=>value.trim())}}
   }
   const {category,what,rootCause,advice}=draft.value

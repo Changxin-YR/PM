@@ -31,7 +31,15 @@ _placeholders = frozenset({'todo', 'tbd', 'n/a', 'na', 'none', 'null', 'unknown'
                            '未知', '无', '暂无', '不适用', '略'})
 Origin = Literal['closed', 'terminated']
 Kind = Literal['normal', 'terminated']
-QUESTIONS = ('目标与实际结果', '交付表现及原因', '可复用资产', '经验教训与建议')
+# Keep the original answer order; the short labels remain stable in model preview sources.
+ANSWER_LABELS = ('目标与实际结果', '交付表现及原因', '可复用资产', '经验教训与建议')
+QUESTIONS = (
+    '目标对照：立项卡承诺的收益 / 成本 / 周期，实际各是多少？差异主要原因？',
+    '过程表现：三线偏差各发生在哪个阶段？是估算问题、执行问题还是范围问题？',
+    '可复用资产：哪些做法 / 模板 / 方案值得沉淀，下次直接用？',
+    '教训与建议：如果重来一次，立项和方案阶段分别会做什么不同的事？（写入 Lesson，带分类标签）',
+)
+Questions = Annotated[list[str], Field(min_length=4, max_length=4)]
 
 
 def _plain(value: str) -> str:
@@ -79,6 +87,10 @@ class Retrospective(Strict):
     answers: list[str]
     completedAt: datetime | None
     canSave: bool
+
+
+class RetrospectiveView(Retrospective):
+    questions: Questions
 
 
 class Lesson(Strict):
@@ -272,12 +284,14 @@ def archive_basis(c, a, p) -> tuple[dict[str, Any], list[str]]:
 
 
 @router.get('/projects/{projectId}/retrospective', operation_id=GET)
-def get_retrospective(projectId: UUID, authorization: Auth) -> Result[Retrospective]:
+def get_retrospective(projectId: UUID, authorization: Auth) -> Result[RetrospectiveView]:
     def query(c, a, _):
         p = _human_project(c, a, projectId)
         entry = _origin(c, p)
-        return _retrospective_result(GET, p, _retrospective(c, p.id), entry,
-                                    can_save=entry is not None and p.stage == 'retrospective' and _pm(c, a, p))
+        result = _retrospective_result(GET, p, _retrospective(c, p.id), entry,
+                                       can_save=entry is not None and p.stage == 'retrospective' and _pm(c, a, p))
+        return Result[RetrospectiveView](data=RetrospectiveView(**result.data.model_dump(), questions=list(QUESTIONS)),
+                                         meta=result.meta)
     return run(authorization, GET, query)
 
 

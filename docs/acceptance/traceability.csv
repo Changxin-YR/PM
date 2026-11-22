@@ -124,7 +124,7 @@
 "SRC-040","376-388","Requirement 优先级、可检验标准、验收顺序","Q8","NOT_TESTED","",""
 "SRC-041","387-388","加权需求满足率与取消需求计入变更","requirements.*","LOCAL_INITIAL_AND_APPROVED_REVISIONS","pmo/scope_quality.py","tests/test_requirement_baselines.py;tests/test_scope_quality.py;tests/browser_case.py"
 "SRC-042","390-397","双口径成本与来源","cost.*","NOT_TESTED","",""
-"SRC-043","401-406","复盘四问","T08","NOT_TESTED","",""
+"SRC-043","401-406","原文四问按序展示、录入、归档回读；结项回顾助理共用问句（合成）","T08","PASS","pmo/retrospectives.py;pmo/assistant.py;web/src/Retrospective.vue","tests/test_retrospectives.py;web/e2e/lifecycle.mjs;docs/progress/M2-report.md"
 "SRC-044","408-410","Lesson历史项目反哺新立项","Q1/Q6/T08","NOT_TESTED","",""
 "SRC-045","419-450","立项评分四维权重与1-5分锚点","scoring.*","NOT_TESTED","",""
 "SRC-046","419-420","评审独立评分与一轮复议","approval.*","NOT_TESTED","",""

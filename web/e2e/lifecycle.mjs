@@ -377,12 +377,21 @@ try {
 
     await pm.reload()
     await directStage(pm,'关闭后的独立项目复盘。','retrospective','复盘')
+    const assistant=await open(pm,'项目助理')
+    await assistant.getByText('结项回顾',{exact:true}).click()
+    const questions=[
+      '目标对照：立项卡承诺的收益 / 成本 / 周期，实际各是多少？差异主要原因？',
+      '过程表现：三线偏差各发生在哪个阶段？是估算问题、执行问题还是范围问题？',
+      '可复用资产：哪些做法 / 模板 / 方案值得沉淀，下次直接用？',
+      '教训与建议：如果重来一次，立项和方案阶段分别会做什么不同的事？（写入 Lesson，带分类标签）',
+    ]
+    for(const question of questions) await expect(assistant.getByText(question,{exact:true})).toBeVisible()
     const retro=await open(pm,'复盘与教训')
     await expect(retro.getByText('结项复盘',{exact:true})).toBeVisible()
     await button(retro,'填写复盘').click()
     const answers=dialog(pm,'填写项目复盘')
     const written=JSON.parse(process.env.PMO_TEST_ANSWERS)
-    for(const [i,q] of ['目标与实际结果','交付表现及原因','可复用资产','经验教训与建议'].entries()) {
+    for(const [i,q] of questions.entries()) {
       await answers.getByLabel(q,{exact:true}).fill(written[i])
     }
     await write(pm,'PUT','/retrospective',button(answers,'保存复盘'))
@@ -418,7 +427,11 @@ try {
     const readonly=await open(pm,'复盘与教训')
     await expect(readonly.getByText('已归档 · 只读',{exact:true})).toBeVisible()
     await expect(readonly.getByText(finding,{exact:true})).toBeVisible()
-    for(const answer of written) await expect(readonly.getByText(answer,{exact:true})).toBeVisible()
+    for(const [i,question] of questions.entries()) {
+      const record=readonly.locator('dl.answers > div').nth(i)
+      await expect(record.getByText(question,{exact:true})).toBeVisible()
+      await expect(record.getByText(written[i],{exact:true})).toBeVisible()
+    }
     await expect(button(readonly,'编辑复盘')).toHaveCount(0)
   }
 } finally { await browser.close() }

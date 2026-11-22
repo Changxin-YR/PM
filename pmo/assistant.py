@@ -83,7 +83,7 @@ class ClosingMode(Strict):
     gateGaps: list[gates.Gap]
     gateEligible: bool | None
     retrospectiveKind: retrospectives.Kind | None
-    retrospectiveQuestions: list[str]
+    retrospectiveQuestions: retrospectives.Questions
     lessonDrafts: list[Cited]
     previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
 
@@ -381,8 +381,8 @@ def _preview_basis(c, a, p, at, command):
         check, _, origin, answers = _closing_sources(c, a, p)
         scope = [check.snapshotHash, retrospectives._kind(origin)]
         parts = _gaps(p, check.missing) if p.stage in ('delivering', 'closing_review') else []
-        parts.extend(model.Part(kind='retro', text=f'{question}：{answer.text}', sourceRefs=answer.sourceRefs,
-                     observedAt=answer.observedAt) for question, answer in zip(retrospectives.QUESTIONS, answers))
+        parts.extend(model.Part(kind='retro', text=f'{label}：{answer.text}', sourceRefs=answer.sourceRefs,
+                     observedAt=answer.observedAt) for label, answer in zip(retrospectives.ANSWER_LABELS, answers))
     else:
         data = _ledger(c, a, p, at, command.topic, command.keyword, command.category).data
         scope = [command.topic, data.sourceRefs, data.unknowns]

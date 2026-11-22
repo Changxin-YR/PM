@@ -328,3 +328,16 @@ Windows、隔离 PostgreSQL 16.14、真实 HTTP、合成数据。`tests/test_pos
 - `pmo/api.py` 在 OpenAPI 从既有主体控制和 MCP 路由发布说明，不改变鉴权。`tests/test_runtime.py` 对照冻结标记，并以携带对应动作的 Agent 令牌直调七条人工评审和审批路径，核验 403 和独立 denied 审计。
 - `0035_retrospective_receipts.py` 校验已完成复盘是四条非空字符串、Lesson 草稿没有确认字段、已确认 Lesson 有不同自然人的确认记录及有效时间顺序。确认权仍由服务校验。合法历史不重写；非法存量使迁移整体回滚，不删除、不清零、不作补签。
 - `pmo/weekly_health.py` 仅将快照明示的 `disputed=true` 解释为客户争议。旧快照缺该字段曾使周度读取报错，原红线、出处与哈希保留。`test_weekly_health_reads_pre_dispute_p0_receipt_without_reclassifying` 修复前 FAIL，退出 1（`.local/weekly-legacy-before.log`）。回归覆盖 16 项后端、2 项 Edge，均 PASS、退出 0（`.local/weekly-legacy-verified.log`、`.local/weekly-legacy-edge.log`）；完整命令和恢复见 [M4](M4-report.md#0035-隔离候选和联合恢复)。
+
+## 复盘四问原文
+
+依据原方案 HTML 401–406 行、主方案 §4.4/§8 与 T08。基准 `a84d8faa555019d53c8b51fe4a7562845a90c352`、被测产品与最终浏览器断言树 `f485c4dfbd754eb965c5502db2e6058e1775607d`。Windows、隔离 PostgreSQL 16.14、Edge `158.0.4370.33`，合成账号，人工闭环时模型关闭。
+
+`pmo/retrospectives.py` 由 GET 提供四条完整原问；`web/src/Retrospective.vue` 和结项回顾助理共用问句，按原序保存和读取。PUT 响应及已有幂等记录不变；模型预览的已存来源字段、归档证据、已保存答复和审批条件不变。本批没有迁移或附件变动。
+
+| 实际命令（本机 `.venv/Scripts/python.exe`） | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_retrospectives.py -k 'archived_replay or termination_origin' --tb=short --junitxml=.local/retrospective-questions-before.xml` | 1 | FAIL：基准下正常和终止复盘都缺问句（`.local/retrospective-questions-before.log`）。 |
+| `python -m pytest -q tests/test_retrospectives.py tests/test_assistant.py tests/test_assistant_preview.py tests/test_lifecycle.py tests/test_runtime.py tests/test_reference_vectors_governance.py --tb=short --junitxml=.local/retrospective-questions-backend.xml` | 0 | PASS：48 项 / 101.00 秒（`.local/retrospective-questions-backend.log`）。在最终浏览器定位调整前运行，后端代码和断言未再修改；正常、终止、权限、重放及只读归档通过。 |
+| `python -m pytest -q tests/browser_case.py -k 'drafting_through_archive or assistant or preview' --tb=short --junitxml=.local/retrospective-questions-edge-verified.xml` | 0 | PASS：3 项 / 61.96 秒。四问在填写和归档回读中逐项匹配，手机视口助理和单独模拟网关预览通过。首轮 2 FAIL：旧短标题定位、错误模式定位（`.local/retrospective-questions-edge.log`）；修正定位后保留业务断言（`.local/retrospective-questions-edge-verified.log`）。 |
+| `python -m mypy pmo --ignore-missing-imports`；在 `web` 下运行 `node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：88 个 Python 文件与 Vue 类型检查。`.local/retrospective-questions-mypy.log`、`.local/retrospective-questions-vue.log`。 |
