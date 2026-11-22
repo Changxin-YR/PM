@@ -54,6 +54,7 @@ HUMAN_ONLY_OPERATIONS = frozenset({
         'human_requirement_disputes_list','human_requirement_dispute_open','human_requirement_dispute_withdraw',
         'human_evidence_upload','human_evidence_list','human_evidence_get','human_evidence_verify','human_milestone_complete',
         'human_cost_postings_list','human_verify_cost_posting','human_reverse_cost_posting','human_alerts_overview','human_weekly_health_list',
+        'human_project_overview_list',
         'admin_audits_list','human_members_list','human_stakeholder_list','human_appointment_queue','human_my_role_invitations','human_issue_role_invitation',
         'human_accept_role_assignment','human_decline_role_assignment',
         'human_review_workbench','human_review_score','human_review_appeal','human_review_decide',

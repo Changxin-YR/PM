@@ -14,14 +14,16 @@ async function actor(role) {
   await context.addCookies([{name:'pmo_session',value:cookie,domain:new URL(url).hostname,path:'/api/v1',httpOnly:true,sameSite:'Strict'}])
   await context.addInitScript(token => sessionStorage.setItem('pmo.csrf',token), csrf)
   const page = await context.newPage()
-  const [list] = await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname==='/api/v1/projects'),page.goto(url)])
+  const [list] = await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname==='/api/v1/project-overview'),page.goto(url)])
   expect(list.status()).toBe(200)
   return {page, items:(await list.json()).data.items}
 }
 
 try {
   const {page:pm, items} = await actor('pm')
-  expect(items).toEqual([packet.project])
+  expect(items).toHaveLength(1)
+  expect(items[0]).toMatchObject({...packet.project, materialsVisible:true, canEditDraft:false,
+    healthSample:{snapshotId:packet.health.snapshotId,asOf:packet.health.asOf,health:packet.health.health}})
   const row = pm.getByRole('row').filter({hasText:packet.project.name})
   await expect(row.getByRole('cell',{name:'执行中',exact:true})).toBeVisible()
   await expect(row.getByRole('cell',{name:String(packet.project.revision),exact:true})).toBeVisible()
@@ -44,7 +46,7 @@ try {
   expect((await fixed.json()).data).toMatchObject(packet.health)
 
   const {page:other, items:scoped} = await actor('outsider')
-  expect(scoped).toEqual([packet.other])
+  expect(scoped).toEqual([{...packet.other,materialsVisible:true,canEditDraft:true}])
   await expect(view(other,packet.other.name)).toBeVisible()
   await expect(view(other,packet.project.name)).toHaveCount(0)
   for (const path of [projectPath, `${projectPath}/health`, `/api/v1/reports/${packet.reportId}`,

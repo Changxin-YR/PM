@@ -189,12 +189,16 @@ def _governance_events(c, p, at, health: Observation | None):
     return sorted(set(visible_ids))
 
 
-def latest(c, pid, cutoff=None):
+def latest_query(pid, cutoff=None):
     s = db.health_snapshots
     query = sa.select(s).where(s.c.project_id == pid, s.c.results.has_key('publication'))  # noqa: W601
     if cutoff is not None:
         query = query.where(s.c.as_of <= cutoff)
-    return c.execute(query.order_by(s.c.as_of.desc(), s.c.id.desc()).limit(1)).mappings().one_or_none()
+    return query.order_by(s.c.as_of.desc(), s.c.id.desc()).limit(1)
+
+
+def latest(c, pid, cutoff=None):
+    return c.execute(latest_query(pid, cutoff)).mappings().one_or_none()
 
 
 def scan_locked(c, p, at: datetime, *, daily: date | None = None):

@@ -15,6 +15,8 @@ from .tool_routes import ROUTES
 from .request_context import correlation_id
 from .health_schema import SCAN_SOURCE_WRITES, request_scan
 
+DRAFT_UPDATE = 'pmo_project_draft_update'
+
 def view(row):
     return ProjectView(projectId=row.id, code=row.code, name=row.name, stage=row.stage, revision=row.revision, orgId=row.org_id, createdAt=row.created_at)
 
@@ -55,13 +57,26 @@ def run(header,op,fn,*,after_denied=None):
                     after_denied(c, actor, e, request_id)
         raise
 
+def listing_filters(actor, stage, keyword):
+    p = db.projects
+    filters = [visible(actor, include_initiator=True)]
+    if stage:
+        filters.append(p.c.stage == stage)
+    if keyword:
+        filters.append(sa.or_(p.c.name.icontains(keyword, autoescape=True), p.c.code.icontains(keyword, autoescape=True)))
+    return filters
+
+
+def can_edit_draft(actor, row):
+    # Call only for an already authorized project. The command still locks and checks its revision.
+    return DRAFT_UPDATE in actor.actions and row.initiator_id == actor.person and row.stage == 'drafting'
+
+
 def listing(header,page,size,stage,keyword):
     op='pmo_project_list'
     def query(c,a,_):
         p=db.projects
-        filters=[visible(a,include_initiator=True)]
-        if stage: filters.append(p.c.stage==stage)
-        if keyword: filters.append(sa.or_(p.c.name.icontains(keyword,autoescape=True),p.c.code.icontains(keyword,autoescape=True)))
+        filters=listing_filters(a,stage,keyword)
         total=c.scalar(sa.select(sa.func.count()).select_from(p).where(*filters))
         rows=c.execute(sa.select(p).where(*filters).order_by(p.c.created_at.desc(),p.c.id).offset((page-1)*size).limit(size)).mappings()
         items=[view(row) for row in rows]
@@ -120,7 +135,7 @@ def record_write(c,a,key,op,request_id,pid,payload_hash,response,digest,event,be
     c.execute(db.outbox_events.insert().values(dedupe_key=request_id,event_type=event,payload={'projectId':str(pid)},status='pending'))
 
 def update_draft(header,pid,expected,command,key):
-    op='pmo_project_draft_update'
+    op=DRAFT_UPDATE
     fields=command.fields.model_dump(exclude_unset=True)
     payload_hash=fingerprint({'projectId':str(pid),'fields':fields,'expectedRevision':expected})
     def write(c,a,request_id):
@@ -134,7 +149,7 @@ def update_draft(header,pid,expected,command,key):
             if old.request_hash!=payload_hash: raise Failure(409,'IDEMPOTENCY_CONFLICT',project_id=pid)
             return Result[ProjectView].model_validate(old.response_body)
         # A receipt is replayable after submission; a fresh write is still draft-only.
-        if row.stage!='drafting': raise Failure(403,'FORBIDDEN',project_id=pid)
+        if not can_edit_draft(a,row): raise Failure(403,'FORBIDDEN',project_id=pid)
         if expected!=row.revision: raise Failure(409,'VERSION_CONFLICT')
         updated=c.execute(project.update().where(project.c.id==pid,project.c.revision==expected).values(**fields,revision=expected+1,updated_at=sa.func.now()).returning(project)).mappings().one()
         result=Result[ProjectView](data=view(updated),meta=meta(op,[f'project:{pid}@{updated.revision}']))

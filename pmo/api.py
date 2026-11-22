@@ -51,6 +51,7 @@ from .org_accounts import router as org_accounts_router
 from .org_invitations import router as org_invitations_router
 from .assistant import router as assistant_router
 from .weekly_health import router as weekly_health_router
+from .project_overview import router as project_overview_router
 from .health_probes import router as health_probes_router
 from .observability import emit
 from .tool_routes import ROUTES
@@ -117,6 +118,7 @@ app.include_router(org_accounts_router)
 app.include_router(org_invitations_router)
 app.include_router(assistant_router)
 app.include_router(weekly_health_router)
+app.include_router(project_overview_router)
 app.include_router(health_probes_router)
 
 

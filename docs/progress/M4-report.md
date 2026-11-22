@@ -384,3 +384,16 @@
 | `python -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/pmo104-task-invariants-edge.xml` | 0 | PASS：Edge 22 项 / 285.31 秒，三关口、结项、复盘与归档、任务、报告和当前权限组合；`.local/pmo104-task-invariants-edge.log`。本轮 Edge 不包含另一补丁中的 SQL 测试夹具修正，不影响产品源码。 |
 | 设置 `PMO_TEST_MCP_ENTRYPOINT` 指向隔离安装环境的 `pmo-mcp.exe`，运行 `python -m pytest -q tests/test_mcp_configuration.py --tb=short --junitxml=.local/pmo104-task-invariants-installed.xml` | 0 | PASS：11 项 / 24.60 秒，仓库外进程通过真实 stdio 读和拒绝。首次离线安装没有匹配依赖，改用锁定清单后再离线安装 wheel；`.local/pmo104-task-invariants-{install,install-retry,installed}.log`。不替代目标 Host。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；隔离 schema `python -m alembic upgrade head`、`GET http://127.0.0.1:18772/openapi.json`、读回数据库约束 | 0 | PASS：冻结规格和 90 个 Python 文件类型检查，运行 95 基线、42 工程、40 双入口、零缺失。热重载预览为 `0036`，共享 `public` 为 `0016`，固定候选 `18769/18770` 未迁移。`.local/pmo104-task-invariants-{check,preview-upgrade,db-heads,openapi-retest}.log`。 |
+
+## 工作台授权列表
+
+依据主方案 §2 UI-01/UI-02、§7 与 [ADR 0021](../adr/0021-project-overview.md)。基准 `e83d39baf2d707c3b7928a05eb1fca18733f95e3`，被测源码树 `e6a9bb8c448fd648b34158be7735a2417dce7e73`，不含本节记录。Windows、PostgreSQL 16.14、回环 HTTP/stdio、Edge，合成、模型关闭。`pmo/project_overview.py` 与 `web/src/App.vue` 只展示已授权项目、任命、阶段与显式标记时点的最近健康采样。无迁移或附件变更。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_project_overview.py::test_overview_pages_with_authorized_count_and_draft_capability --tb=short --junitxml=.local/pmo104-project-overview-red.xml` | 1 | FAIL：基准缺工作台投影，返回 `ROUTE_NOT_FOUND`；`.local/pmo104-project-overview-red.log`。 |
+| `python -m pytest -q tests/test_project_overview.py tests/test_runtime.py --tb=short --junitxml=.local/pmo104-project-overview-api.xml` | 0 | PASS：15 项 / 30.82 秒。授权分页/计数、已撤销任命、管理员和 Agent 无额外权限、旧格式和未来快照不呈现、冻结传输/DTO 回归。`.local/pmo104-project-overview-api.log`。 |
+| `python -m pytest -q tests/browser_case.py -k 'project_overview or browser_and_stdio or draft_workflow' --tb=short --junitxml=.local/pmo104-project-overview-edge.xml`；修正发布状态文本后单跑 `-k project_overview` 输出 `-edge-retest.xml` | 1 / 1 | FAIL：首轮两项通过，新的快照状态文案与灯色在同一文本节点，精确查询失败；再次运行阶段筛选没有发出匹配请求。对应 `.local/pmo104-project-overview-{edge,edge-retest}.log` 留存。 |
+| `python -m pytest -q tests/browser_case.py -k 'project_overview or browser_and_stdio or draft_workflow' --tb=short --junitxml=.local/pmo104-project-overview-edge-combined.xml` | 0 | PASS：3 项 / 67.84 秒（20 未选）；阶段选择显式提交，页面正确反映可见范围、发起人改名权、旧采样时点及后续不可信回执；原 Web/MCP 资源一致与权限回归通过。`.local/pmo104-project-overview-edge-combined.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build` | 0 | PASS：冻结规格与 91 个 Python 类型文件，通过 Vue 检查和生产构建；仍有 chunk 提示。`.local/pmo104-project-overview-check.log`、`.local/pmo104-project-overview-build-final.log`。 |
+| 新预览 `18773/18774`：`GET /health/ready` 与 `/openapi.json`，Web 代理登录、筛选和登出 | 0 | PASS：95 基线 + 43 工程，40 双入口，新增列表只限人工。旧热重载 API 仍返回旧目录，未停用，改在新回环端口启动当前工作树；同一合成 schema `0036`，共享 `0016`。首次误用 `/readyz` 得 404（`.local/pmo104-project-overview-openapi.log`），按实际探针复验 `.local/pmo104-project-overview-openapi-retest.log`。 |

@@ -456,3 +456,25 @@ def test_browser_paginates_stage_receipts_without_changing_project_version(live,
     assert stage(pm, project)['revision'] == revision
     history = data(pm.get('approvals', params={'projectId': pid}))
     assert history['total'] == 22 and history['items'][0]['status'] == 'pending'
+
+
+def test_browser_project_overview_filters_and_dated_samples(live, team):
+    from datetime import datetime
+
+    from pmo.health_calculation import TZ
+    from test_health import prepare, sample
+    from test_reports import body, sections
+    from test_reviews import data, headers
+
+    _, _, users, _ = team
+    pm, outsider = users['pm'], users['outsider']
+    project, _ = prepare(live, team)
+    first = sample(pm, project)
+    milestone = data(pm.get(project + '/milestones'))['items'][0]['milestoneId']
+    data(pm.post(project + '/reports', headers=headers(), json=body(reportType='daily', period=datetime.now(TZ).date().isoformat(),
+        structuredFields=sections(milestone_progress=[{'milestoneId': milestone, 'claim': 'progress'}]))))
+    data(pm.post('projects', headers=headers(), json={'code': 'DASH-OWN', 'name': 'Synthetic review local'}))
+    data(outsider.post('projects', headers=headers(), json={'code': 'DASH-HIDDEN', 'name': 'Synthetic review private'}))
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'project-overview', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'initiator')),
+            'PMO_TEST_SAMPLE': first['asOf']})

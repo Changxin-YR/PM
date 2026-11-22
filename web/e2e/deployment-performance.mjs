@@ -27,7 +27,7 @@ try {
     const startFilter = performance.now()
     const [list] = await Promise.all([page.waitForResponse(r => {
       const u = new URL(r.url())
-      return u.pathname === '/api/v1/projects' && u.searchParams.get('filters[keyword]') === keyword
+      return u.pathname === '/api/v1/project-overview' && u.searchParams.get('filters[keyword]') === keyword
     }), button(page,'搜索').click()])
     expect(list.status()).toBe(200)
     const {items, total} = (await list.json()).data
