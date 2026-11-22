@@ -424,9 +424,10 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
             filters.append(r.type == reportType)
         if not pm:
             filters.append(sa.or_(r.status != 'draft', r.author_id == a.person) if a.kind == 'human' else r.status != 'draft')
-        total = c.scalar(sa.select(sa.func.count()).select_from(reports).where(*filters))
-        rows = list(c.execute(sa.select(reports).where(*filters).order_by(r.period_start.desc(), r.type, r.version_no.desc(), r.id)
-                             .offset((page - 1) * pageSize).limit(pageSize)).mappings())
+        total = c.execute(sa.select(sa.func.count()).select_from(reports).where(*filters)).scalar_one()
+        offset = (page - 1) * pageSize
+        rows = c.execute(sa.select(reports).where(*filters).order_by(r.period_start.desc(), r.type, r.version_no.desc(), r.id)
+                         .offset(offset).limit(pageSize)).mappings().all() if offset < total else []
         info = meta(LIST, [_ref(row) for row in rows], project_id=p.id)
         author_role = a.kind == 'human' and _author_role(c, a, p, pm)
         can_create = p.stage != 'archived' and author_role if a.kind == 'human' else None

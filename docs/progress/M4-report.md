@@ -323,3 +323,14 @@
 | `python -m pytest -q tests/browser_case.py -k 'paginates_stage or drafting_through_archive or formal_transition_authority or independent_termination_confirmation' --tb=short --junitxml=.local/pmo104-stage-history-edge.xml` | 1 | FAIL：3 项通过；1 项新夹具用 `propose` 传了未定义参数。产品差异与终测树相同，夹具按原 API 字段直接发送真实请求。`.local/pmo104-stage-history-edge.log`。 |
 | `python -m pytest -q tests/browser_case.py -k 'paginates_stage' --tb=short --junitxml=.local/pmo104-stage-history-edge-retest.xml`；`npm.cmd --prefix web run build` | 0 | PASS：1 项 / 18.01 秒，实测由两个独立账号创建并拒绝 21 个合成申请；可读第 2 页、按页刷新、新申请回首页，项目 stage/revision 不变。Vue 类型和 Vite 生产构建通过，保留 chunk 提示。`.local/pmo104-stage-history-edge-retest.log`、`.local/pmo104-stage-history-build.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；热重载 API `GET /openapi.json` 对冻结方法/路径及主体；只读 SQL 查询两 schema 的 `alembic_version` | 0 | PASS：规格及 89 文件、95 基线和 42 工程接口无差集变更，40 双入口，阶段历史限人工且页长有上限。源码/预览 `0035`、共享 `public` 为 `0016`。`.local/pmo104-stage-history-check.log`、`.local/pmo104-stage-history-readback.log`、`.local/pmo104-stage-history-db-heads.log`。 |
+
+## 补强任务与报告分页
+
+依据 §7.1、§8.4、§20.6、工程 DTO §6–7；基准 `1bc73862c1a19b50459f48055ab18c2728158773`，被测源码树 `4c97d98cba4a8c30ca8d5dcee883d6b84960fc48`（不含证据文档）。实现 `pmo/tasks.py`、`pmo/reports.py`、`pmo/mcp_server.py`，见 [ADR 0020](../adr/0020-task-and-report-reads.md)。Windows、Python 3.12、PostgreSQL 16.14 隔离 schema，真实回环 REST 和 SDK stdio、合成、模型关闭；本批无页面、迁移、附件或权限变更。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_tasks.py::test_task_list_paginates_the_authorized_rows_in_rest_and_stdio --tb=short --junitxml=.local/pmo104-task-pages-red.xml` | 1 | FAIL：基准加回归用例后，真实 stdio 拒绝合法 `page/pageSize`。`.local/pmo104-task-pages-red.log`。 |
+| `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/pmo104-paged-reads-mcp.json --pmo-mcp-check-replays -q tests/test_tasks.py tests/test_reports.py tests/test_runtime.py tests/test_mcp_action_matrix.py --tb=short --junitxml=.local/pmo104-paged-reads-backend.xml` | 1 | FAIL：26 项用例通过，但证据插件要求所有工具实调和审计/重放，该定向集只覆盖 29 项实际成功调用。保留 `.local/pmo104-paged-reads-backend.log`，未更新全量 MCP 证据。 |
+| `python -m pytest -q tests/test_tasks.py tests/test_reports.py tests/test_runtime.py tests/test_mcp_action_matrix.py --tb=short --junitxml=.local/pmo104-paged-reads-targeted.xml` | 0 | PASS：26 项 / 30.48 秒。任务仅在受委派人可见任务内分页；报告筛选、后续页、空页和超大页正常，REST/stdio 数据与来源一致。任务/报告写入、并发、回滚及作用域回归。`.local/pmo104-paged-reads-targeted.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；回环 `18772` 的 `GET /openapi.json` | 0 | PASS：三套冻结规格与 89 个 Python 文件类型检查；实时目录仍 137 项，任务和报告均标记 `human,agent`，页参数和报告类型与运行工具一致。`.local/pmo104-paged-reads-check.log`、`.local/pmo104-paged-reads-openapi.log`。 |

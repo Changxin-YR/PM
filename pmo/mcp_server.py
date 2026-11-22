@@ -25,6 +25,12 @@ implemented = set(ROUTES)
 def advertised(tool):
     name = tool['name']
     inputs, outputs = tool['inputSchema'], {**tool['outputSchema'], 'type': 'object'}
+    if name in {'pmo_task_list', 'pmo_report_list'}:
+        inputs = deepcopy(inputs)
+        inputs['properties'].update(page={'type': 'integer', 'minimum': 1, 'default': 1},
+                                    pageSize={'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 20})
+        if name == 'pmo_report_list':
+            inputs['properties']['reportType'] = {'type': 'string', 'enum': ['daily', 'weekly']}
     if name in {'pmo_requirement_change_history', 'pmo_change_propose'}:
         outputs = deepcopy(outputs)
         record = outputs['oneOf'][0]['properties']['data']

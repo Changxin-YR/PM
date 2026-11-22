@@ -262,6 +262,22 @@ def test_report_real_stdio_human_publish_and_distinct_idempotency_actors(live, t
             assert published['isCurrentConfirmed'] and published['confirmedBy'] == str(team.people['pm'].id)
             assert (await call(GET, {'reportId': item['reportId']}))['data']['revision'] == published['revision']
 
+            daily = data(author.post(team.path, headers=headers(), json=body(reportType='daily', period='2025-01-05')))
+            for kind, page, count, expected in (
+                ('weekly', 1, 2, [human['reportId']]), ('weekly', 2, 2, [item['reportId']]),
+                ('weekly', 3, 2, []), ('weekly', 10**21, 2, []), ('daily', 1, 1, [daily['reportId']]),
+            ):
+                params = {'reportType': kind, 'page': page, 'pageSize': 1}
+                result = await call(LIST, {'projectId': str(team.pid), **params})
+                direct = live[1].get('/api/v1/' + team.path, headers={'Authorization': 'Bearer '+token}, params=params)
+                assert {k: v for k, v in result['data'].items() if k != 'asOf'} == {
+                    k: v for k, v in data(direct).items() if k != 'asOf'}
+                assert result['meta']['sourceRefs'] == direct.json()['meta']['sourceRefs']
+                assert (result['data']['page'], result['data']['pageSize'], result['data']['total']) == (page, 1, count)
+                assert [entry['reportId'] for entry in result['data']['items']] == expected
+            bad = await session.call_tool(LIST, {'projectId': str(team.pid), 'reportType': 'monthly'})
+            assert bad.isError and bad.structuredContent['error']['code'] == 'VALIDATION_FAILED'
+
             other = await session.call_tool(LIST, {'projectId': str(team.other)})
             assert other.isError and other.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'
             data(author.post(f"me/agent-tokens/{credential['tokenId']}/revoke", headers=headers(credential['revision']),

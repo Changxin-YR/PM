@@ -175,8 +175,9 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         if not project_wide:
             cond.append(t.c.assignee_id == a.person)
         total = c.execute(sa.select(sa.func.count()).select_from(t).where(*cond)).scalar_one()
+        offset = (page - 1) * pageSize
         rows = c.execute(sa.select(t).where(*cond).order_by(t.c.created_at.desc(), t.c.id)
-                         .limit(pageSize).offset((page - 1) * pageSize)).mappings()
+                         .limit(pageSize).offset(offset)).mappings().all() if offset < total else []
         human, writable = a.kind == 'human', p.stage != 'archived'
         items = [_task(r, can_update=writable and r.source_type not in SYSTEM_SOURCES
             and (pm or r.assignee_id == a.person) if human else None) for r in rows]

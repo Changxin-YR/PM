@@ -237,6 +237,48 @@ def test_task_revision_race_and_archived_replay(live, team):
     denied(save(inputs[winner]), 404, 'RESOURCE_NOT_FOUND')
 
 
+def test_task_list_paginates_the_authorized_rows_in_rest_and_stdio(live, team):
+    engine, api, port, _ = live
+    people, clients = team
+    pm, owner = clients['pm'], clients['owner']
+    p, outside = project(engine, people), project(engine, people)
+    assigned = ok(pm.post(p.path, headers=headers(PROJECT_REVISION), json=command(
+        p, 'rule_event', assigneeId=str(people['owner'].id), dueAt=DUE)))
+    hidden = ok(pm.post(p.path, headers=headers(PROJECT_REVISION), json=command(p)))
+    assert ok(pm.get(p.path))['items'][0]['taskId'] == hidden['taskId']
+    token = issue(owner, [LIST], [p.id]).headers['X-PMO-New-Token']
+    auth = {'Authorization': 'Bearer '+token}
+
+    async def flow():
+        params = StdioServerParameters(command=sys.executable, args=['-B', '-m', 'pmo.mcp_server'],
+            env={'PMO_API_PORT': str(port), 'PMO_AGENT_TOKEN': token, 'PYTHONUTF8': '1'})
+        async with stdio_client(params) as streams, ClientSession(*streams) as session:
+            await session.initialize()
+            args = {'projectId': str(p.id)}
+            for page, expected in ((1, [assigned['taskId']]), (2, [p.system]), (3, []), (10**21, [])):
+                paging = {'page': page, 'pageSize': 1}
+                result = await session.call_tool(LIST, {**args, **paging})
+                assert not result.isError, result
+                direct = api.get('/api/v1/'+p.path, headers=auth, params=paging)
+                agent = ok(direct)
+                human = ok(owner.get(p.path, params=paging))
+                assert agent == result.structuredContent['data'] == {
+                    'items': [{k: v for k, v in item.items() if k not in ('sourceType', 'sourceId', 'completedAt', 'canUpdate')}
+                              for item in human['items']], 'page': page, 'pageSize': 1, 'total': 2,
+                }
+                assert [item['taskId'] for item in agent['items']] == expected
+                refs = [f"task:{item['taskId']}@{item['revision']}" for item in agent['items']]
+                assert result.structuredContent['meta']['sourceRefs'] == direct.json()['meta']['sourceRefs'] == refs
+            for invalid in ({'page': 0}, {'pageSize': 0}, {'pageSize': 101}):
+                result = await session.call_tool(LIST, {**args, **invalid})
+                assert result.isError and result.structuredContent['error']['code'] == 'VALIDATION_FAILED'
+                denied(api.get('/api/v1/'+p.path, headers=auth, params=invalid), 422, 'VALIDATION_FAILED')
+            result = await session.call_tool(LIST, {'projectId': str(outside.id), 'page': 2})
+            assert result.isError and result.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'
+
+    asyncio.run(flow())
+
+
 def test_live_task_token_issuance_and_closed_mcp_dto(live, team):
     engine, api, port, _ = live
     people, clients = team
