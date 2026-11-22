@@ -281,3 +281,16 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规格、mypy 88 源文件，`.local/closing-contract-check-verified.log`。首轮 mypy 退出 1，保留 `.local/closing-contract-check.log`。 |
 
 不更改业务政策、授权、迁移或附件引用。全量回归见 [M4](M4-report.md#0033-结项契约候选复验)。
+
+## LR-06 校验当期日报里的关键里程碑申报
+
+依据：主方案 §5.6 LR-06、领域不变量 §1、DEC-18 的隔离默认。测试前基准 `0ef144874a6a55638be6c8a346e73f75124737dc` 加已暂存结项契约；反例测试 blob `fd61d1bce90aa88ecaf6f9d35b22111c5d35b099`。修复基准 `6c1cc854f9e4d26b6b2c1cec2fd4695d030a812b`、验证树 `e2ed693f99f11afc951776b0db5699d308dd274f`（恢复用例后补，仅证据文档未入树）。Windows、回环 HTTP/stdio、PostgreSQL 16.14 隔离 schema 和专库，合成数据、模型关闭。
+
+`pmo/reports.py` 共用结构、内容哈希和提交回执校验；`pmo/health_calculation.py` 把北京时间当天、每提交人最新有效日报的显式关键里程碑申报纳入同一证据检查。草稿、其他日期、无申报的记录不触发。日报不能填补漏交周报，也不能决定其发布。未核验、缺字节或哈希不符均不能作为佐证；补证不等同于完成里程碑。旧快照原样保留。按来源周期、里程碑和申报类别去重，规则版本、迁移和政策签核不变。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_health.py -k 'lr06_claims and daily' --tb=short --junitxml=.local/lr06-daily-before.xml` | 1 | FAIL：日报申报进展/完成两个反例均错误返回 `green`。`.local/lr06-daily-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_health.py tests/test_weekly_health.py tests/test_reports.py tests/test_weekly_drafts.py tests/test_reference_vectors_signals.py tests/test_database_roles.py tests/test_recovery.py --tb=short --junitxml=.local/lr06-daily-verified.xml` | 0 | PASS：38 项 / 106.26 秒，`.local/lr06-daily-verified.log`。日报、周报分别验证进展/完成、源字节篡改、旧快照只读、补证以及规则任务和 Outbox 去重。旧日报和草稿不遮盖当前；日报不能填补漏交周报。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_recovery.py --tb=short --junitxml=.local/lr06-daily-recovery.xml` | 0 | PASS：2 项 / 30.59 秒，`.local/lr06-daily-recovery.log`。在带数据 `0016→0033`、私有原件联合恢复中，新增日报版本、引用、快照和原件 SHA-256 回读。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规格和 mypy 88 源文件，`.local/lr06-daily-check.log`。 |

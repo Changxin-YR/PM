@@ -201,16 +201,23 @@ def test_incremental_scan_lr04_lr03_dedupe_and_transaction(live, team):
 
 
 @pytest.mark.parametrize('claim', ['progress', 'completion'])
-def test_lr06_claims_need_private_bytes_and_never_become_stale_green(live, team, claim):
+@pytest.mark.parametrize('report_type', ['weekly', 'daily'])
+def test_lr06_claims_need_private_bytes_and_never_become_stale_green(live, team, claim, report_type):
     eng, _, _, env = live
     pid, _, users, _ = team
     project, _ = prepare(live, team)
     pm, reviewer = users['pm'], users['reviewer']
     before = sample(pm, project)
     milestone = data(pm.get(project + '/milestones'))['items'][0]['milestoneId']
-    wk = week_key(datetime.now(TZ).date())
-    payload = body(period=wk, structuredFields=sections(milestone_progress=[{'milestoneId':milestone,'claim':claim}]))
-    data(pm.post(project + '/reports',headers=headers(),json=payload))
+    today = datetime.now(TZ).date()
+    period = week_key(today) if report_type == 'weekly' else today.isoformat()
+    payload = body(reportType=report_type, period=period, structuredFields=sections(
+        milestone_progress=[{'milestoneId':milestone,'claim':claim}]))
+    if report_type == 'daily':
+        data(pm.post(project + '/reports', headers=headers(), json={**payload, 'period': (today - timedelta(days=1)).isoformat()}))
+        data(pm.post(project + '/reports/drafts', headers=headers(), json=payload))
+        assert sample(pm, project)['snapshotId'] == before['snapshotId']
+    submitted = data(pm.post(project + '/reports', headers=headers(), json=payload))
     current = data(pm.get(project + '/health'))
     assert current['health'] == 'untrusted' and current['publication'] == 'withheld' and 'timeLine' not in current
     assert current['gaps'] == ['LR06_CLAIM_WITHOUT_EVIDENCE'] and 'snapshotId' not in current
@@ -220,6 +227,15 @@ def test_lr06_claims_need_private_bytes_and_never_become_stale_green(live, team,
     assert data(pm.get(project + '/health',params={'asOf':before['asOf']}))['health'] == 'green'
     refs = [r for r in data(pm.get(project + '/alerts'))['items'] if r['ruleId']=='LR-06']
     assert len(refs) == 1 and refs[0]['status']=='open'
+    submitted_ref = f"report:{submitted['reportId']}@{submitted['revision']}"
+    assert submitted_ref in out['sourceRefs'] and submitted_ref in refs[0]['sourceRefs']
+    event_id = refs[0]['alertId']
+    with eng.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(db.tasks).where(
+            db.tasks.c.source_type == 'rule_event', db.tasks.c.source_id == event_id)) == 1
+        assert c.scalar(sa.select(sa.func.count()).select_from(db.outbox_events).where(
+            db.outbox_events.c.event_type == 'rule.notify',
+            db.outbox_events.c.payload['eventId'].astext == event_id)) == 1
     proof = upload(pm, reviewer, project, 'milestone', milestone)
     payload['structuredFields']['milestone_progress'][0]['evidenceRefs'] = [proof['evidenceRef']]
     data(pm.post(project + '/reports',headers=headers(),json=payload))
@@ -251,6 +267,7 @@ def test_weekly_presence_and_formal_publication_are_independent(live, team):
         assert a.results['publication']=='preview' and a.results['dataTrust']=='trusted'
         assert b.results['health']=='untrusted' and len(b.input_revisions['weekly']['missingPeriods'])==2
     data(pm.post(project + '/reports/drafts',headers=headers(),json=body(period=week_key(week))))
+    data(pm.post(project + '/reports', headers=headers(), json=body(reportType='daily', period=week.isoformat())))
     with eng.begin() as c:
         p = c.execute(sa.select(db.projects).where(db.projects.c.id==pid).with_for_update()).mappings().one()
         assert scan_locked(c,p,due).input_revisions['weekly']['twoMissed']

@@ -12,7 +12,7 @@ from .cost_math import cost_line
 from .costs import CostBasis, cost_basis, zero_budget_claim
 from .identity import Failure
 from .projects import fingerprint
-from .reports import TZ, weekly_submissions
+from .reports import TZ, daily_submissions, weekly_submissions
 from .scope_quality import Schedule, metrics
 
 ACTIVE = ('executing', 'on_hold', 'delivering', 'closing_review')
@@ -194,7 +194,8 @@ def _costs(c, source, at):
 
 def _weekly(c, p, at, stage_entries, milestones, evidence, completions):
     due = due_weeks(stage_entries, at)
-    current = monday(at.astimezone(TZ).date())
+    today = at.astimezone(TZ).date()
+    current = monday(today)
     # The latest due week remains operational until the next due week takes over.
     overdue_cutoff = current - WEEK
     bounds = [*due, overdue_cutoff, current]
@@ -206,8 +207,11 @@ def _weekly(c, p, at, stage_entries, milestones, evidence, completions):
             by_author[(row.period_start, row.submitted_by)] = row
     # Only the latest receipt of each submitting identity supplies active claims.
     keys = {r.id: r for r in milestones if r.is_key and not r.is_cancelled}
+    # Daily claims in the current local day need the same proof, but never satisfy a weekly deadline.
+    daily_by_author = {row.submitted_by: row for row in daily_submissions(c, p.id, as_of=at, day=today)} if keys else {}
+    daily_claims = [row for row in daily_by_author.values() if any(claim.milestone_id in keys for claim in row.milestone_claims)]
     all_claims, missing, evidence_refs = [], [], []
-    for report in by_author.values():
+    for report in (*by_author.values(), *daily_claims):
         for claim in report.milestone_claims:
             if claim.milestone_id not in keys:
                 continue
@@ -227,12 +231,12 @@ def _weekly(c, p, at, stage_entries, milestones, evidence, completions):
     missing_periods = [week_key(day) for day in due if day not in present]
     two_missed = p.stage == 'executing' and len(missing_periods) == 2
     confirmed = not due or any(r.period_start == due[-1] and r.confirmed_at for r in submissions)
+    receipt_reports = [row for row in submissions if row.period_start in bounds] + daily_claims
     receipts = [{'source': r.source_ref, 'hash': r.content_hash, 'period': r.period,
                  'submittedAt': iso(r.submitted_at), 'confirmedAt': iso(r.confirmed_at),
-                 'confirmedRevision': r.confirmed_revision} for r in submissions if r.period_start in bounds]
+                 'confirmedRevision': r.confirmed_revision} for r in receipt_reports]
     refs = [*(i['source'] for i in receipts), *evidence_refs]
-    refs.extend(f'report:{r.report_id}@{r.confirmed_revision}' for r in submissions
-                if r.confirmed_revision and r.period_start in bounds)
+    refs.extend(f'report:{r.report_id}@{r.confirmed_revision}' for r in receipt_reports if r.confirmed_revision)
     return {'due': [week_key(day) for day in due], 'missingPeriods': missing_periods, 'twoMissed': two_missed,
         'confirmed': confirmed, 'receipts': receipts, 'claims': all_claims, 'missingEvidence': missing}, refs
 

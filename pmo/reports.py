@@ -219,7 +219,7 @@ class MilestoneClaim:
 
 
 @dataclass(frozen=True)
-class WeeklySubmission:
+class ReportSubmission:
     report_id: UUID
     revision: int
     version_no: int
@@ -258,16 +258,12 @@ def _content(row):
     return fields
 
 
-def weekly_submissions(c, project_id: UUID, *, as_of: datetime, start: date, end: date) -> list[WeeklySubmission]:
-    """Read receipts for an already scoped project, with local period_start in [start, end).
-
-    The caller decides which weeks are due and checks evidence for explicit milestone claims.
-    Neither presence nor a claim constitutes a verified fact or milestone completion.
-    """
-    if as_of.utcoffset() is None or end < start:
-        raise ValueError('Invalid report cutoff or period range')
-    rows = c.execute(sa.select(reports).where(r.project_id == project_id, r.type == 'weekly',
-        r.period_start >= start, r.period_start < end, r.status.in_(('submitted', 'confirmed')),
+def _submissions(c, project_id: UUID, as_of: datetime, *period_filters) -> list[ReportSubmission]:
+    """Read verifiable receipts for an already scoped project; a claim is not proof."""
+    if as_of.utcoffset() is None:
+        raise ValueError('Invalid report cutoff')
+    rows = c.execute(sa.select(reports).where(r.project_id == project_id, *period_filters,
+        r.status.in_(('submitted', 'confirmed')),
         r.submitted_at <= as_of, r.submitted_by.is_not(None), r.content_hash.is_not(None))
         .order_by(r.period_start, r.submitted_at, r.version_no, r.id)).mappings()
     submissions = []
@@ -287,10 +283,20 @@ def weekly_submissions(c, project_id: UUID, *, as_of: datetime, start: date, end
                 claims.append(MilestoneClaim(_uuid(item['milestoneId']), kind,
                                              tuple(f'evidence:{eid}' for eid in _evidence_ids(item)), index))
         published = (row.status == 'confirmed' and row.is_current_confirmed and row.confirmed_at <= as_of)
-        submissions.append(WeeklySubmission(row.id, revision, row.version_no, row.period, row.period_start,
+        submissions.append(ReportSubmission(row.id, revision, row.version_no, row.period, row.period_start,
             row.period_end, row.submitted_at, row.submitted_by, row.content_hash, tuple(claims),
             row.confirmed_at if published else None, row.revision if published else None))
     return submissions
+
+
+def weekly_submissions(c, project_id: UUID, *, as_of: datetime, start: date, end: date) -> list[ReportSubmission]:
+    if end < start:
+        raise ValueError('Invalid report period range')
+    return _submissions(c, project_id, as_of, r.type == 'weekly', r.period_start >= start, r.period_start < end)
+
+
+def daily_submissions(c, project_id: UUID, *, as_of: datetime, day: date) -> list[ReportSubmission]:
+    return _submissions(c, project_id, as_of, r.type == 'daily', r.period == day.isoformat())
 
 
 def _is_pm(c, a, p) -> bool:

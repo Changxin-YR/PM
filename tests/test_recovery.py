@@ -216,10 +216,19 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             fact = data(reviewer.post(fact_path(candidate)+'/verify', headers=headers(candidate['revision']),
                 json={'trust':'high','evidenceRef':att['evidenceRef'],'reason':'Row 3 of the synthetic worksheet records 2.50.'}))
         assert fact['validationStatus'] == 'verified' and fact['trust'] == 'high'
+        daily = data(pm.post(path + '/reports', headers=headers(), json=body(
+            reportType='daily', period=datetime.now(TZ).date().isoformat(),
+            structuredFields=sections(milestone_progress=[{
+                'milestoneId':str(milestone), 'claim':'progress', 'evidenceRefs':[proof['evidenceRef']]}]))))
+        daily_ref = f"report:{daily['reportId']}@{daily['revision']}"
         snapshot = data(pm.post(path + '/health/refresh', headers=headers(1)))
         weekly = snapshot['inputs']['weekly']
         assert weekly['receipts'][0]['hash'] == published['contentHash']
         assert weekly['claims'][0]['evidence'][0]['sha256'] == sha256(png).hexdigest()
+        daily_receipt, = [row for row in weekly['receipts'] if row['source'] == daily_ref]
+        daily_claim, = [row for row in weekly['claims'] if row['report'] == daily_ref]
+        assert daily_receipt['hash'] == daily['contentHash']
+        assert daily_claim['evidence'][0]['sha256'] == sha256(png).hexdigest()
         assert not weekly['missingEvidence'] and snapshot['snapshotId'] != str(old_snapshot)
         assert data(request(pm, published))['status']=='queued'
         with gateway(answer()) as (url, calls):
@@ -334,6 +343,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             readback = data(pm.get(path + '/health', params={'asOf':snapshot['asOf']}))
             assert readback['historical'] and readback['snapshotId'] == snapshot['snapshotId']
             assert (readback['inputHash'], readback['inputs']['weekly']) == (snapshot['inputHash'], weekly)
+            assert daily_ref in readback['sourceRefs']
+            assert data(pm.get(report_path(daily)))['contentHash'] == daily['contentHash']
             assert data(pm.get(report_path(report)+'/facts'))['items'] == [fact]
             assert history(pm, published)['items']==[analysis]
             assert data(pm.get(dispute_path))['items'] == [saved_dispute]
