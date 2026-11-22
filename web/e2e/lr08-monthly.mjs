@@ -20,15 +20,19 @@ try {
     })
     await dialog.getByLabel('月报归属月份').fill(value)
     await dialog.getByLabel('月报归属月份').blur()
-    expect((await wait).status()).toBe(200)
+    const response=await wait
+    expect(response.status()).toBe(200)
+    return (await response.json()).data
   }
   await month(observedMonth)
   await expect(dialog.getByText('暂无授权项目预警')).toBeVisible()
-  await month(due.slice(0,7))
+  const alerts=await month(due.slice(0,7))
   await expect(dialog.getByText('授权项目预警 · 1')).toBeVisible()
+  await expect(dialog.locator('time[aria-label="列表读取时间"]')).toHaveAttribute('datetime',alerts.asOf)
   await dialog.getByRole('row').filter({hasText:'LR-08'}).locator('.el-table__expand-icon').click()
   await expect(dialog.getByText('复盘到期日',{exact:true})).toBeVisible()
   await expect(dialog.getByText(due,{exact:true})).toBeVisible()
+  await expect(dialog.locator('time[aria-label="事件更新时间"]')).toHaveAttribute('datetime',alerts.items[0].asOf)
 } finally {
   await browser.close()
 }

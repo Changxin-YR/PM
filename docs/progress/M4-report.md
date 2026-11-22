@@ -422,7 +422,7 @@
 
 ## 本人审批收件箱
 
-依据主方案 §2 UI-01/UI-08、§4、§20.5、工程接口契约的人工权限约束和 [ADR 0021](../adr/0021-project-overview.md)。基准 `7fe920279eed6ec06535fff31b33ba9973dcfba0`，被测源码树 `9d0438863d6ece8a2f2f2226359ec1f0e0cc06da`，不含本节文档。实现见 `pmo/personal_approvals.py`、`pmo/review_outcomes.py`、`pmo/evidence.py`、`web/src/PersonalApprovals.vue`。Windows、PostgreSQL 16.14 独立 schema、回环 HTTP/stdio、Edge，合成、模型关闭。没有新迁移、授权类型或审批写入口。
+依据主方案 §2 UI-01/UI-05、§4、§20.5、工程接口契约的人工权限约束和 [ADR 0021](../adr/0021-project-overview.md)。基准 `7fe920279eed6ec06535fff31b33ba9973dcfba0`，被测源码树 `9d0438863d6ece8a2f2f2226359ec1f0e0cc06da`，不含本节文档。实现见 `pmo/personal_approvals.py`、`pmo/review_outcomes.py`、`pmo/evidence.py`、`web/src/PersonalApprovals.vue`。Windows、PostgreSQL 16.14 独立 schema、回环 HTTP/stdio、Edge，合成、模型关闭。没有新迁移、授权类型或审批写入口。
 
 | 实际命令或复验 | 退出码 | 结果与证据 |
 |---|---:|---|
@@ -430,3 +430,15 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_approval_queue.py tests/test_evidence.py tests/test_lifecycle.py tests/test_recovery.py tests/test_reviews.py tests/test_runtime.py tests/test_transition_authority.py --tb=short --junitxml=.local/pmo104-approval-queue-review-api.xml` | 0 | PASS：51 项 / 135.60 秒。授权后计数、Agent 直调拒绝、自批、过期与坏附件、发起人确认不授原件下载、阶段边授权及终止确认。含 `0016→0036` 带数据升级、私有附件联合恢复与保护对象回读。`.local/pmo104-approval-queue-review-api.log`，前一轮 `.local/pmo104-approval-queue-api-verified.log`。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'browser_and_stdio_same_snapshot or drafting_through_archive or tasks_and_reports or personal_strengthening_queue or personal_review_and_stage_approvals or independent_termination_confirmation or formal_transition_authority or paginates_stage_receipts or project_overview_filters' --tb=short --junitxml=.local/pmo104-approval-queue-review-edge.xml` | 0 | PASS：9 项 / 134.27 秒。跨项目定位、独立裁决进 `designing`、授权暂停、模型关闭归档和 Web/stdio 同时点。`.local/pmo104-approval-queue-review-edge.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；`GET /health/ready`、`GET /openapi.json` 与冻结目录对比 | 0 | PASS：规格与 Python 92 文件、Vue 类型、构建；预览 API 就绪，95 基线 + 46 工程接口，40 双入口，两项本人队列都仅限人工。首次类型检查的审批动作字面类型错误保留在 `.local/pmo104-approval-queue-check.log`，最后通过记录见 `.local/pmo104-approval-queue-{check-verified,build-final,openapi}.log`。 |
+
+## 预警列表授权与时点
+
+依据主方案 §2 UI-13、§5.6 LR-02/03/04/06/08、§6 和 `pmo_alert_list` 冻结成功 DTO。基准 `e0adce090b732811d15538fad33232dd71957bec`，被测源码树 `5a3ffdf18fa958013fbc4748a4f1e3c5d9361210`。`pmo/alerts.py` 复用 DataScope；项目授权、总数、页及读取时点同一 SQL 语句，空/越界页仍提供总数，详情只关联当页。`web/src/Alerts.vue` 区分读取和事件时点，LR-08 仍归截止月。Windows、PostgreSQL 16.14 独立 schema、回环 HTTP/SDK stdio、Edge，合成、模型关闭。没有变更规则、迁移、附件或快照，不重复联合恢复。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_alert_reads.py --tb=short --junitxml=.local/pmo104-alert-reads-regression-red.xml` | 1 | FAIL：超大页 500；真实 PostgreSQL 并发提交使总数与页混用两个快照。两项原断言保留在 `.local/pmo104-alert-reads-regression-red.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_alert_reads.py tests/test_forecasts.py tests/test_forecast_governance.py tests/test_feasibility_reminders.py tests/test_health.py tests/test_weekly_health.py tests/test_reference_vectors_signals.py tests/test_runtime.py --tb=short --junitxml=.local/pmo104-alert-reads-api-final.xml` | 0 | PASS：46 项 / 86.63 秒。跨项目/组织、Agent 403 和 denied、真实 stdio 明确冻结字段、成功审计原事件出处、并发插入后的刷新及 LR-08 跨月补跑。首次回归 45 PASS、1 FAIL（新夹具误用不含 `source_refs` 的基础审计表映射；改用扩展映射，断言不变）。`.local/pmo104-alert-reads-api{,-final}.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'lr08_monthly or weekly_health or browser_and_stdio_same_snapshot' --tb=short --junitxml=.local/pmo104-alert-reads-edge-final.xml` | 0 | PASS：3 项 / 35.35 秒。截止月份、原事件时间、读取时间、每周三线和浏览器/MCP 同资源一致通过。`.local/pmo104-alert-reads-edge-final.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；预览 `GET /health/ready`、`GET /openapi.json`；查询 `alembic_version` | 0 | PASS：规格、Python 92 文件、Vue 类型和构建，95 基线、46 工程、40 双入口。源码与隔离预览 `0036`，共享 `public` `0016`。收窄共享 HTTP 函数的首轮 Vue 类型失败已保留，最终类型限定于预警调用；构建仍有 chunk 提示。`.local/pmo104-alert-reads-{check,vue,build,openapi,db-heads}.log`。 |
+| `git -c http.version=HTTP/1.1 ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1` | 128 | BLOCKED_EXTERNAL：本机 Git 缺 HTTPS helper，远端 SHA 未重新验证；未推送。`.local/pmo104-alert-reads-remote.log`。 |
