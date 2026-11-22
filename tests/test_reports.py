@@ -112,6 +112,56 @@ def test_frozen_fields_and_iso_period():
     assert Submit.model_validate(body()).structuredFields.effort_person_days == '2.50'
 
 
+def test_report_entries_close_new_writes_in_rest_and_stdio(live, team):
+    from pmo.mcp_server import tools
+
+    pm = team.users['pm']
+    malformed = [sections(milestone_progress=[{'milestoneId': str(team.milestones[0]), 'verified': True}]),
+                 sections(requirement_progress=[{'description': {'unexpected': 'object'}}]),
+                 sections(risks_and_blockers=[{'milestoneId': str(team.milestones[0]), 'summary': 'Wrong kind'}]),
+                 sections(milestone_progress=[{'claim': 'completion'}]),
+                 sections(effort_person_days=2.5), sections(effort_person_days='2.50\n')]
+    for fields in malformed:
+        deny(pm.post(team.path, headers=headers(), json=body(structuredFields=fields)), 422, 'VALIDATION_FAILED')
+    deny(pm.post(team.path + '/drafts', headers=headers(), json=body(structuredFields=malformed[0])), 422, 'VALIDATION_FAILED')
+    draft = data(pm.post(team.path + '/drafts', headers=headers(), json=body()))
+    deny(pm.patch(f"reports/{draft['reportId']}", headers=headers(1),
+                  json={'structuredFields': malformed[2]}), 422, 'VALIDATION_FAILED')
+
+    _, _, port, _ = live
+    token = _token(team)
+    config = StdioServerParameters(command=sys.executable, args=['-m', 'pmo.mcp_server'],
+        env={'PMO_API_PORT': str(port), 'PMO_AGENT_TOKEN': token['Authorization'].split()[1], 'PYTHONUTF8': '1'})
+
+    async def calls():
+        async with stdio_client(config) as streams, ClientSession(*streams) as session:
+            await session.initialize()
+            schema = next(t.inputSchema for t in (await session.list_tools()).tools if t.name == SUBMIT)
+            for fields in malformed:
+                args = {**body(structuredFields=fields), 'projectId': str(team.pid), 'idempotencyKey': uuid4().hex}
+                assert not jsonschema.Draft202012Validator(schema).is_valid(args)
+                denied = await session.call_tool(SUBMIT, args)
+                assert denied.isError and denied.structuredContent['error']['code'] == 'VALIDATION_FAILED'
+            valid = sections(milestone_progress=[{'milestoneId': str(team.milestones[0]), 'claim': 'progress',
+                'summary': 'At 2.50 days'}], requirement_progress=[{'description': 'A requirement note'}],
+                risks_and_blockers=[{'name': 'A risk note'}])
+            args = {**body(structuredFields=valid), 'projectId': str(team.pid), 'idempotencyKey': uuid4().hex}
+            jsonschema.Draft202012Validator(schema).validate(args)
+            posted = await session.call_tool(SUBMIT, args)
+            assert not posted.isError and posted.structuredContent['data']['structuredFields'] == valid
+            repeated = await session.call_tool(SUBMIT, args)
+            assert not repeated.isError and repeated.structuredContent == posted.structuredContent
+            report_id = posted.structuredContent['data']['reportId']
+            found = await session.call_tool(GET, {'reportId': report_id})
+            assert not found.isError and found.structuredContent['data']['structuredFields'] == valid
+            result = found.structuredContent
+            result['data']['structuredFields']['risks_and_blockers'][0]['arbitrary'] = True
+            assert not jsonschema.Draft202012Validator(tools[GET].outputSchema).is_valid(result)
+    asyncio.run(calls())
+    with team.engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(reports).where(reports.c.project_id == team.pid)) == 2
+
+
 def test_draft_submit_publish_and_history(team):
     pm, author, reviewer = (team.users[k] for k in ('pm', 'reporter', 'reviewer'))
     draft_request = body(structuredFields={}, narrative='Private draft note')
@@ -189,6 +239,73 @@ def _token(team, *, person='reporter', actions=(LIST, GET, SUBMIT), explicit=Tru
         if explicit:
             c.execute(explicit_grants.insert().values(credential_id=credential, project_id=team.pid, granted_by=owner.account))
     return {'Authorization': 'Bearer ' + secret}
+
+
+def test_legacy_report_receipt_and_fact_paths_remain_valid(live, team):
+    from pmo.contracts import RULE_VERSION
+    from pmo.projects import fingerprint
+    from test_facts import medium, post, proposal
+
+    pm, reviewer = (team.users[name] for name in ('pm', 'reviewer'))
+    author = team.people['pm']
+    token = _token(team, person='pm')
+    auth_hash = hashlib.sha256(token['Authorization'].split()[1].encode()).hexdigest()
+    key = headers()['Idempotency-Key']
+    original_quote = 'Historical independently recorded 7.25 days'
+    prior, report_id = datetime(2025, 1, 6, tzinfo=UTC), uuid4()
+    original_entry = {'summary': 'Historical note', 'legacy/custom': {'source~line': original_quote}}
+    original_fields = sections(requirement_progress=[original_entry])
+    receipt_body = body(structuredFields=original_fields, narrative='')
+    digest = fingerprint(['report-v1', str(team.pid), str(author.id), 'weekly', WEEK, 1, original_fields, ''])
+    reference = f'report:{report_id}@1'
+    initial = {'data': {'reportId': str(report_id), 'projectId': str(team.pid), 'type': 'weekly', 'period': WEEK,
+        'status': 'submitted', 'authorId': str(author.id), 'revision': 1, 'submittedAt': '2025-01-06T00:00:00Z',
+        'structuredFields': original_fields}, 'meta': {'operationId': SUBMIT, 'asOf': '2025-01-06T00:00:00Z',
+        'sourceRefs': [reference], 'ruleVersion': RULE_VERSION}}
+    with team.engine.begin() as c:
+        credential = c.scalar(sa.select(db.agent_credentials.c.id).where(db.agent_credentials.c.token_hash == auth_hash))
+        c.execute(reports.insert().values(id=report_id, project_id=team.pid, created_by=author.id,
+            author_id=author.id, type='weekly', period=WEEK, period_start=START, period_end=END, version_no=1,
+            is_current=True, is_current_confirmed=False, status='submitted', structured_fields=original_fields,
+            narrative='', content_hash=digest, submitted_by=author.id, submitted_at=prior, updated_at=prior))
+        c.execute(db.idempotency_keys.insert().values(actor_id=credential, actor_type='agent', org_id=author.org,
+            delegated_by=author.id, idempotency_key=key, operation=SUBMIT, completed_at=prior,
+            expires_at=datetime.now(UTC)+timedelta(days=1), request_hash=fingerprint([str(team.pid), receipt_body]),
+            response_body=initial, response_hash=fingerprint(initial), response_status=200, status='completed',
+            resource_id=report_id))
+
+    path = f'reports/{report_id}'
+    view = data(pm.get(path))
+    assert view['contentHash'] == digest and view['legacyStructuredFields'] is True
+    assert view['structuredFields']['requirement_progress'] == [{'summary': 'Historical note'}]
+    fact = data(post(pm, view, proposal(view, value='7.25', quote=original_quote)))
+    assert fact['quotePath'] == '/structuredFields/requirement_progress/0/legacy~1custom/source~0line'
+    published = data(pm.post(path + '/confirm', headers=headers(1), json={}))
+    assert data(medium(reviewer, fact))['contentHash'] == published['contentHash'] == digest
+    rest = live[1].post('/api/v1/' + team.path, headers={**token, 'Idempotency-Key': key}, json=receipt_body)
+    assert rest.status_code == 200 and rest.json() == initial
+
+    config = StdioServerParameters(command=sys.executable, args=['-m', 'pmo.mcp_server'],
+        env={'PMO_API_PORT': str(live[2]), 'PMO_AGENT_TOKEN': token['Authorization'].split()[1], 'PYTHONUTF8': '1'})
+
+    async def replay_only():
+        args = {**receipt_body, 'projectId': str(team.pid), 'idempotencyKey': key}
+        async with stdio_client(config) as streams, ClientSession(*streams) as session:
+            await session.initialize()
+            replayed = await session.call_tool(SUBMIT, args)
+            assert not replayed.isError
+            assert replayed.structuredContent == {'ok': True, **initial,
+                'data': {**initial['data'], 'structuredFields': view['structuredFields']}}
+            for changes, code in (({'idempotencyKey': uuid4().hex}, 'VALIDATION_FAILED'),
+                                  ({'narrative': 'Not the original'}, 'IDEMPOTENCY_CONFLICT')):
+                denied = await session.call_tool(SUBMIT, {**args, **changes})
+                assert denied.isError and denied.structuredContent['error']['code'] == code
+    asyncio.run(replay_only())
+    with team.engine.connect() as c:
+        assert c.execute(sa.select(reports.c.content_hash, reports.c.structured_fields, reports.c.revision)
+                          .where(reports.c.project_id == team.pid)).one() == (digest, original_fields, 2)
+        keys = db.idempotency_keys.c
+        assert c.scalar(sa.select(keys.response_body).where(keys.actor_id == credential, keys.idempotency_key == key)) == initial
 
 
 def test_report_related_reads_use_the_same_resource_scope(live, team):

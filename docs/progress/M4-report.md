@@ -358,3 +358,14 @@
 | `.venv/Scripts/python.exe scripts/reference_vector_evidence.py .local/pmo104-report-history-full.xml .local/pmo104-report-history-vectors.csv --require-complete` | 0 | PASS：从本批实际 JUnit 提取 102/102，`.local/pmo104-report-history-vectors.log`。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；`npm.cmd --prefix web run build`；`GET http://127.0.0.1:18772/openapi.json` 对表 | 0 | PASS：规格、Python/Vue 类型及构建；实时 95 基线、42 工程、40 双入口。`.local/pmo104-report-history-final-check.log`、`.local/pmo104-report-history-final-build.log`、`.local/pmo104-report-history-openapi.log`。 |
 | 设置 `PMO_TEST_MCP_ENTRYPOINT` 指向本批离线构建并隔离安装的 `pmo-mcp.exe`，运行 `.venv/Scripts/python.exe -m pytest -q tests/test_mcp_configuration.py --tb=short --junitxml=.local/pmo104-report-history-installed-retest.xml` | 1 / 0 | 首次 FAIL：本机 `.local/dev.env` 只有口令字段，未构造测试连接 URL（`.local/pmo104-report-history-installed.log`）；按 `scripts/dev.ps1` 生成回环 URL 后 PASS：11 项，仓库外实际启动、40 个工具发现、正常读、缺令牌/错误地址拒绝。`.local/pmo104-report-history-installed-retest.log`。不计为 T09 或目标 Host。 |
+
+## 报告四区块 DTO
+
+依据 §5.6 LR-06、§6.1、§7、§8.4、工程 DTO §1–3、§5、§7、[ADR 0020](../adr/0020-task-and-report-reads.md)。基准 `f7c3f210b8607b27a2e95d73f740d19202af706d`，被测源码树 `7bc78025163db022e2853b348cf6d47045e8052d` 不含本节证据。实现 `pmo/report_fields.py`、`pmo/reports.py`、`pmo/mcp_server.py`、`pmo/weekly_drafts.py` 和 `web/src/Reports.vue`。Windows、PostgreSQL 16.14 隔离 schema、回环 HTTP、真实 stdio、Edge；合成，无真实模型或业务签核。无迁移或附件引用写入变更。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reports.py::test_report_entries_close_new_writes_in_rest_and_stdio --tb=short --junitxml=.local/pmo104-report-dto-red.xml` | 1 | FAIL：旧版返回 200 并接受条目自报 `verified`。`.local/pmo104-report-dto-red.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reports.py tests/test_weekly_drafts.py tests/test_facts.py tests/test_weekly_health.py tests/test_report_analysis.py tests/test_mcp_configuration.py tests/test_health.py tests/test_reference_vectors.py --tb=short --junitxml=.local/pmo104-report-dto-retest.xml` | 0 | PASS：91 项 / 103.12 秒。真实 REST 及 stdio 拒绝未知键、跨区块资源、缺 ID 申报及非 Decimal 字符串；同键重放、周报来源、历史带转义原话路径、发布后核验及历史哈希原样实测。`.local/pmo104-report-dto-retest.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'tasks_and_reports or model_free_weekly_draft or report_fact_conflict or archived_report_history or report_analysis' --tb=short --junitxml=.local/pmo104-report-dto-edge.xml` | 0 | PASS：6 项 / 60.62 秒，人工草稿/发布、生成初稿、Fact 澄清和分析历史。`.local/pmo104-report-dto-edge.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `npm.cmd run build` | 0 | PASS：冻结规格、90 个 Python 类型文件、Vue 类型及生产构建，保留体积提示。`.local/pmo104-report-dto-check.log`、`.local/pmo104-report-dto-build.log`。 |

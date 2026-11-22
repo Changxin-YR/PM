@@ -6,7 +6,8 @@ import ReportFacts from './ReportFacts.vue'
 type Kind='weekly'|'daily'
 type Status='draft'|'submitted'|'confirmed'
 type Section='milestone_progress'|'requirement_progress'|'risks_and_blockers'
-type Entry={summary?:string;milestoneId?:string;claim?:'progress'|'completion';evidenceRef?:string;evidenceRefs?:string[];[key:string]:unknown}
+type Entry={summary?:string;name?:string;description?:string;milestoneId?:string;requirementId?:string;riskId?:string;
+  claim?:'progress'|'completion';evidenceRef?:string;evidenceRefs?:string[]}
 type Fields=Record<Section,Entry[]>&{effort_person_days?:string}
 type SourcedFact={sourceRef:string;reportRef:string;reportHash:string;quotePath:string;quoteOffset:number;quote:string;
   subject:string;predicate:string;trust:'high'|'medium';asOf:string;evidenceRef?:string;evidenceHash?:string}
@@ -15,7 +16,8 @@ type Basis={asOf:string;ruleVersion:string;projectRevision:number;sourceHash:str
   health:{health:string;dataTrust:string;timeLine?:string;costLine?:string;qualityLine?:string;requirementSatisfactionRate?:string;gaps:string[]}}
 type Report={reportId:string;type:Kind;period:string;periodStart:string;periodEnd:string;versionNo:number;revision:number;
   status:Status;authorId:string;submittedAt?:string;confirmedAt?:string;structuredFields?:Fields;narrative?:string;
-  isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean;contentHash?:string;weeklyBasis?:Basis}
+  isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean;contentHash?:string;
+  legacyStructuredFields?:boolean;weeklyBasis?:Basis}
 type Editor={item?:Report;type:Kind;day:string;effort:string;fields:Record<Section,Entry[]>;narrative:string}
 type Milestone={milestoneId:string;name:string;isKey:boolean}
 type Evidence={evidenceRef:string;linkedResourceType:string;linkedResourceId:string;originalName:string}
@@ -201,6 +203,7 @@ watch(()=>props.projectId,()=>{
 
     <form v-if="editor" class="report-form" aria-label="报告草稿" @submit.prevent="save">
       <h3>{{editor.item ? `编辑 ${editor.item.period} · v${editor.item.versionNo}` : '新建报告草稿'}}</h3>
+      <el-alert v-if="editor.item?.legacyStructuredFields" title="旧版扩展字段不会保留在这次草稿修改中" type="warning" :closable="false"/>
       <div class="report-fields">
         <label v-if="!editor.item">填报类型<select v-model="editor.type" :disabled="busy"><option value="weekly">周报</option><option value="daily">日报</option></select></label>
         <label v-if="!editor.item">{{editor.type==='weekly'?'报告周内日期':'报告日期'}}<input v-model="editor.day" type="date" required :max="today()" :disabled="busy"></label>
@@ -257,6 +260,7 @@ watch(()=>props.projectId,()=>{
           <el-button text title="关闭报告详情" aria-label="关闭报告详情" :disabled="busy||reading" @click="detail=null"><X :size="15"/></el-button>
         </div>
       </div>
+      <p v-if="detail.legacyStructuredFields" class="report-muted">旧版扩展字段未展示，原记录不变。</p>
       <dl class="report-meta">
         <div><dt>申报人天</dt><dd>{{detail.structuredFields?.effort_person_days??'未填写'}}</dd></div>
         <div v-if="detail.weeklyBasis"><dt>当周核验人天净额</dt><dd>{{detail.weeklyBasis.verifiedPeriodPostingCount? `${detail.weeklyBasis.verifiedPeriodPersonDays}（${detail.weeklyBasis.verifiedPeriodPostingCount} 笔）`:'无核验流水'}}</dd></div>

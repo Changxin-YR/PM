@@ -5,7 +5,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter
-from pydantic import Field, JsonValue, StrictStr, field_validator
+from pydantic import Field, StrictStr, field_validator
 
 from . import fact_store as facts, schema_v1 as db
 from .access import Auth, Key, Revision
@@ -14,7 +14,8 @@ from .fact_sources import verified_source
 from .health_calculation import ACTIVE, observe
 from .identity import Failure
 from .projects import fingerprint, run
-from .reports import (GENERATE, HUMAN, TZ, DraftCreate, DraftFields, Report, _context, _finish, _insert, _replay,
+from .report_fields import DraftFields, MilestoneEntry, RequirementEntry, RiskEntry
+from .reports import (GENERATE, HUMAN, TZ, DraftCreate, Report, _context, _finish, _insert, _replay,
                       _writable, period_bounds, reports)
 from .weekly_basis import WeeklyBasis, WeeklyFact, WeeklyHealth
 
@@ -61,7 +62,7 @@ def _trusted_facts(c, p, start, end, at):
     return trusted
 
 
-def _milestones(details, start, end):
+def _milestones(details, start, end) -> list[MilestoneEntry]:
     rows = []
     for item in details:
         proof = item['completion']
@@ -73,7 +74,7 @@ def _milestones(details, start, end):
                 entry.update(claim='completion', evidenceRef=f"evidence:{proof['proof']['id']}")
         elif item['actualDate']:
             entry['summary'] += '；完成无有效佐证'
-        rows.append(entry)
+        rows.append(MilestoneEntry.model_validate(entry))
     return rows
 
 
@@ -93,8 +94,8 @@ def make_draft(c, p, period: str, at: datetime) -> tuple[DraftCreate, WeeklyBasi
         .where(risk.project_id == p.id, risk.status.in_(('open', 'mitigated')))
         .order_by(risk.is_blocking.desc(), risk.id)).mappings().all()
     risk_refs = [f'risk:{row.id}@{row.revision}' for row in open_risks]
-    risk_entries: list[dict[str, JsonValue]] = [
-        {'riskId': str(row.id), 'summary': f"{'阻塞' if row.is_blocking else '风险'}：{row.statement[:120]}"}
+    risk_entries = [
+        RiskEntry(riskId=str(row.id), summary=f"{'阻塞' if row.is_blocking else '风险'}：{row.statement[:120]}")
         for row in open_risks[:SECTION_LIMIT]]
     requirement = db.requirements.c
     quality = obs.inputs['quality']
@@ -102,9 +103,9 @@ def make_draft(c, p, period: str, at: datetime) -> tuple[DraftCreate, WeeklyBasi
     candidates = [item for item in schedule if item['revision'] is not None][:SECTION_LIMIT]
     labels = dict(c.execute(sa.select(requirement.id.cast(sa.Text), requirement['desc']).where(requirement.project_id == p.id,
         requirement.id.in_([UUID(item['requirement_id']) for item in candidates]))).tuples().all())
-    requirements = [{'requirementId': item['requirement_id'], 'summary':
+    requirements = [RequirementEntry(requirementId=item['requirement_id'], summary=
         f"{item['priority']} · {labels[item['requirement_id']][:120]}：" + (
-            '变更冻结' if item['frozen'] else '客户已确认' if item['confirmed'] else '未获有效客户确认')}
+            '变更冻结' if item['frozen'] else '客户已确认' if item['confirmed'] else '未获有效客户确认'))
         for item in candidates if item['requirement_id'] in labels]
 
     # Clock-driven lamps and report receipts (including this draft's own submission) are not material edits.

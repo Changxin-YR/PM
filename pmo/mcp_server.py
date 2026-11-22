@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 from string import Formatter
 from .change_contract import PROPOSAL, mcp_snapshots
+from .report_fields import DraftFields, SubmitFields
 from .tool_routes import ROUTES
 
 import httpx
@@ -20,6 +21,12 @@ packaged_catalog = Path(__file__).with_name('mcp_catalog.json')
 source_catalog = Path(__file__).resolve().parents[1] / 'docs/spec/11_MCP_工具契约.json'
 catalog = json.loads((packaged_catalog if packaged_catalog.is_file() else source_catalog).read_text(encoding='utf-8'))
 implemented = set(ROUTES)
+
+
+def report_schema(model, root):
+    fields = model.model_json_schema()
+    root.setdefault('$defs', {}).update(fields.pop('$defs', {}))
+    return fields
 
 
 def advertised(tool):
@@ -37,6 +44,13 @@ def advertised(tool):
         if name == 'pmo_report_list':
             report = report['properties']['items']['items']
         report['properties']['isCurrentConfirmed'] = {'type': 'boolean'}
+    if name in {'pmo_report_get', 'pmo_report_submit'}:
+        if name == 'pmo_report_submit':
+            inputs = deepcopy(inputs)
+            inputs['properties']['structuredFields'] = report_schema(SubmitFields, inputs)
+            outputs = deepcopy(outputs)
+        report = outputs['oneOf'][0]['properties']['data']
+        report['properties']['structuredFields'] = report_schema(DraftFields, outputs)
     if name in {'pmo_requirement_change_history', 'pmo_change_propose'}:
         outputs = deepcopy(outputs)
         record = outputs['oneOf'][0]['properties']['data']
@@ -50,6 +64,9 @@ def advertised(tool):
 
 
 tools = {t['name']: advertised(t) for t in catalog['tools'] if t['name'] in implemented}
+legacy_report_input = jsonschema.Draft202012Validator(
+    next(t['inputSchema'] for t in catalog['tools'] if t['name'] == 'pmo_report_submit'),
+    format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER)
 
 @server.list_tools()
 async def discover():
@@ -83,10 +100,13 @@ def api_endpoint(path: str) -> httpx.URL | None:
 @server.call_tool(validate_input=False)
 async def invoke(name,arguments):
     if name not in tools: return failed('UNKNOWN_TOOL')
+    replay_report = False
     try:
         jsonschema.Draft202012Validator(tools[name].inputSchema,format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER).validate(arguments)
     except jsonschema.ValidationError:
-        return failed('VALIDATION_FAILED', name)
+        if name != 'pmo_report_submit' or not legacy_report_input.is_valid(arguments):
+            return failed('VALIDATION_FAILED', name)
+        replay_report = True
     method,template=ROUTES[name]
     body=dict(arguments)
     path=template.format(**{field:str(UUID(body.pop(field))) for _,field,_,_ in Formatter().parse(template) if field})
@@ -104,7 +124,7 @@ async def invoke(name,arguments):
             else:
                 headers['Idempotency-Key']=body.pop('idempotencyKey')
                 if 'expectedRevision' in body: headers['If-Match']=str(body.pop('expectedRevision'))
-                response=await client.request(method,url,headers=headers,json=body)
+                response=await client.request(method,url,headers=headers,json={'legacyReplay': body} if replay_report else body)
             if response.status_code>=500: return failed('SERVICE_UNAVAILABLE', name)
             if not response.is_success: return failed(response.json().get('code','VALIDATION_FAILED'), name)
             result={'ok':True,**response.json()}

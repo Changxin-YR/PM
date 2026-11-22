@@ -1,7 +1,6 @@
 """Versioned project reports. Report claims are not verified facts."""
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-import json
 import re
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID
@@ -9,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Body, Query
-from pydantic import AfterValidator, Field, JsonValue, StrictStr, model_validator
+from pydantic import AfterValidator, Field, StrictStr, model_validator
+from pydantic.json_schema import SkipJsonSchema
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import TypeEngine
 
@@ -19,6 +19,8 @@ from .contracts import Result, Strict
 from .identity import Actor, Failure, explicit_grants, explicit_project_scope, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
+from .report_fields import (ClaimKind, DraftFields as DraftFields, StoredFields, StoredSubmitFields,
+    SubmitFields, Text, _plain as _plain, evidence_ids as _evidence_ids, report_fields_view, uuid_value as _uuid)
 from .requirement_baselines import active_member
 from .weekly_basis import WeeklyBasis
 
@@ -44,52 +46,6 @@ _links = sa.table('evidence_links', sa.column('evidence_id', sa.Uuid), sa.column
 
 Kind = Literal['daily', 'weekly']
 Status = Literal['draft', 'submitted', 'confirmed']
-ClaimKind = Literal['progress', 'completion']
-Effort = Annotated[StrictStr, Field(pattern=r'^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?\z')]
-
-
-def _plain(value: str) -> str:
-    if '\x00' in value:
-        raise ValueError('Text must not contain NUL')
-    value.encode('utf-8')
-    return value
-
-
-Text = Annotated[StrictStr, Field(max_length=20000), AfterValidator(_plain)]
-Section = Annotated[list[dict[str, JsonValue]], Field(max_length=100)]
-
-
-def _json_limits(value: JsonValue, depth: int = 0) -> None:
-    if depth > 8:
-        raise ValueError('Report sections are nested too deeply')
-    if isinstance(value, str):
-        _plain(value)
-    elif isinstance(value, list):
-        for item in value:
-            _json_limits(item, depth + 1)
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            _plain(key)
-            _json_limits(item, depth + 1)
-
-
-def _uuid(value: JsonValue) -> UUID:
-    if not isinstance(value, str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', value):
-        raise ValueError('Expected a resource UUID')
-    return UUID(value)
-
-
-def _evidence_ids(item: dict[str, JsonValue]) -> tuple[UUID, ...]:
-    raw = item.get('evidenceRefs', [])
-    if not isinstance(raw, list) or len(raw) > 8:
-        raise ValueError('Expected up to eight evidence references')
-    refs = [*raw, item['evidenceRef']] if 'evidenceRef' in item else raw
-    ids = []
-    for ref in refs:
-        if not isinstance(ref, str) or not ref.startswith('evidence:'):
-            raise ValueError('Expected an evidence reference')
-        ids.append(_uuid(ref[len('evidence:'):]))
-    return tuple(dict.fromkeys(ids))
 
 
 def period_bounds(kind: Kind, period: str) -> tuple[date, date]:
@@ -106,45 +62,15 @@ def period_bounds(kind: Kind, period: str) -> tuple[date, date]:
     return start, start + timedelta(days=1)
 
 
-class DraftFields(Strict):
-    milestone_progress: Section = Field(default_factory=list)
-    effort_person_days: Effort | None = None
-    requirement_progress: Section = Field(default_factory=list)
-    risks_and_blockers: Section = Field(default_factory=list)
-
-    @model_validator(mode='after')
-    def validated(self):
-        value = self.model_dump(exclude_none=True)
-        _json_limits(value)
-        if len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode('utf-8')) > 65536:
-            raise ValueError('Report sections are too large')
-        for section, id_key, _ in _sections(self):
-            for item in section:
-                if id_key in item:
-                    _uuid(item[id_key])
-                if _evidence_ids(item) and id_key not in item:
-                    raise ValueError('Evidence references require a resource ID')
-                if id_key == 'milestoneId' and 'claim' in item:
-                    if item['claim'] not in ('progress', 'completion') or id_key not in item:
-                        raise ValueError('A milestone claim needs its ID and a progress or completion kind')
-        return self
-
-
-def _sections(fields: DraftFields):
+def _sections(fields: StoredFields):
     return ((fields.milestone_progress, 'milestoneId', db.milestones),
             (fields.requirement_progress, 'requirementId', db.requirements),
             (fields.risks_and_blockers, 'riskId', db.risks))
 
 
-class SubmitFields(DraftFields):
-    milestone_progress: Section = Field(...)
-    effort_person_days: Effort = Field(...)
-    requirement_progress: Section = Field(...)
-    risks_and_blockers: Section = Field(...)
-
-
 class DraftEdit(Strict):
-    structuredFields: DraftFields
+    # Legacy bytes can match a previous result, but cannot authorize a new write.
+    structuredFields: DraftFields | SkipJsonSchema[StoredFields] = Field(union_mode='left_to_right')
     narrative: Text = ''
 
 
@@ -162,7 +88,12 @@ class DraftCreate(DraftEdit):
 
 
 class Submit(DraftCreate):
-    structuredFields: SubmitFields
+    structuredFields: SubmitFields | SkipJsonSchema[StoredSubmitFields] = Field(union_mode='left_to_right')
+
+
+class ReplaySubmit(Strict):
+    # This envelope is rejected by adapters' older REST peers instead of mutating data there.
+    legacyReplay: Submit
 
 
 class Existing(Strict):
@@ -182,7 +113,7 @@ class Report(Strict):
     authorId: UUID
     revision: int
     submittedAt: datetime | None = None
-    structuredFields: DraftFields | None = None
+    structuredFields: DraftFields | SkipJsonSchema[StoredFields] | None = Field(None, union_mode='left_to_right')
     isCurrentConfirmed: bool | None = None
     # Only the scoped Fact agent can also receive the narrative on detail reads.
     narrative: str | None = None
@@ -194,6 +125,7 @@ class Report(Strict):
     confirmedBy: UUID | None = None
     confirmedAt: datetime | None = None
     contentHash: str | None = None
+    legacyStructuredFields: bool | None = None
     canEdit: bool | None = None
     canSubmit: bool | None = None
     canConfirm: bool | None = None
@@ -246,7 +178,7 @@ def _digest(pid, author, kind, period, version, fields, narrative, basis=None):
 
 def _content(row):
     try:
-        fields = SubmitFields.model_validate(row.structured_fields)
+        fields = StoredSubmitFields.model_validate(row.structured_fields)
         _plain(row.narrative or '')
         bounds = period_bounds(row.type, row.period)
     except (ValueError, OverflowError):
@@ -370,7 +302,7 @@ def _ref(row):
 
 def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False, publication=False):
     try:
-        fields = DraftFields.model_validate(row.structured_fields) if detail else None
+        fields, legacy = report_fields_view(row.structured_fields) if detail else (None, False)
     except ValueError:
         raise Failure(422, 'REPORT_CONTENT_INVALID', project_id=p.id) from None
     item = Report(reportId=row.id, projectId=row.project_id, type=row.type, status=row.status, period=row.period,
@@ -383,6 +315,7 @@ def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False, publ
         item.versionNo, item.isCurrent = row.version_no, row.is_current
         item.submittedBy, item.confirmedBy, item.confirmedAt = row.submitted_by, row.confirmed_by, row.confirmed_at
         item.contentHash = row.content_hash
+        item.legacyStructuredFields = True if legacy else None
         item.narrative = row.narrative if detail else None
         if detail and row.weekly_basis is not None:
             try:
@@ -418,6 +351,14 @@ def _check_refs(c, p, fields):
                        l.evidence_id.in_({eid for eid, _ in pairs}))).tuples())
             if not pairs.issubset(linked):
                 raise Failure(422, 'REPORT_SOURCE_SCOPE', project_id=p.id)
+
+
+def _new_fields(c, p, fields: DraftFields | StoredFields):
+    if isinstance(fields, StoredFields):
+        raise Failure(422, 'VALIDATION_FAILED', project_id=p.id)
+    payload = fields.model_dump(mode='json', exclude_none=True)
+    _check_refs(c, p, StoredFields.model_validate(payload))
+    return payload
 
 
 def _replay(c, a, p, op, key, signature):
@@ -479,14 +420,13 @@ def _insert(c, a, p, command, now, *, submitted=False, basis=None):
     start, end = period_bounds(command.reportType, command.period)
     if start > now.astimezone(TZ).date():
         raise Failure(422, 'REPORT_PERIOD_IN_FUTURE', project_id=p.id)
-    _check_refs(c, p, command.structuredFields)
+    fields = _new_fields(c, p, command.structuredFields)
     series = (r.project_id == p.id, r.type == command.reportType, r.period == command.period)
     if basis is not None and c.scalar(sa.select(r.id).where(*series, r.author_id == a.person,
             r.status.in_(('draft', 'submitted')), r.weekly_basis['sourceHash'].astext == basis['sourceHash']).limit(1)):
         raise Failure(409, 'WEEKLY_DRAFT_ALREADY_CURRENT', project_id=p.id)
     version = (c.scalar(sa.select(sa.func.max(r.version_no)).where(*series)) or 0) + 1
     c.execute(reports.update().where(*series, r.is_current).values(is_current=False))
-    fields = command.structuredFields.model_dump(mode='json', exclude_none=True)
     return c.execute(reports.insert().values(project_id=p.id, created_by=a.person, author_id=a.person,
         type=command.reportType, period=command.period, period_start=start, period_end=end, version_no=version,
         is_current=True, is_current_confirmed=False, status='submitted' if submitted else 'draft',
@@ -496,7 +436,7 @@ def _insert(c, a, p, command, now, *, submitted=False, basis=None):
         .returning(reports)).mappings().one()
 
 
-def _create(auth, op, pid, command, key):
+def _create(auth, op, pid, command, key, *, replay_only=False):
     signature = fingerprint([str(pid), command.model_dump(mode='json', exclude_none=True)])
 
     def write(c, a, rid):
@@ -506,7 +446,11 @@ def _create(auth, op, pid, command, key):
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
         prior = _replay(c, a, p, op, key, signature)
         if prior is not None:
+            if replay_only and isinstance(prior.data.structuredFields, StoredFields):
+                prior.data.structuredFields, _ = report_fields_view(prior.data.structuredFields.model_dump(exclude_none=True))
             return prior
+        if replay_only:
+            raise Failure(422, 'VALIDATION_FAILED', project_id=p.id)
         _writable(p)
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
         row = _insert(c, a, p, command, now, submitted=op == SUBMIT)
@@ -515,7 +459,9 @@ def _create(auth, op, pid, command, key):
 
 
 @router.post('/projects/{projectId}/reports', operation_id=SUBMIT, response_model_exclude_none=True)
-def submit(projectId: UUID, command: Submit, authorization: Auth, key: Key) -> Result[Report]:
+def submit(projectId: UUID, command: Submit | SkipJsonSchema[ReplaySubmit], authorization: Auth, key: Key) -> Result[Report]:
+    if isinstance(command, ReplaySubmit):
+        return _create(authorization, SUBMIT, projectId, command.legacyReplay, key, replay_only=True)
     return _create(authorization, SUBMIT, projectId, command, key)
 
 
@@ -547,8 +493,7 @@ def _mutate(auth, op, report_id, command, key, expected):
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
         values = dict(revision=revision + 1, updated_at=now)
         if op == EDIT:
-            _check_refs(c, p, command.structuredFields)
-            fields = command.structuredFields.model_dump(mode='json', exclude_none=True)
+            fields = _new_fields(c, p, command.structuredFields)
             values.update(structured_fields=fields, narrative=command.narrative, content_hash=_digest(
                 p.id, row.author_id, row.type, row.period, row.version_no, fields, command.narrative, row.weekly_basis))
         else:
