@@ -13,7 +13,8 @@ def test_audit_scope_no_admin_role_inheritance(live,actor):
     local, cred=actor(extra_actions=('admin_audits_list',))
     other,_=actor()
     def create(secret):
-        response=api.post('/api/v1/projects',headers={'Authorization':'Bearer '+secret,'Idempotency-Key':uuid4().hex},json={'code':'AUD','name':'Scoped'})
+        response=api.post('/api/v1/projects',headers={'Authorization':'Bearer '+secret,'Idempotency-Key':uuid4().hex},
+            json={'code':'AUD','name':'Scoped','description':'Original synthetic description'})
         assert response.is_success
         return response.headers['X-Request-ID'], response.json()['data']['projectId']
     (ours, pid), (theirs, other_pid) = create(local), create(other)
@@ -46,6 +47,7 @@ def test_audit_scope_no_admin_role_inheritance(live,actor):
         assert traced['sourceRefs'] == read.json()['meta']['sourceRefs'] == [f'project:{pid}@1']
         assert traced['ruleVersion'] == read.json()['meta']['ruleVersion']
         assert traced['responseHash'] == fingerprint(read.json())
+        assert 'previousHash' not in traced
         with engine.connect() as c:
             assert c.scalar(sa.select(audit.c.request_path).where(audit.c.request_id == rid)) == '/api/v1/projects/{projectId}'
             assert c.scalar(sa.select(db.outbox_events.c.id).where(db.outbox_events.c.dedupe_key == rid)) is None
@@ -53,6 +55,7 @@ def test_audit_scope_no_admin_role_inheritance(live,actor):
         assert blocked.status_code == 404
         failure, = human.get(path, params={'requestId': blocked.headers['X-Request-ID']}).json()['data']['items']
         assert failure['result'] == 'denied' and 'sourceRefs' not in failure and 'projectId' not in failure
+        assert 'previousHash' not in failure and 'responseHash' not in failure
 
         with engine.begin() as c:
             c.exec_driver_sql('CREATE TRIGGER prevent_agent_read_audit BEFORE INSERT ON audit_logs '
@@ -66,5 +69,14 @@ def test_audit_scope_no_admin_role_inheritance(live,actor):
             with engine.begin() as c:
                 c.exec_driver_sql('DROP TRIGGER prevent_agent_read_audit ON audit_logs')
         assert human.get(path,params={'page':2,'pageSize':1}).json()['data']['page']==2
+        key = uuid4().hex
+        change = api.patch(target, headers={**agent, 'Idempotency-Key': key, 'If-Match': '1'},
+            json={'fields': {'name': 'Audit receipt for an authorized edit'}}).raise_for_status()
+        updated, = human.get(path, params={'requestId': change.headers['X-Request-ID']}).raise_for_status().json()['data']['items']
+        assert updated['action'] == 'pmo_project_draft_update'
+        assert updated['previousHash'] == fingerprint({'name': 'Scoped', 'description': 'Original synthetic description', 'revision': 1})
+        assert updated['responseHash'] == fingerprint(change.json())
+        assert updated['sourceRefs'] == [f'project:{pid}@2']
+        assert 'idempotencyKey' not in updated and key not in str(updated)
         with engine.begin() as c: c.execute(db.user_roles.delete().where(db.user_roles.c.user_id==user))
         assert human.get(path).status_code==403

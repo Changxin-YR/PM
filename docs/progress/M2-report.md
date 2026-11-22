@@ -294,3 +294,14 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_health.py tests/test_weekly_health.py tests/test_reports.py tests/test_weekly_drafts.py tests/test_reference_vectors_signals.py tests/test_database_roles.py tests/test_recovery.py --tb=short --junitxml=.local/lr06-daily-verified.xml` | 0 | PASS：38 项 / 106.26 秒，`.local/lr06-daily-verified.log`。日报、周报分别验证进展/完成、源字节篡改、旧快照只读、补证以及规则任务和 Outbox 去重。旧日报和草稿不遮盖当前；日报不能填补漏交周报。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_recovery.py --tb=short --junitxml=.local/lr06-daily-recovery.xml` | 0 | PASS：2 项 / 30.59 秒，`.local/lr06-daily-recovery.log`。在带数据 `0016→0033`、私有原件联合恢复中，新增日报版本、引用、快照和原件 SHA-256 回读。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规格和 mypy 88 源文件，`.local/lr06-daily-check.log`。 |
+
+## 组织审计回执可核对裁决来源
+
+依据：主方案 §6.3、§20.3–20.4、领域不变量 §5、GOV-007、T07。基准 `3bc490cd4c9f281b1704b11615a217660658363c`；最初反例测试 blob `028056b2a76a9d3b4798337a9a1fd889e244423e`（当时只有审计测试改动与等同的 LR-06 源码）。最终源码树 `554602fdb96c7ec9fea9b0bb05a4749685902b56`，不含证据文本。Windows、PostgreSQL 16.14 隔离 schema/专库、回环 HTTP、Edge `158.0.4370.33`，合成账号。`pmo/audits.py` 返回已存 `before_hash`，只在本组织人工管理员查询时可见；REST 仍独立拒绝直接 Agent 调用。`web/src/AuditLog.vue` 按同一请求号显示操作者、委托、裁决、规则、版本化来源、前后摘要。无凭据、请求正文或幂等键；不回填缺失旧字段、不改变事务或审批权。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_admin_audit.py --tb=short --junitxml=.local/audit-detail-before.xml` | 1 | FAIL：已提交审计有存储摘要，响应缺 `previousHash`；`.local/audit-detail-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_admin_audit.py tests/test_reviews.py tests/test_lifecycle.py tests/test_error_contract.py tests/test_runtime.py tests/test_database_roles.py --tb=short --junitxml=.local/audit-detail-final.xml` | 0 | PASS：36 项 / 112.80 秒。来源、摘要与实际写入对表，拒绝和跨组织不泄漏、读审计故障不返回数据。首轮 1 FAIL / 35 PASS：测试误用空描述默认值，保留 `.local/audit-detail-verified.log`。最终 `.local/audit-detail-final.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py::test_browser_draft_workflow --tb=short --junitxml=.local/audit-edge-verified.xml` | 0 | PASS：1 项 / 53.32 秒。独立立项评分及裁决，刷新后凭请求号打开审计详情、核对版本化来源和摘要。此前健康/归档三项 PASS，新增用例因测试期望漏 `@1`、刷新后读取已释放的响应体两次 FAIL；见 `.local/audit-health-edge.log`、`audit-health-edge-final.log`、`audit-edge-verified.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格、mypy、Vue 类型。`.local/audit-detail-check.log`、`.local/audit-detail-vue.log`。 |
