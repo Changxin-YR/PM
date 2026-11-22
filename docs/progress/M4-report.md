@@ -474,3 +474,14 @@
 |---|---:|---|
 | `.venv/Scripts/python.exe -m pytest -q tests/test_change_contracts.py tests/test_change_history.py tests/test_forecast_governance.py tests/test_scope_quality.py --tb=short --junitxml=.local/pmo104-resource-contracts.xml` | 0 | PASS：5 项，资源隔离、DTO、LR-05 和范围权重。`.local/pmo104-resource-contracts.log`。 |
 | `scripts/dev.ps1 check`；回查 `18774` 的 OpenAPI 与就绪探针及 `18773` 页面 | 0 | PASS：规格、92 文件类型；141 操作、40 双入口，概览含最近活动。两次首次探针命令自身参数/语法有误，修正后通过；`.local/pmo104-resource-check.log`、`.local/pmo104-resource-preview-final.log`。 |
+
+## 当前候选定向综合检查
+
+固定代码 `531bb2bfbc6b6b1d72a6ba69f1c70075457b03fe`，依据 §5.6、§9.1、Q2/Q5/Q7、T06/T10。Windows、真实回环 HTTP/SDK stdio/Edge、PostgreSQL `0036` 隔离合成 schema；本批未开启模型。共享 `public` 只读确认为 `0016`。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_reference_vectors_signals.py tests/test_outbox.py --tb=short --junitxml=.local/pmo104-531bb2b-rules.xml` | 0 | PASS：17 项；预警规则、成本阈值、里程碑凭据、月度复盘、Outbox 重启重试及死信。`.local/pmo104-531bb2b-rules.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'drafting_through_archive_without_model or browser_and_stdio_same_snapshot or lr08_monthly' --tb=short --junitxml=.local/pmo104-531bb2b-integration.xml` | 0 | PASS：3 项；关闭模型从草稿到归档、Edge 与 stdio 同快照、私有资源限制及 LR-08 月份归集。`.local/pmo104-531bb2b-integration.log`。 |
+
+本候选全套回归、新固定部署镜像复验 NOT_RUN。没有迁移或附件变更，开发批次不重复联合演练。目标环境部署/周期恢复、独立 Host、真实模型权限、真实业务签核另按阻断清单检查；生产 NO-GO。
