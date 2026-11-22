@@ -101,11 +101,17 @@ def test_non_sponsor_can_approve_only_the_current_authorized_edge(live, team, tm
         'holdUntil': hold_until()})
     assert (denied.status_code, denied.json()['code']) == (403, 'FORBIDDEN')
     expiry = hold_until()
-    response = judgment(delegate, pause, holdUntil=expiry)
+    key = headers(pause['revision'])
+    response = judgment(delegate, pause, key=key, holdUntil=expiry)
     receipt = data(response)
     ref = f'transition-grant:{gid}'
     assert receipt['authorityRef'] == ref and receipt['authoritySourceRef'] == 'SYNTHETIC-AUTH-12'
     assert receipt == item(pm, pause) and stage(pm, project)['stage'] == 'on_hold'
+    assert receipt['resolvedBy'] == str(people['outsider'])
+    assert datetime.fromisoformat(receipt['resolvedAt']) >= now
+    version = f"project-transition:{pid}@{receipt['appliedProjectRevision']}"
+    assert receipt['appliedProjectRevision'] == pause['revision'] + 1
+    assert version in receipt['sourceRefs'] and version in response.json()['meta']['sourceRefs']
     assert ref in response.json()['meta']['sourceRefs']
     with engine.connect() as c:
         payload, digest = c.execute(sa.text('SELECT payload,payload_hash FROM project_transition_outcomes WHERE approval_id=:id'),
@@ -116,11 +122,33 @@ def test_non_sponsor_can_approve_only_the_current_authorized_edge(live, team, tm
             str(gid), str(people['outsider']), str(membership), pid)
         row = c.execute(sa.text('SELECT decision_id,source_refs FROM audit_logs WHERE request_id=:id'),
             {'id': response.headers['X-Request-ID']}).one()
-        assert str(row.decision_id) == receipt['decisionId'] and ref in row.source_refs
+        assert str(row.decision_id) == receipt['decisionId'] and {ref, version} <= set(row.source_refs)
         assert effects(c, pause) == (1, 1, 1, 1, 1, 1)
     resume = data(propose(pm, project, 'executing'))
     assert data(judgment(delegate, resume))['status'] == 'applied'
     assert stage(pm, project)['stage'] == 'executing'
+    assert receipt == item(pm, pause)
+    assert judgment(delegate, pause, key=key, holdUntil=expiry).json() == response.json()
+
+
+def test_rejected_intent_has_a_decision_but_no_applied_revision(live, team):
+    _, api, _, _ = live
+    pid, people, users, _ = team
+    pm, sponsor = users['pm'], users['sponsor']
+    p, _, _ = begin_execution(live, team)
+    pending = data(propose(pm, p, 'on_hold'))
+    token = issue(pm, pid, ('pmo_project_get',))
+    auth = {'Authorization': f'Bearer {token}'}
+    denied = api.get('/api/v1/approvals', headers=auth, params={'projectId': pid})
+    assert (denied.status_code, denied.json()['code']) == (403, 'FORBIDDEN')
+    assert users['outsider'].get('approvals', params={'projectId': pid}).status_code == 404
+    rejected = data(judgment(sponsor, pending, decision='reject'))
+    assert rejected['status'] == 'rejected' and rejected['resolvedBy'] == str(people['sponsor'])
+    assert rejected['decisionId'] and rejected['resolvedAt']
+    assert 'appliedProjectRevision' not in rejected
+    assert all(not ref.startswith('project-transition:') for ref in rejected['sourceRefs'])
+    assert stage(pm, p)['revision'] == pending['revision']
+    assert item(pm, pending) == rejected
 
 
 def test_delegate_can_decide_sponsors_intent_but_not_agents_own_delegated_proposal(live, team):

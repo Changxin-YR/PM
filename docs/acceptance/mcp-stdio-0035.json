@@ -1,0 +1,614 @@
+{
+  "status": "PASS",
+  "registered": 40,
+  "successful": 40,
+  "missingCalls": [],
+  "missingDiscovery": [],
+  "missingWriteReplays": [],
+  "missingReadAudits": [],
+  "missingForbidden": [],
+  "tools": {
+    "pmo_alert_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_feasibility_reminders.py::test_only_unfinished_feasibility_conditions_warn_after_due_time",
+        "tests/test_forecast_governance.py::test_forecast_slip_remains_until_independent_plan_change_applies",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_feasibility_reminders.py::test_only_unfinished_feasibility_conditions_warn_after_due_time"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_change_propose": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_change_contracts.py::test_change_submission_contract_at_http_and_stdio",
+        "tests/test_requirement_baselines.py::test_two_current_people_sign_the_same_requirement_snapshot"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_change_contracts.py::test_change_submission_contract_at_http_and_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_charter_save": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_cost_budget_draft_save": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_cost_forecast_save": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_cost_posting_propose": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_cost_summary": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_costs.py::test_approved_cost_bases_switch_at_one_effective_instant",
+        "tests/test_health.py::test_zero_budget_is_explicit_and_not_absent",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_costs.py::test_approved_cost_bases_switch_at_one_effective_instant"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_decision_get": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "RESOURCE_NOT_FOUND",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_fact_propose": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_facts.py::test_stdio_candidate_and_human_only_boundaries"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_facts.py::test_stdio_candidate_and_human_only_boundaries"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_gate_check": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_health_get": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_health.py::test_live_snapshot_appeal_and_stdio_scope",
+        "tests/test_health.py::test_zero_budget_is_explicit_and_not_absent"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_health.py::test_live_snapshot_appeal_and_stdio_scope"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "RESOURCE_NOT_FOUND",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_lessons_search": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_retrospectives.py::test_closed_search_dto_and_live_delegation_scope"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_retrospectives.py::test_closed_search_dto_and_live_delegation_scope"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_milestone_create": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_milestone_draft_update": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_milestone_forecast": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_milestone_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_forecast_governance.py::test_forecast_slip_remains_until_independent_plan_change_applies",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_forecast_governance.py::test_forecast_slip_remains_until_independent_plan_change_applies"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_preapproval_spending_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio",
+        "tests/test_spending.py::test_preapproval_spending_recognizes_conditional_charter_decision"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_project_create": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_acceptance_baseline.py::test_a12_only_current_token_inherits_new_draft",
+        "tests/test_reference_vectors_permissions.py::test_create_token_scope_is_not_a_business_role[mcpPermissions/agent_create_project_org_grant_allowed]",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_acceptance_baseline.py::test_a12_only_current_token_inherits_new_draft"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "UNAUTHORIZED",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_project_draft_update": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_acceptance_baseline.py::test_a12_only_current_token_inherits_new_draft",
+        "tests/test_project_draft_replay.py::test_draft_update_replay_after_submission_preserves_live_authority",
+        "tests/test_reference_vectors_permissions.py::test_scoped_drafts_cannot_become_approvals[mcpPermissions/agent_can_write_owned_draft_if_authorized]",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_acceptance_baseline.py::test_a12_only_current_token_inherits_new_draft"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "UNAUTHORIZED",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_project_get": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_agent_tokens.py::test_issue_once_use_stdio_then_revoke_without_restart",
+        "tests/test_reference_vectors_governance.py::test_transition_requires_decision[lrRules/lr01_legal_transition_without_decision_is_blocked]",
+        "tests/test_reference_vectors_governance.py::test_transition_requires_decision[lrRules/lr01_skip]",
+        "tests/test_reference_vectors_permissions.py::test_token_lifetime_and_project_scope[mcpPermissions/agent_cannot_access_project_if_not_scoped]",
+        "tests/test_reference_vectors_permissions.py::test_token_lifetime_and_project_scope[mcpPermissions/agent_cannot_expand_project_scope]",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_agent_tokens.py::test_issue_once_use_stdio_then_revoke_without_restart"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "RESOURCE_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_project_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_mcp_action_matrix.py::test_all_40_tools_deny_ungranted_action_and_reject_unknown_input",
+        "tests/test_mcp_configuration.py::test_configured_endpoint_and_wheel_stdio",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_mcp_action_matrix.py::test_all_40_tools_deny_ungranted_action_and_reject_unknown_input"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "PMO_API_CONFIGURATION_INVALID",
+        "UNAUTHORIZED",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_report_get": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_facts.py::test_stdio_candidate_and_human_only_boundaries",
+        "tests/test_reports.py::test_report_real_stdio_human_publish_and_distinct_idempotency_actors"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_facts.py::test_stdio_candidate_and_human_only_boundaries"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "UNAUTHORIZED",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_report_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reports.py::test_report_real_stdio_human_publish_and_distinct_idempotency_actors"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_reports.py::test_report_real_stdio_human_publish_and_distinct_idempotency_actors"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "RESOURCE_NOT_FOUND",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_report_submit": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reports.py::test_report_real_stdio_human_publish_and_distinct_idempotency_actors"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_reports.py::test_report_real_stdio_human_publish_and_distinct_idempotency_actors"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "IDEMPOTENCY_CONFLICT",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_requirement_change_history": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_change_contracts.py::test_change_history_keeps_addition_and_opaque_legacy_snapshots",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_change_contracts.py::test_change_history_keeps_addition_and_opaque_legacy_snapshots"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_requirement_create": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reference_vectors_permissions.py::test_scoped_drafts_cannot_become_approvals[mcpPermissions/agent_can_propose_requirement_draft]",
+        "tests/test_reference_vectors_permissions.py::test_scoped_drafts_cannot_become_approvals[mcpPermissions/agent_cannot_accept_customer_requirement]",
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_reference_vectors_permissions.py::test_scoped_drafts_cannot_become_approvals[mcpPermissions/agent_can_propose_requirement_draft]"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_requirement_deliver": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_requirement_baselines.py::test_two_current_people_sign_the_same_requirement_snapshot"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_requirement_baselines.py::test_two_current_people_sign_the_same_requirement_snapshot"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_requirement_draft_update": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_requirement_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_review_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_review_prepare": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_review_submit": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_reviews.py::test_reviews_stdio_closed_dtos_and_explicit_initiator_replay"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_risk_create": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_risk_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_risk_update": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_role_assignment_propose": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_stakeholder_create": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_runtime.py::test_mcp_stdio"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_task_list": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_tasks.py::test_live_task_token_issuance_and_closed_mcp_dto"
+      ],
+      "writeReplayCaseIds": [],
+      "readAuditCaseIds": [
+        "tests/test_tasks.py::test_live_task_token_issuance_and_closed_mcp_dto"
+      ],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "RESOURCE_NOT_FOUND",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_task_update": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_tasks.py::test_live_task_token_issuance_and_closed_mcp_dto"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_tasks.py::test_live_task_token_issuance_and_closed_mcp_dto"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "RESOURCE_NOT_FOUND",
+        "VALIDATION_FAILED"
+      ]
+    },
+    "pmo_transition_request": {
+      "registered": true,
+      "successfulCaseIds": [
+        "tests/test_mcp_transition.py::test_stdio_transition_creates_pending_intent_and_cannot_approve"
+      ],
+      "writeReplayCaseIds": [
+        "tests/test_mcp_transition.py::test_stdio_transition_creates_pending_intent_and_cannot_approve"
+      ],
+      "readAuditCaseIds": [],
+      "observedErrorCodes": [
+        "FORBIDDEN",
+        "IDEMPOTENCY_CONFLICT",
+        "RESOURCE_NOT_FOUND",
+        "TRANSITION_NOT_ALLOWED",
+        "UNAUTHORIZED",
+        "VALIDATION_FAILED",
+        "VERSION_CONFLICT"
+      ]
+    }
+  }
+}

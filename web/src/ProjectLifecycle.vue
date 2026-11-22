@@ -5,7 +5,8 @@ import {ArrowRight,Gavel,Play,RefreshCw,RotateCcw,Send} from 'lucide-vue-next'
 type Entry={requestId:string;projectId:string;fromStage:string;toStage:string;status:string;revision:number;
   requestedBy:string;requestedAt:string;reason:string;canExecute:boolean;canDecide:boolean;stale:boolean;
   decisionId?:string;decisionReason?:string;authorityRef?:string;authoritySourceRef?:string;
-  holdUntil?:string;awaitsInitiator?:boolean;initiatorConfirmedAt?:string}
+  holdUntil?:string;awaitsInitiator?:boolean;initiatorConfirmedAt?:string;
+  resolvedBy?:string;resolvedAt?:string;appliedProjectRevision?:number}
 type Inbox={items:Entry[];projectId:string;projectRevision:number;stage:string;requestable:string[];canResubmit:boolean;policyPending:boolean}
 type Mode='request'|'execute'|'decide'|'resubmit'
 type Intent={mode:Mode;revision:number;fromStage:string;toStage?:string;requestId?:string}
@@ -140,6 +141,9 @@ async function save(){
         <details class="meta"><summary>记录来源</summary>
           <dl class="detail-lines"><dt>申请人</dt><dd>{{item.requestedBy}}</dd><dt>申请编号</dt><dd>{{item.requestId}}</dd>
             <dt>申请时项目版本</dt><dd>{{item.revision}}</dd>
+            <template v-if="item.appliedProjectRevision!=null"><dt>流转后项目版本</dt><dd>{{item.appliedProjectRevision}}</dd></template>
+            <template v-if="item.resolvedBy"><dt>{{item.decisionId?'裁决人':'执行人'}}</dt><dd>{{item.resolvedBy}}</dd></template>
+            <template v-if="item.resolvedAt"><dt>{{item.decisionId?'裁决时间':'执行时间'}}</dt><dd><time :datetime="item.resolvedAt">{{time(item.resolvedAt)}}</time></dd></template>
             <template v-if="item.decisionId"><dt>裁决编号</dt><dd>{{item.decisionId}}</dd></template>
             <template v-if="item.authorityRef"><dt>裁决权限依据</dt><dd>{{item.authorityRef}}</dd></template>
             <template v-if="item.authoritySourceRef"><dt>组织授权记录</dt><dd>{{item.authoritySourceRef}}</dd></template>

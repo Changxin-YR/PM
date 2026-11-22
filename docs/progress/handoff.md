@@ -16,11 +16,13 @@
 
 [三线输入读取契约](M2-report.md#三线输入的读取契约)已补齐已知字段、Decimal 字符串和时点；历史空值、快照哈希及 Agent 摘要保持不变。定向后端 38 项、Edge 4 项 PASS；存储和规则没有变化。[草稿编辑重放](M3-report.md#立项后草稿编辑请求重放)在立项裁决后回读原回执，不恢复写权；撤销仍阻断，定向后端 55 项 PASS。
 
-测试命令和失败修复见 [M2](M2-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。静态检查、SDK 联调和合成数据不能替代真实试点、目标 Host 或签核；逐项口径见[追踪矩阵](../acceptance/traceability.csv)和[阻断项](blockers.md)。上游 `origin/main`；终端默认 Git 缺 HTTPS helper（退出 128，`.local/pmo104-contracts-remote.log`）。用桌面运行时 Git 执行 `ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1`（退出 0，`.local/pmo104-contracts-remote-desktop.log`）仅回 `refs/heads/main`（`45307c20ed94bf9347306f5983a7b695ed5c3ebb`），未返回目标开发分支 SHA。没有推送。
+上述三项的固定候选 `pmo104-rc-de0dfb26`（`18770`）已复验 `0035`、实际 OpenAPI、20 项 Edge 和停库恢复；首轮全量后端有本地连接超时并保留 FAIL。后续[裁决出处批次](M4-report.md#裁决出处回归)复跑全量 313 项 PASS，102 组产品向量全过、40 工具真实 stdio 实测，Edge 定向 4 项 PASS。关口摘要带实际项目历史流转版本、不返回理由或快照正文；人工回执区分申请 revision 与已应用版本，拒绝没有流转版本，旧记录不补造。回环热重载 `18771` 仅使用独立合成 schema，模型关闭且保留真实政策阻断。`18769` / `18770` 固定候选及共享库未被改写。
+
+测试命令和失败修复见 [M2](M2-report.md)、[M3](M3-report.md)、[M4](M4-report.md)。静态检查、SDK 联调和合成数据不能替代真实试点、目标 Host 或签核；逐项口径见[追踪矩阵](../acceptance/traceability.csv)和[阻断项](blockers.md)。上游 `origin/main`。桌面运行时 Git 首次 RPC 连接重置（退出 128，`.local/pmo104-decision-provenance-remote.log`）；运行 `git -c http.version=HTTP/1.1 ls-remote --heads origin refs/heads/main refs/heads/dev/pmo-v1`（退出 0，`.local/pmo104-decision-provenance-remote-retry.log`）仅回 `refs/heads/main`（`45307c20ed94bf9347306f5983a7b695ed5c3ebb`），未返回目标开发分支 SHA。没有推送。
 
 ## 续接顺序
 
-1. 冻结参考向量 102/102、合成补充 A01–A16 和 Q/T 组合证据见[追踪](../acceptance/traceability.csv)。[ERD](../erd.md) 从 PostgreSQL 目录生成，13 状态、23 条合法边和 421 个冻结字段已对表。23 条合法边另有合成 HTTP 逐边角色与事务回执（[M2](M2-report.md#23-条阶段边的角色和事务回执)）。评分、成本、变更、对账和风险接收已验嵌套契约；继续核对三线、审批审计、归档及其余资源级 DTO、角色边界和库约束。
+1. 冻结参考向量 102/102、合成补充 A01–A16 和 Q/T 组合证据见[追踪](../acceptance/traceability.csv)。[ERD](../erd.md) 从 PostgreSQL 目录生成，13 状态、23 条合法边和 421 个冻结字段已对表。23 条合法边另有合成 HTTP 逐边角色与事务回执（[M2](M2-report.md#23-条阶段边的角色和事务回执)）。评分、成本、变更、对账、风险接收、三线输入和裁决历史已有契约实测；审批阶段历史仍固定只取最新 100 项，下一步补可翻页回读，再核对其余资源级 DTO、角色组合和库约束。
 2. 准备两个目标 Host 的独立配置与证据，进入 T09 前先确认交付授权；不复用生产令牌作试验。
 3. 验收环境部署、恢复、性能、真实模型、签核和试点分别核验。新增迁移或附件引用变化后才重跑带数据升级与联合恢复。
 

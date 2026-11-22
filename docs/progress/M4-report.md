@@ -282,3 +282,32 @@
 | `python` 分别执行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py`；`python -m mypy pmo --ignore-missing-imports` | 0 | PASS：冻结规格及 88 个源码文件类型检查。`.local/pmo104-0035-final-static.log`。 |
 
 全量命令中 `tests/test_recovery.py` 三项 PASS。由 `0016` 带数据升级至 `0035`，通过实际 `pg_dump/pg_restore` 和私有原件联合恢复，复盘答复和 Lesson 确认原值、原件字节、旧账及归档里程碑保留。恢复库再次校验 Lesson 约束与归档只读。非法存量升级回滚用例早期夹具缺少必填人员启用状态与项目 revision；中间树 `dcff7472cb7ea5f702f78b23a0bed0257b16ec7b` 的 308 PASS / 1 FAIL 记录在 `.local/governance-0035-backend.log`，夹具修正后保留原回滚断言。共享开发库使用只读事务查询仍为 `0016`，退出 0（`.local/pmo104-0035-shared-head.log`）。不是对真实数据、业务签核、目标 Host 或目标部署环境的放行。
+
+## 复盘、三线与草稿重放候选复验
+
+依据 §8.3–8.4、§9.1、§20.3–20.6、T05/T10 与工程 DTO 规范。固定候选基准 `a3cac31e844c56e979b1edc4ef4cce33d201c231`、导出树 `c79ca8059040d0cd125c76551c5cfe5f1f8f10b4`，目录 `.local/pmo104-contracts-c79ca805-fixed`。应用、迁移和构建源码与 `9f27abdb683e4b8de064eadc61d086752455f36a` 一致，后者仅另有重放测试移位及文档。Windows、Python 3.12、PostgreSQL 16.14 隔离 schema/专用 Compose 以及 Edge `158.0.4370.33`，合成环境。`python` 使用原仓库 `.venv/Scripts/python.exe`。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `docker compose -p pmo104-rc-de0dfb26 --env-file .local/pmo104-rc-de0dfb26.env -f deploy/compose.yaml up --build -d --wait` | 0 | PASS：候选回环 `18770`，专用 bridge `10.253.70.0/27`、独立数据和附件卷，无生产发布。`.local/pmo104-contracts-compose.log`。 |
+| `python scripts/deployment_smoke.py pmo104-rc-de0dfb26` | 0 | PASS：迁移 `0035`，受限角色，模型关闭，15 草稿、15 唯一消费回执；停库 `live=200/ready=503`，恢复 `200/200`，项目与回执保留。各 30 次的本机 p95：筛选 205 ms、详情 385 ms。`.local/pmo104-contracts-smoke.log`。 |
+| `docker exec pmo104-rc-de0dfb26-api-1 alembic current` 和容器内 `GET /openapi.json`；`docker exec pmo104-rc-de0dfb26-db-1 psql ...` 回读两条 `0035` 约束 | 0 / 1 / 0 | `0035 (head)`、137 操作及主体说明回读 PASS（95 人工或登录、40 双入口、2 探针）。约束探针首轮使用错误关系名 FAIL（`.local/pmo104-contracts-readback.log`），改为按约束名查询两项 `convalidated=true`，PASS（`.local/pmo104-contracts-constraints.log`）。 |
+| `python -m pytest -q tests/browser_case.py --tb=short --junitxml=../pmo104-contracts-edge.xml` | 0 | PASS：20 项 / 806.91 秒。`.local/pmo104-contracts-edge.log`，含无模型全人工归档、授权阶段流转和书面例外。 |
+| `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence ../pmo104-contracts-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=../pmo104-contracts-backend.xml` | 1 | FAIL：308 项通过、2 项本地 PostgreSQL 连接超时、1 项回环 HTTP 响应超时；40 工具没有发现/调用/动作拒绝/读审计/写重放缺项，但批次 JSON 状态仍为 FAIL。`.local/pmo104-contracts-backend.log`、`.local/pmo104-contracts-mcp.json`。同期 Compose 构建和多个测试进程运行；不当作业务断言失败，也不标外部阻断。 |
+| `python -m pytest -q @vectorFiles tests/test_project_draft_replay.py --tb=short --maxfail=2 --junitxml=.local/pmo104-contracts-vectors-retry.xml`；`python scripts/reference_vector_evidence.py .local/pmo104-contracts-vectors-retry.xml .local/pmo104-contracts-vectors-retry.csv --require-complete` | 1 / 0 | 首次向量与草稿重放 23 项通过、80 项连接超时（`.local/pmo104-contracts-vectors.log`）。连接恢复后在 `9f27abdb683e4b8de064eadc61d086752455f36a`，`$vectorFiles` 为 `tests/test_reference_vectors*.py`，重跑 PASS：103 项 / 194.15 秒，向量逐案 102 PASS、0 FAIL、0 NOT_RUN。`.local/pmo104-contracts-vectors-retry.log`，保留原始失败 JUnit。 |
+| `python` 分别执行 `docs/spec/08_*.py`、`15_*.py`、`19_*.py`；`python -m mypy pmo --ignore-missing-imports` | 0 | PASS：规格及 89 个源码文件。`.local/pmo104-contracts-static.log`。 |
+
+该批无新迁移或附件引用变化；沿用 `0016→0035` 联合恢复基线，不改写历史。共享 `public.alembic_version` 查询仍为 `0016`。`18770` 是该固定树，不覆盖后续本地源码变更。
+
+## 裁决出处回归
+
+依据 §6、§8.3–8.4、§20.3–20.6、T07、工程 DTO 规范 §1–2/5。基准 `9f27abdb683e4b8de064eadc61d086752455f36a`，被测源码树 `3cb5f0c2f3a0a8c0bbad539a07d9e38580b3dfe3`（不含补录文档和证据）。实现 `pmo/review_outcomes.py`、`pmo/project_lifecycle.py`、`web/src/ReviewWorkbench.vue`、`web/src/ProjectLifecycle.vue`，参见 [ADR 0019](../adr/0019-project-transition-authority.md#决议回读)。Windows、Python 3.12、PostgreSQL 16.14 隔离 schema/专库、回环 HTTP、实际 SDK stdio 与 Edge，合成账号、模型关闭。无规则、迁移、附件引用或审批权限变更。
+
+| 实际命令或复验 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `python -m pytest -q tests/test_reviews.py tests/test_lifecycle.py tests/test_transition_authority.py tests/test_stage_edges.py tests/test_mcp_transition.py tests/test_admin_audit.py tests/test_acceptance_baseline.py tests/test_mcp_action_matrix.py tests/test_database_roles.py --tb=short --junitxml=.local/pmo104-decision-provenance-backend.xml` | 1 | FAIL：47 项通过；运行账号 fixture 拒绝测试 URL 附加的 `connect_timeout` 参数。保留原断言和恢复 URL 校验，下一行采用标准 URL（超时用 libpq 环境参数）。`.local/pmo104-decision-provenance-backend.log`。 |
+| `python -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/pmo104-decision-provenance-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/pmo104-decision-provenance-full.xml` | 0 | PASS：313 项 / 469.31 秒；受限运行角色和三项带数据升级/恢复测试通过。40 项工具发现、实际调用及动作拒绝，18 读审计与 22 写重放。`.local/pmo104-decision-provenance-full.log`；[逐工具证据](../acceptance/mcp-stdio-0035.json) SHA-256 `0b3ac888e96b7a1c8d2209303d883d4deb0aa68463c42c68175213ce5b592f1f`。 |
+| `python scripts/reference_vector_evidence.py .local/pmo104-decision-provenance-full.xml .local/pmo104-decision-provenance-vectors.csv --require-complete` | 0 | PASS：本源码再次实测 102 PASS、0 FAIL、0 NOT_RUN。 |
+| `python -m pytest -q tests/browser_case.py -k 'drafting_through_archive or formal_transition_authority or independent_termination_confirmation or customer_exception_and_conditional_decision' --tb=short --junitxml=.local/pmo104-decision-provenance-edge.xml` | 0 | PASS：4 项 / 102.26 秒，16 项未选。独立评审与归档、阶段授权与终止，Web 展开查看已提交的来源和历史版本。`.local/pmo104-decision-provenance-edge.log`。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；`web` 内 `node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：三套静态规格、Python 89 文件和 Vue 类型检查。`.local/pmo104-decision-provenance-static.log`、`.local/pmo104-decision-provenance-vue.log`。 |
+| 合成 schema `python -m alembic upgrade head`；`python -m uvicorn pmo.api:app --host 127.0.0.1 --port 18772 --reload --reload-dir pmo --no-access-log`；`npm.cmd --prefix web run dev -- --port 18771 --strictPort`；通过 Vite 代理实测登录、创建草稿和登出 | 0 | PASS：本机热重载预览 `18771`，迁移 `0035`，独立 schema `pmo_preview_a833a8fbee1240cab31a5e85252121a0` 与附件目录，模型关闭且 `POLICY_PENDING`。`.local/pmo104-decision-provenance-preview.log`。合成预览只验证准备态，不据此替代真实业务或部署验收。 |

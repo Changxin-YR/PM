@@ -96,6 +96,8 @@ async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) 
   const result = await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
   expect(result.decision).toMatchObject({stage,rationale})
   await expect(workbench.getByText(rationale,{exact:true})).toBeVisible()
+  await workbench.getByText('裁决来源',{exact:true}).click()
+  await expect(workbench.getByText(`review-decision-snapshot:${result.decision.decisionId}`,{exact:true})).toBeVisible()
 }
 
 async function launch(pm) {
@@ -305,6 +307,9 @@ try {
       await row.getByText('记录来源',{exact:true}).click()
       await expect(row.getByText(refs[next],{exact:true})).toBeVisible()
       await expect(row.getByText(source,{exact:true})).toBeVisible()
+      await expect(row.getByText('流转后项目版本',{exact:true}).locator('xpath=following-sibling::dd[1]'))
+        .toHaveText(String(outcome.revision+1))
+      await expect(row.getByText(outcome.resolvedBy,{exact:true})).toBeVisible()
     }
   } else if(process.env.PMO_TEST_PHASE==='termination') {
     const requestReason='原实施条件已取消，申请终止落地评审。'

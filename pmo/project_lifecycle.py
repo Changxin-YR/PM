@@ -12,6 +12,7 @@ from sqlalchemy.engine import RowMapping
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
+from .audit_store import stable_refs
 from .change_intents import snapshot
 from .contracts import RULE_VERSION, Result, Strict
 from .evidence import verified_link
@@ -105,6 +106,10 @@ class Entry(TransitionRequest):
     holdUntil: datetime | None = None
     awaitsInitiator: bool = False
     initiatorConfirmedAt: datetime | None = None
+    resolvedBy: UUID | None = None
+    resolvedAt: datetime | None = None
+    appliedProjectRevision: int | None = None
+    sourceRefs: list[str] | None = None
 
 
 class TerminationEntry(Entry):
@@ -347,31 +352,49 @@ def persist(c, a, p, edge, why, contents, refs):
 def entry(c, a, p, req, intent):
     edge = (intent.from_stage, intent.to_stage)
     stale = req.status == 'pending' and not current(c, a, p, req, intent)
-    outcome = one(c, results, results.c.approval_id == req.id)
+    d, x = db.decisions.c, results.c
+    outcome = c.execute(sa.select(d.id, d.revision, d.rationale, x.payload)
+        .select_from(results.join(db.decisions, d.id == x.decision_id))
+        .where(x.approval_id == req.id, d.project_id == p.id)).mappings().one_or_none()
     evidence = outcome.payload if outcome else {}
     confirmation = valid_termination_confirmation(c, req, intent)
+    resolved = req.status in ('applied', 'rejected')
+    refs = [f'approval:{req.id}']
+    applied_revision = None
+    if req.status == 'applied':
+        from .reviews import transitions
+        t = transitions.c
+        applied_revision = c.scalar(sa.select(t.to_revision).where(t.approval_request_id == req.id,
+            t.project_id == p.id, t.from_revision == req.expected_revision, t.from_stage == edge[0], t.to_stage == edge[1]))
+        if applied_revision is not None:
+            refs.append(f'project-transition:{p.id}@{applied_revision}')
+    if outcome:
+        refs.append(f'decision:{outcome.id}@{outcome.revision}')
+        if evidence.get('authorityRef'):
+            refs.append(evidence['authorityRef'])
     return Entry(requestId=req.id, projectId=p.id, fromStage=edge[0], toStage=edge[1], status=req.status,
         revision=req.expected_revision, requestedBy=req.requested_by, requestedAt=intent.requested_at, reason=intent.reason,
         canExecute=req.status == 'pending' and not stale and direct_actor(c, a, p, edge), stale=stale,
         canDecide=req.status == 'pending' and not stale and bool(authority(c, a, p, edge, req)) and synthetic_confirmation(c),
-        decisionId=outcome.decision_id if outcome else None, decisionReason=evidence.get('rationale'),
+        decisionId=outcome.id if outcome else None, decisionReason=outcome.rationale if outcome else None,
         authorityRef=evidence.get('authorityRef'), authoritySourceRef=evidence.get('authorityGrant', {}).get('source_ref'),
         holdUntil=evidence.get('holdUntil') or intent.basis.get('holdUntil'),
         awaitsInitiator=req.status == 'pending' and bool(intent.basis.get('initiatorAssignment')) and confirmation is None,
-        initiatorConfirmedAt=confirmation.signed_at if confirmation else None)
+        initiatorConfirmedAt=confirmation.signed_at if confirmation else None,
+        resolvedBy=req.decided_by if resolved else None, resolvedAt=req.decided_at if resolved else None,
+        appliedProjectRevision=applied_revision, sourceRefs=stable_refs(refs))
 
 
 def finish(c, a, p, req, op, rid, key, signature, item, refs):
-    sources = [f'approval:{req.id}', *refs]
+    sources = (item.sourceRefs if isinstance(item, Entry) else None) or [f'approval:{req.id}']
     event = {'projectId': str(p.id), 'approvalRequestId': str(req.id), 'status': item.status, 'toStage': item.toStage}
     decision_id = None
     if op == DECIDE:
         assert isinstance(item, Entry) and item.decisionId is not None and item.authorityRef is not None
         decision_id = item.decisionId
-        sources.extend((f'decision:{decision_id}@1', item.authorityRef))
         event['decisionId'] = str(decision_id)
         event['authorityRef'] = item.authorityRef
-    result = Result[type(item)](data=item, meta=meta(op, sources))
+    result = Result[type(item)](data=item, meta=meta(op, stable_refs([*sources, *refs])))
     response = result.model_dump(mode='json', exclude_none=True)
     record_receipt(c, a, key, op, rid, req.id, p.id, signature, response, fingerprint(response), req.snapshot_hash,
                    decision_id=decision_id)
@@ -588,9 +611,10 @@ def inbox(authorization: Auth, projectId: UUID = Query(...)) -> Result[Page]:
                 pass
         choices = sorted(edge[1] for edge in DIRECT | APPROVED if edge[0] == p.stage and
                          can_request(c, p, a.person, edge) and not competing_request(c, a, p, edge))
+        refs = stable_refs([f'project:{p.id}@{p.revision}', *(ref for item in items for ref in item.sourceRefs or [])])
         return Result[Page](data=Page(items=items, projectId=p.id, projectRevision=p.revision, stage=p.stage, requestable=choices,
                                    canResubmit=can_resubmit, policyPending=not synthetic_confirmation(c)),
-                            meta=meta(INBOX, [f'project:{p.id}@{p.revision}']))
+                            meta=meta(INBOX, refs))
     return run(authorization, INBOX, read)
 
 

@@ -266,13 +266,38 @@ def test_closing_verified_postings_and_free_text_do_not_clear_gates(live, team):
     with engine.connect() as c: assert count_state(c, pid) == (0, 0, 0, 0, 0, 0)
 
 
+def legacy_decision(c, pid, owner, reviewer):
+    review_id = c.scalar(db.reviews.insert().values(project_id=pid, created_by=owner, round=1,
+        type='charter', status='decided', verdict='pass', attendees=[], snapshot_hash='a' * 64,
+        revision=2).returning(db.reviews.c.id))
+    decision_id = c.scalar(db.decisions.insert().values(project_id=pid, review_id=review_id, created_by=reviewer,
+        decided_at=sa.func.now(), decided_by=reviewer, subject='charter', option='pass',
+        rationale='An imported decision without a transition receipt.').returning(db.decisions.c.id))
+    return str(review_id), str(decision_id)
+
+
+def test_legacy_decision_does_not_borrow_live_project_stage(live, team):
+    pid, people, users, _ = team
+    with live[0].begin() as c:
+        review_id, decision_id = legacy_decision(c, pid, people['initiator'], people['reviewer'])
+    path = f'reviews/{review_id}'
+    decision = bench(users['reviewer'], path)['decision']
+    assert 'stage' not in decision and decision['sourceRefs'] == [f'decision:{decision_id}@1', f'review:{review_id}@2']
+    assert users['outsider'].get(path + '/decisions').status_code == 404
+
+
 def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
-    _, _, port, _ = live
-    pid, _, users, _ = team
+    engine, api, port, _ = live
+    pid, people, users, _ = team
     owner = users['initiator']
     path = f'projects/{pid}'
+    other = data(owner.post('projects', headers=headers(), json={'code': 'OTHER', 'name': 'Other owned project'}))['projectId']
+    with engine.begin() as c:
+        other_review, _ = legacy_decision(c, other, people['initiator'], people['reviewer'])
+    assert data(owner.get(f'reviews/{other_review}/decisions'))['total'] == 1
     data(owner.put(path + '/charter', headers=headers(), json={'fieldsCharter': CHARTER}))
     token = issue(owner, pid, actions=(*OPS, 'pmo_decision_get'))
+    authorization = {'Authorization': f'Bearer {token}'}
     env = {**{k: os.environ[k] for k in ('SYSTEMROOT', 'PATH', 'TEMP', 'TMP') if k in os.environ}, 'PMO_API_PORT': str(port),
            'PMO_AGENT_TOKEN': token, 'PYTHONUTF8': '1'}
 
@@ -301,6 +326,9 @@ def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
             assert (await call(OPS[2], {}))['data']['items'] == [submitted['data']]
             assert (await call(OPS[0], {'gate': 'charter'}))['data']['missing'][0]['code'] == 'GATE_STAGE_MISMATCH'
             review_id = submitted['data']['reviewId']
+            pending = await session.call_tool('pmo_decision_get', {'reviewId': review_id})
+            assert not pending.isError and pending.structuredContent['data']['items'] == []
+            assert pending.structuredContent['meta']['sourceRefs'] == [f'review:{review_id}@1']
             scored = users['reviewer']
             score(scored, f'reviews/{review_id}', [4, 4, 4, 4])
             final = data(decide(scored, f'reviews/{review_id}'))
@@ -308,10 +336,20 @@ def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
             assert not response.isError
             payload = response.structuredContent
             jsonschema.Draft202012Validator(tools['pmo_decision_get'].outputSchema).validate(payload)
-            api_result = data(owner.get(f'reviews/{review_id}/decisions'))
+            api_result = data(api.get(f'/api/v1/reviews/{review_id}/decisions', headers=authorization))
             assert payload['data']['items'] == api_result['items']
-            assert payload['data']['items'][0]['decisionId'] == final['decision']['decisionId']
-            assert 'rationale' not in payload['data']['items'][0]
+            assert api_result['items'] == data(owner.get(f'reviews/{review_id}/decisions'))['items']
+            d, = payload['data']['items']
+            assert d['decisionId'] == final['decision']['decisionId']
+            assert set(d) == {'decisionId', 'reviewId', 'subject', 'option', 'decidedAt', 'decidedBy', 'sourceRefs'}
+            assert d['sourceRefs'] == final['decision']['sourceRefs'] == payload['meta']['sourceRefs']
+            assert f'review:{review_id}@3' in d['sourceRefs']
+            assert f'review-decision-snapshot:{d["decisionId"]}' in d['sourceRefs']
+            assert f'project-transition:{pid}@3' in d['sourceRefs']
+            wrong = await session.call_tool('pmo_decision_get', {'reviewId': other_review})
+            assert wrong.isError and wrong.structuredContent['error']['code'] == 'RESOURCE_NOT_FOUND'
+            denied = api.get(f'/api/v1/reviews/{other_review}/decisions', headers=authorization)
+            assert (denied.status_code, denied.json()['code']) == (404, 'RESOURCE_NOT_FOUND')
 
     asyncio.run(scenario())
 

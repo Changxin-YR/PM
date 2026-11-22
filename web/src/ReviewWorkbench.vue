@@ -24,7 +24,7 @@ type Workbench={
   appeal?:{reason:string;requestedAt:string;requestedBy:string}
   assessment?:{classification:keyof typeof classifications;total?:string;means:Record<string,string>;weakDimensions:string[]}
   confirmations:{role:Role;confirmedAt:string;confirmedBy:string;current:boolean}[]
-  decision?:{decisionId:string;option:string;rationale:string;decidedAt:string;decidedBy:string;stage:string}
+  decision?:{decisionId:string;option:string;rationale:string;decidedAt:string;decidedBy:string;stage?:string;sourceRefs:string[]}
   withdrawalReason?:string
   requirementException?:RequirementException
   tasks:{taskId:string;title:string;assigneeId?:string;dueAt?:string;sourceType:string;sourceId:string;status:string;revision:number}[]
@@ -269,7 +269,11 @@ async function submit(previous?:Attempt){
           <template v-if="view.decision">
             <p class="reason">{{view.decision.rationale}}</p>
             <p class="meta"><time :datetime="view.decision.decidedAt">{{localTime(view.decision.decidedAt)}}</time> · 裁决人 {{view.decision.decidedBy}}</p>
-            <p>流转阶段：{{stages[view.decision.stage]??view.decision.stage}}</p>
+            <p v-if="view.decision.stage">流转阶段：{{stages[view.decision.stage]??view.decision.stage}}</p>
+            <details v-if="view.decision.sourceRefs.length" class="meta">
+              <summary>裁决来源</summary>
+              <ul class="refs"><li v-for="source in view.decision.sourceRefs" :key="source">{{source}}</li></ul>
+            </details>
           </template>
           <p v-else-if="view.withdrawalReason" class="reason">{{view.withdrawalReason}}</p>
         </section>

@@ -152,10 +152,12 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     assert data(pm.get(project + '/closing/check'))['eligible']
     assert data(pm.get(project + '/assistant/closing'))['gateEligible'] is True
     closing = gate(pm, project, 'closing')
-    assert data(decide(reviewer, closing))['decision']['stage'] == 'closed'
+    closing_receipt = data(decide(reviewer, closing))['decision']
+    assert closing_receipt['stage'] == 'closed'
 
     ret = data(propose(pm, project, 'retrospective'))
-    data(execute(pm, project, ret))
+    entered = data(execute(pm, project, ret))
+    assert entered['appliedProjectRevision'] == ret['revision'] + 1 and 'decisionId' not in entered
     retro = project + '/retrospective'
     assert data(pm.get(retro))['kind'] == 'normal'
     assert propose(pm, project, 'archived').json()['code'] == 'RETROSPECTIVE_ANSWERS_REQUIRED'
@@ -191,7 +193,7 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
         'sourceRef': 'New posting must not be allowed'}).status_code == 422
     assert pm.put(project + '/cost-budgets', headers=headers(5), json={'type': 'money', 'budget': '102.00'}).status_code == 422
     assert decide(reviewer, closing).json()['code'] == 'REVIEW_NOT_PENDING'
-    assert bench(reviewer, closing)['decision']['stage'] == 'closed'
+    assert bench(reviewer, closing)['decision'] == closing_receipt
     with engine.connect() as c:
         steps = c.execute(sa.text('SELECT to_stage FROM project_stage_transitions WHERE project_id=:pid ORDER BY to_revision'),
                           {'pid': pid}).scalars().all()
@@ -306,7 +308,11 @@ def test_feasibility_termination_confirmation_is_scoped_and_atomic(live, team):
     assert stopped['review']['verdict'] == 'terminated' and stopped['decision']['decisionId'] == decision['decisionId']
     assert decide(reviewer, review).json()['code'] == 'REVIEW_NOT_PENDING'
     assert data(execute(pm, project, data(propose(pm, project, 'retrospective'))))['status'] == 'applied'
-    assert bench(reviewer, review)['decision']['stage'] == 'terminated'
+    historical = bench(reviewer, review)['decision']
+    assert historical['stage'] == 'terminated'
+    assert f"approval:{req['requestId']}" in historical['sourceRefs']
+    assert f"project-transition:{pid}@{decision['appliedProjectRevision']}" in historical['sourceRefs']
+    assert not any(ref.startswith('review-decision-snapshot:') for ref in historical['sourceRefs'])
     assert data(pm.get(project + '/retrospective'))['kind'] == 'terminated'
 
 

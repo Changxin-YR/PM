@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, Field
 from sqlalchemy.dialects.postgresql import JSONB
 
 from . import schema_v1 as db
+from .audit_store import stable_refs
 from .change_intents import snapshot
 from .contracts import RULE_VERSION, Result, Strict
 from .evidence import verified_link, lookup as evidence_lookup
@@ -99,7 +100,7 @@ class DecisionPublic(Strict):
 
 class Decision(DecisionPublic):
     rationale: str
-    stage: str
+    stage: str | None = None
 
 
 class Decisions(Strict):
@@ -264,9 +265,9 @@ def task_view(row):
                 sourceType=row.source_type, sourceId=row.source_id, status=row.status, revision=row.revision)
 
 
-def decision_public(record):
+def decision_public(record, refs):
     return DecisionPublic(decisionId=record.id, reviewId=record.review_id, subject=record.subject, option=record.option,
-                          decidedAt=record.decided_at, decidedBy=record.decided_by, sourceRefs=[f'decision:{record.id}@{record.revision}'])
+                          decidedAt=record.decided_at, decidedBy=record.decided_by, sourceRefs=refs)
 
 
 def decision_lookup(c, p, review):
@@ -274,12 +275,49 @@ def decision_lookup(c, p, review):
     return one(c, d, d.c.review_id == review.id, d.c.project_id == p.id)
 
 
+def decision_snapshot(c, review, record):
+    return one(c, outcomes, outcomes.c.decision_id == record.id, outcomes.c.review_id == review.id,
+               outcomes.c.approval_request_id == review.id)
+
+
+def decision_history(c, p, review, record, stored):
+    refs = [f'decision:{record.id}@{record.revision}', f'review:{review.id}@{review.revision}']
+    t = transitions.c
+    stage, rule, transition = None, None, None
+    if stored:
+        stage, rule = stored.payload['stage'], stored.rule_version
+        refs.extend((f'review-snapshot:{review.id}', f'review-decision-snapshot:{record.id}', f'approval:{stored.approval_request_id}'))
+        transition = one(c, transitions, t.project_id == p.id, t.review_id == review.id,
+                         t.request_id == stored.request_id, t.from_stage == REVIEW[review.type], t.to_stage == stage)
+    elif review.verdict == 'terminated':
+        # Review termination is an independent stage approval, not a gate verdict.
+        from .project_lifecycle import ACTION, results
+        q, x = db.approval_requests.c, results.c
+        transition = c.execute(sa.select(t.to_stage, t.to_revision, q.id.label('approval_id'), q.rule_version)
+            .select_from(results.join(db.approval_requests, q.id == x.approval_id).join(transitions,
+                sa.and_(t.approval_request_id == q.id, t.request_id == x.request_id)))
+            .where(x.decision_id == record.id, q.project_id == p.id, q.action == ACTION, q.status == 'applied',
+                   t.project_id == p.id, t.from_stage == REVIEW[review.type], t.to_stage == 'terminated')).mappings().one_or_none()
+        if transition:
+            stage, rule = transition.to_stage, transition.rule_version
+            refs.append(f'approval:{transition.approval_id}')
+    if transition:
+        refs.append(f'project-transition:{p.id}@{transition.to_revision}')
+    return refs, stage, rule
+
+
 def decision_list(auth, review_id):
     def read(c, a, _):
         p, review, _frozen = context(c, a, review_id)
         record = decision_lookup(c, p, review)
-        rows = [decision_public(record)] if record else []
-        metadata = meta(DECISION_GET, rows[0].sourceRefs if rows else [f'review:{review.id}@{review.revision}'], project_id=p.id)
+        rows, rule = [], None
+        refs = [f'review:{review.id}@{review.revision}']
+        if record:
+            refs, _, rule = decision_history(c, p, review, record, decision_snapshot(c, review, record))
+            rows.append(decision_public(record, refs))
+        metadata = meta(DECISION_GET, refs, project_id=p.id)
+        if rule is not None:
+            metadata.ruleVersion = rule
         return Result[Decisions](data=Decisions(items=rows, total=len(rows), asOf=metadata.asOf), meta=metadata)
     return run(auth, DECISION_GET, read)
 
@@ -300,7 +338,7 @@ def workbench(c, a, p, review, frozen):
     digest = score_hash(frozen, round_no, latest) if frozen else None
     can_read_scores = not pending or owner or sponsor or initiator or any(row.reviewer_id == a.person for row in latest)
     record = decision_lookup(c, p, review)
-    stored = one(c, outcomes, outcomes.c.review_id == review.id) if record else None
+    stored = decision_snapshot(c, review, record) if record else None
     if stored:
         calculated = Assessment.model_validate(stored.payload['assessment']) if stored.payload['assessment'] else None
         digest = stored.payload['scoreHash']
@@ -316,13 +354,16 @@ def workbench(c, a, p, review, frozen):
     show_full_material = bool(p.materials_visible or owner or initiator)
     exception = (stored.payload.get('requirementException') if stored else
                  frozen.materials.get('requirementException') if frozen and pending else None)
+    decision = None
+    if record:
+        refs, stage, _ = decision_history(c, p, review, record, stored)
+        decision = Decision(**decision_public(record, refs).model_dump(), rationale=record.rationale, stage=stage)
     return Workbench(review=view(review), round=round_no, approvalRequestId=intent.id if intent else None,
         dimensions=rubric(review.type), materialRefs=frozen.source_refs if frozen and show_full_material else [],
         scores=[Card(scorecardId=row.id, reviewerId=row.reviewer_id, round=row.round, dimensions=row.dimensions,
                      reviewedAt=row.reviewed_at) for row in rows if not pending or row.reviewer_id == a.person],
         appeal=appeal_view(reconsideration) if reconsideration else None, assessment=calculated if can_read_scores else None,
-        confirmations=confirmations_found if can_read_scores else [], decision=Decision(**decision_public(record).model_dump(),
-            rationale=record.rationale, stage=stored.payload['stage'] if stored else 'terminated' if review.verdict == 'terminated' else p.stage) if record else None,
+        confirmations=confirmations_found if can_read_scores else [], decision=decision,
         requirementException=RequirementException.model_validate(exception) if exception and show_full_material else None,
         tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy,
         withdrawalReason=review.minutes if review.verdict == 'withdrawn' else None,
@@ -336,7 +377,9 @@ def workbench(c, a, p, review, frozen):
 def read_workbench(auth, review_id):
     def read(c, a, _):
         p, review, frozen = context(c, a, review_id)
-        return Result[Workbench](data=workbench(c, a, p, review, frozen), meta=meta(WORKBENCH, [f'review:{review_id}@{review.revision}']))
+        state = workbench(c, a, p, review, frozen)
+        refs = state.decision.sourceRefs if state.decision else [f'review:{review_id}@{review.revision}']
+        return Result[Workbench](data=state, meta=meta(WORKBENCH, refs))
     return run(auth, WORKBENCH, read)
 
 
@@ -579,7 +622,7 @@ def write_action(auth, op, review_id, command, key, expected):
             decision_id = state.decision.decisionId
             refs.extend(state.decision.sourceRefs)
             event_data['decisionId'] = str(decision_id)
-        result = Result[Workbench](data=state, meta=meta(op, refs))
+        result = Result[Workbench](data=state, meta=meta(op, stable_refs(refs)))
         body = result.model_dump(mode='json', exclude_none=True)
         record_receipt(c, a, key, op, rid, review.id, p.id, signature, body, fingerprint(body), fingerprint(snapshot(review)),
                        decision_id=decision_id)
