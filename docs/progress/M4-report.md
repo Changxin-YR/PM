@@ -199,3 +199,16 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0031-edge.xml` | 0 | PASS：19 项 / 224.57 秒，`.local/rc0031-edge.log`。正常无模型三关口、对账、风险处置、归档；暂停后终止复盘、过期和客户例外等。 |
 | `.venv/Scripts/python.exe -m pytest -q tests/test_postgres_invariants.py tests/test_runtime.py --tb=short --junitxml=.local/rc0031-catalog.xml` | 0 | PASS：18 项 / 21.83 秒，`.local/rc0031-catalog.log`。实际数据库目录核对全部 421 字段类型及空值申明（唯一差异为 ADR 0011 的非关口 `Decision.review_id`）；同组织项目代码、成员角色、里程碑槽位/CHECK/FK、评分轮次唯一及不可改、决议快照/审计追加写、报告部分唯一及受保护内容反例。目录核对不替代其余领域语义。 |
 | `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格及类型；`.local/rc0031-final-check.log`、`.local/rc0031-vue.log`。 |
+
+## 0032 候选与综合回归
+
+源条款：§9、§12.1–12.2、§20.3–20.6，阶段授权见 [ADR 0019](../adr/0019-project-transition-authority.md)。基准 `60842998920abf4b16e18a1b9a2ba2e40bb42be1`，被测源码树 `4ad0a46cef829cd13792d3c14501fb3d69369985`（`d0bba6b2d31db7ab97f24ab3c79f8f7b003d2543` 另含证据文本）。Windows / Python 3.12.15 / PostgreSQL 16.14 隔离 schema 与专用 Compose / 回环 HTTP 和真实 SDK stdio / Edge `158.0.4370.33`。均为合成账号，模型关闭；`.local/dev.env` 仅注入测试连接，旧候选 `18760`、`18761` 和共享库均未迁移。共享 `public` 只读回核为 `0016`。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0032-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0032-backend.xml` | 0 | PASS：289 项 / 429.81 秒，无跳过，`.local/rc0032-backend.log`。40 项发现、成功调用及动作拒绝全部回读；18 读审计、22 写重放。导出的 JSON 与 [已有逐工具证据](../acceptance/mcp-stdio-0029.json) 逐字节一致（SHA-256 `584fc7468541b3e6a0c7b552e379a6a4a6951db7486092d472f46a88a162f762`）。包括 `0016→0032` 带数据升级及私有附件联合恢复。FastAPI TestClient 和 Alembic 各发出一条弃用警告。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0032-edge.xml` | 0 | PASS：20 项 / 231.83 秒，无跳过，`.local/rc0032-edge.log`。回读无模型全流程、独立阶段授权及有效申请展示，不等同于真实业务签核。 |
+| `docker compose -p pmo104-rc-7c9ce0ea --env-file .local/pmo104-rc-7c9ce0ea.env -f deploy/compose.yaml up --build -d --wait` | 1 / 0 | 首轮 FAIL：Docker Hub 令牌连接超时（`.local/rc0032-compose-build.log`）；复用已验证的 Python 基础镜像摘要 `cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2` 后 PASS，未改锁文件或扩大端口（`.local/rc0032-compose-retried.log`）。 |
+| `.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-7c9ce0ea` | 0 | PASS：`.local/rc0032-compose-smoke.log`。回环 `18762`，受限数据库账号，15 个草稿和唯一消费回执；停库 `live=200 / ready=503`，恢复 `200/200` 且项目和回执未丢失。30 次/操作，p95 筛选 50 ms、详情 62 ms，仅本机合成负载。 |
+
+候选 API 容器内回读 OpenAPI：**95/95 基线 REST + 42 工程操作**，40 MCP 路由无缺项，评分分值/锚点五种条件已发布（`.local/rc0032-compose-contract-internal.log`）。Web 代理不开放内部 OpenAPI。回核 `docker ... exec -T api alembic current` 返回 `0032 (head)`，回环 `/health/ready` 200。逐边权限和其余嵌套 DTO 不由目录覆盖推定，目标 Host、目标部署、真实模型和真实试点也未通过。
