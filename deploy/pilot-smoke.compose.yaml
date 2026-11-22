@@ -1,0 +1,7 @@
+# Optional fresh-candidate smoke network when Docker Desktop's default pool is full.
+# Does not enable models or publish additional ports.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${PMO_SMOKE_SUBNET:?set a dedicated local smoke subnet}

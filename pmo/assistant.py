@@ -53,7 +53,7 @@ class CharterMode(Strict):
     weaknesses: list[Cited]
     lessonRefs: list[LessonRef]
     reviewDraft: list[Cited]
-    previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
+    previewEnabled: bool
 
 
 class ProcessAlert(Cited):
@@ -85,7 +85,7 @@ class ClosingMode(Strict):
     retrospectiveKind: retrospectives.Kind | None
     retrospectiveQuestions: retrospectives.Questions
     lessonDrafts: list[Cited]
-    previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
+    previewEnabled: bool
 
 
 class LedgerMode(Strict):
@@ -93,7 +93,11 @@ class LedgerMode(Strict):
     asOf: datetime
     sourceRefs: list[str]
     unknowns: list[str]
-    previewEnabled: bool = Field(default_factory=model_gateway.previews_enabled)
+    previewEnabled: bool
+
+
+def _previews_enabled(project_id: UUID) -> bool:
+    return model_gateway.previews_enabled() and model_gateway.in_project_scope('ASSISTANT', project_id)
 
 
 def _project_ref(project) -> str:
@@ -120,12 +124,14 @@ def _read(auth, op, pid, read):
     return run(auth, op, query)
 
 
-def _lesson_references(c, a, p, at, keyword, category, *, history_only=False):
+def _lesson_references(c, a, p, at, keyword, category, *, history_only=False, for_preview=False):
     hits, _ = retrospectives.find_lessons(c, a, keyword=keyword, category=category, page=1, page_size=HITS,
                                           exclude_project=p.id if history_only else None, at=at)
     needle = keyword.strip().casefold() if keyword else ''
     items = []
     for hit in hits:
+        if for_preview and not model_gateway.in_project_scope('ASSISTANT', hit.projectId):
+            continue
         text = next((field for field in (hit.what, hit.rootCause, hit.advice) if needle in field.casefold()), hit.what)
         items.append(LessonRef(lessonId=hit.lessonId, projectId=hit.projectId, category=hit.category,
                                text=text[:320], observedAt=hit.confirmedAt, sourceRefs=hit.sourceRefs))
@@ -162,7 +168,7 @@ def charter(projectId: UUID, authorization: Auth, keyword: Keyword = None, categ
         lessons = _lesson_references(c, a, p, at, keyword, category, history_only=True) if p.materials_visible else []
         refs = [*(score.sourceRefs if score else []), *(ref for item in lessons for ref in item.sourceRefs), *materials.refs]
         return Result[CharterMode](data=CharterMode(completeness=check, scoreSummary=score, weaknesses=weak,
-            lessonRefs=lessons, reviewDraft=draft), meta=_meta(CHARTER, p, at, refs))
+            lessonRefs=lessons, reviewDraft=draft, previewEnabled=_previews_enabled(p.id)), meta=_meta(CHARTER, p, at, refs))
     return _read(authorization, CHARTER, projectId, read)
 
 
@@ -211,7 +217,8 @@ def process(projectId: UUID, authorization: Auth) -> Result[ProcessMode]:
         preview = WeeklyDraft(period=period, structuredFields=draft.structuredFields, sourceHash=basis.sourceHash,
             verifiedPersonDays=basis.verifiedPeriodPersonDays if basis.verifiedPeriodPostingCount else None)
         return Result[ProcessMode](data=ProcessMode(reportId=report.id if report else None, analysis=analysis,
-            modelEnabled=model_gateway.enabled(), factCandidates=analysis.candidates if analysis and analysis.status == 'ready' else [],
+            modelEnabled=model_gateway.enabled() and model_gateway.in_project_scope('REPORT', p.id),
+            factCandidates=analysis.candidates if analysis and analysis.status == 'ready' else [],
             conflicts=conflicts, health=basis.health, alerts=alerts, weeklyDraft=preview),
             meta=_meta(PROCESS, p, at, [*refs, *basis.sourceRefs]))
     return _read(authorization, PROCESS, projectId, read)
@@ -231,7 +238,8 @@ def closing(projectId: UUID, authorization: Auth) -> Result[ClosingMode]:
             refs.append(retrospectives._entry_ref(origin))
         return Result[ClosingMode](data=ClosingMode(gateGaps=check.missing if applicable else [],
             gateEligible=check.eligible if applicable else None, retrospectiveKind=kind,
-            retrospectiveQuestions=list(retrospectives.QUESTIONS), lessonDrafts=drafts), meta=_meta(CLOSING, p, at, refs))
+            retrospectiveQuestions=list(retrospectives.QUESTIONS), lessonDrafts=drafts,
+            previewEnabled=_previews_enabled(p.id)), meta=_meta(CLOSING, p, at, refs))
     return _read(authorization, CLOSING, projectId, read)
 
 
@@ -295,13 +303,13 @@ def ledger(projectId: UUID, authorization: Auth, topic: Topic = 'health', keywor
     return _read(authorization, LEDGER, projectId, lambda c, a, p, at: _ledger(c, a, p, at, topic, keyword, category))
 
 
-def _ledger(c, a, p, at, topic, keyword, category):
+def _ledger(c, a, p, at, topic, keyword, category, *, for_preview=False):
     answer, unknowns = [], []
     if topic == 'fact':
         answer = _ledger_fact(c, p, at, keyword)
     elif topic == 'lesson':
         answer = [Cited(text=f'{item.category}：{item.text}', observedAt=item.observedAt, sourceRefs=item.sourceRefs)
-                  for item in _lesson_references(c, a, p, at, keyword, category)]
+                  for item in _lesson_references(c, a, p, at, keyword, category, for_preview=for_preview)]
     elif topic == 'health':
         answer, unknowns, at = _ledger_health(c, a, p, at)
     elif topic == 'requirements':
@@ -325,7 +333,8 @@ def _ledger(c, a, p, at, topic, keyword, category):
     if not answer and not unknowns:
         unknowns.append('没有匹配的可核验来源，无法回答。')
     info = _meta(LEDGER, p, at, [ref for item in answer for ref in item.sourceRefs])
-    return Result[LedgerMode](data=LedgerMode(answer=answer, asOf=at, sourceRefs=info.sourceRefs, unknowns=unknowns), meta=info)
+    return Result[LedgerMode](data=LedgerMode(answer=answer, asOf=at, sourceRefs=info.sourceRefs, unknowns=unknowns,
+        previewEnabled=_previews_enabled(p.id)), meta=info)
 
 
 class CharterPreview(Strict):
@@ -370,7 +379,7 @@ def _charter_parts(c, a, p, at, keyword, category):
                          sourceRefs=score.sourceRefs, observedAt=score.decidedAt)
                          for item in rubric('charter') if item.key in score.means)
         parts.extend(model.Part(kind='history', text=item.text, sourceRefs=item.sourceRefs, observedAt=item.observedAt)
-            for item in _lesson_references(c, a, p, at, keyword, category, history_only=True))
+            for item in _lesson_references(c, a, p, at, keyword, category, history_only=True, for_preview=True))
     return check.snapshotHash, parts
 
 
@@ -384,7 +393,7 @@ def _preview_basis(c, a, p, at, command):
         parts.extend(model.Part(kind='retro', text=f'{label}：{answer.text}', sourceRefs=answer.sourceRefs,
                      observedAt=answer.observedAt) for label, answer in zip(retrospectives.ANSWER_LABELS, answers))
     else:
-        data = _ledger(c, a, p, at, command.topic, command.keyword, command.category).data
+        data = _ledger(c, a, p, at, command.topic, command.keyword, command.category, for_preview=True).data
         scope = [command.topic, data.sourceRefs, data.unknowns]
         parts = [model.Part(kind='ledger', **item.model_dump()) for item in data.answer]
     return preview.Basis.from_parts(parts, p.id, p.revision, [p.materials_visible, scope], at)

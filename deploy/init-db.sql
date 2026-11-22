@@ -17,7 +17,8 @@ FROM (VALUES (:'owner_pass'), (:'api_pass'), (:'worker_pass'), (:'bootstrap_pass
 \unset api_pass
 \unset worker_pass
 \unset bootstrap_pass
-ALTER DATABASE pmo OWNER TO pmo_migrate;
+SELECT current_database() AS database \gset
+ALTER DATABASE :"database" OWNER TO pmo_migrate;
 ALTER SCHEMA public OWNER TO pmo_migrate;
-REVOKE ALL ON DATABASE pmo FROM PUBLIC;
+REVOKE ALL ON DATABASE :"database" FROM PUBLIC;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;

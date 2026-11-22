@@ -87,6 +87,23 @@ def test_disabled_manual_path_does_not_expose_privilege(live, team):
         assert len(events) == 2 and all(row.result == 'failed' and row.error_code == 'MODEL_DISABLED' for row in events)
 
 
+def test_configured_scope_blocks_authorized_project_without_sending(live, team, tmp_path):
+    from uuid import uuid4
+
+    pid, _, users, _ = team
+    author = users['initiator']
+    path = f'projects/{pid}'
+    start_charter(pid, users)
+    revision = stage(author, path)['revision']
+    with gateway() as (url, calls), serve(live[0].url, tmp_path, extra_env={
+            'PMO_ASSISTANT_PREVIEWS': '1', 'PMO_ASSISTANT_MODEL_URL': url,
+            'PMO_ASSISTANT_MODEL_PROJECTS': str(uuid4())}) as api, session_at(author, api.base_url) as client:
+        assert not data(client.get(path + '/assistant/charter'))['previewEnabled']
+        result = data(request(client, path, revision))
+        assert result['status'] == 'manual' and result['errorCode'] == 'MODEL_SCOPE_BLOCKED'
+        assert not calls and not result['items']
+
+
 def test_scoped_modes_attach_server_citations_and_leave_business_tables_unchanged(live, team, tmp_path):
     pid, _, users, _ = team
     pm, reviewer = users['pm'], users['reviewer']

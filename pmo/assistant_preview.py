@@ -98,6 +98,8 @@ def execute(authorization, pid, key, revision, command, authorize, collect) -> R
         receipt_id = c.scalar(db.idempotency_keys.insert().values(actor_type=a.kind, actor_id=a.credential,
             org_id=a.org, operation=OP, resource_id=pid, idempotency_key=key, request_hash=signature, status='pending',
             created_at=basis.at, expires_at=basis.at + timedelta(days=90)).returning(i.id))
+        if not model_gateway.in_project_scope('ASSISTANT', pid):
+            return complete(c, a, rid, receipt_id, basis, status='manual', code='MODEL_SCOPE_BLOCKED')
         if gateway is None:
             code = 'MODEL_UNAVAILABLE' if model_gateway.previews_enabled() else 'MODEL_DISABLED'
             return complete(c, a, rid, receipt_id, basis, status='manual', code=code)

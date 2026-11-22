@@ -14,8 +14,8 @@ type Entry={revision:number;action:string;actorId:string;occurredAt:string;valid
 type Log={items:Entry[];total:number;page:number;pageSize:number}
 type Mode='propose'|'verify'|'clarify'
 
-const props=defineProps<{reportId:string;projectId:string;revision:number;submittedAt:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const page=ref<Page>(), expanded=ref(false), reading=ref(false), working=ref(false)
+const props=defineProps<{reportId:string;projectId:string;revision:number;submittedAt:string;initiallyExpanded?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const page=ref<Page>(), expanded=ref(props.initiallyExpanded??false), reading=ref(false), working=ref(false)
 const error=ref(''), notice=ref(''), mode=ref<Mode>(), selected=ref<Fact>(), trust=ref<Trust>('medium')
 const subject=ref(''), predicate=ref(''), value=ref(''), kind=ref('text'), quote=ref(''), at=ref(''), reason=ref('')
 const evidence=ref<string[]>([]), historyFor=ref(''), log=ref<Log>(), logLoading=ref(false)
@@ -100,7 +100,7 @@ async function submit(){
 watch(()=>[props.reportId,props.revision],()=>{
   ++epoch;page.value=undefined;working.value=false;reading.value=false;historyFor.value='';log.value=undefined;logLoading.value=false
   error.value='';notice.value='';cancel();if(expanded.value)void read(1)
-})
+},{immediate:true})
 </script>
 
 <template>

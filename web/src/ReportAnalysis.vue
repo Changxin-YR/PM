@@ -10,7 +10,7 @@ const props=defineProps<{reportId:string;revision:number;api:(path:string,option
 const emit=defineEmits<{choose:[Suggestion]}>()
 const page=ref<Page>(), error=ref(''), reading=ref(false), sending=ref(false)
 const status:Record<Status,string>={queued:'排队中',running:'分析中',ready:'建议已就绪',manual:'待人工处理',stale:'分析已失效'}
-const reasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MODEL_TIMEOUT:'分析超时',MODEL_UNAVAILABLE:'模型网关不可用',
+const reasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MODEL_TIMEOUT:'分析超时',MODEL_UNAVAILABLE:'模型网关不可用',MODEL_SCOPE_BLOCKED:'当前项目不在模型外发范围内',
   MODEL_SCHEMA_INVALID:'输出格式不合规',MODEL_SOURCE_INVALID:'无法核对输出出处',MODEL_LEASE_EXHAUSTED:'分析进程重试已用尽',
   ANALYSIS_AUTHORITY_CHANGED:'请求人的会话或项目授权已变化',ANALYSIS_SOURCE_CHANGED:'报告版本已变化'}
 const retry=computed(()=>page.value?.items.some(item=>item.reportRevision===props.revision&&item.status!=='stale')??false)

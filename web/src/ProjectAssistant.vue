@@ -32,7 +32,8 @@ const topics:{value:Topic;label:string}[]=[{value:'health',label:'当前三线'}
 const healthNames:Record<string,string>={green:'绿',yellow:'黄',red:'红',untrusted:'不可信',unavailable:'不可用'}
 const analysisNames:Record<string,string>={queued:'正在排队',running:'分析中',ready:'候选已生成',manual:'待人工处理',stale:'来源已变更'}
 const previewReasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MODEL_UNAVAILABLE:'模型网关不可用',MODEL_TIMEOUT:'模型响应超时',
-  MODEL_SCHEMA_INVALID:'模型输出格式不合规',MODEL_SOURCE_INVALID:'模型输出无法追溯到本次来源',MODEL_INTERRUPTED:'预览请求已中断'}
+  MODEL_SCHEMA_INVALID:'模型输出格式不合规',MODEL_SOURCE_INVALID:'模型输出无法追溯到本次来源',MODEL_INTERRUPTED:'预览请求已中断',
+  MODEL_SCOPE_BLOCKED:'当前项目不在模型外发范围内'}
 const scores:Record<string,string>={strategicAlignment:'战略对齐',customerAttractiveness:'客户／市场吸引力',
   financialResourceReturn:'财务／资源回报',riskControllability:'风险可控度'}
 const mode=ref<Mode>('charter'),topic=ref<Topic>('health'),keyword=ref(''),category=ref('')

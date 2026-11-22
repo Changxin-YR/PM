@@ -44,8 +44,10 @@ const title=computed(()=>selected.value?'修改草稿名称':'新建项目草稿
 const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('overview'),focusTaskId=ref<string>()
 const focusReviewId=ref<string>(),focusApprovalId=ref<string>(),focusChangeId=ref<string>()
+const focusReportId=ref<string>(),openPersonalTokens=ref(false)
+const uuid=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 function materials(row:Project){
-  materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=focusChangeId.value=undefined
+  materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=focusChangeId.value=focusReportId.value=undefined
   materialTab.value='overview';showMaterials.value=true
 }
 function openTask(project:Project,taskId:string){materials(project);focusTaskId.value=taskId;materialTab.value='tasks'}
@@ -115,7 +117,26 @@ async function load(){
   }catch(e){if(id===sequence){error.value=message(e);rows.value=[];total.value=0;listReadAt.value=''}}
   finally{if(id===sequence)loading.value=false}
 }
-async function startSession(){admin.value=(await api('auth/me')).isSystemAdmin;user.value=true;await load()}
+async function openLinkedWorkbench(){
+  const link=new URLSearchParams(location.hash.slice(1))
+  const project=link.get('project')??'',tab=link.get('tab')??'overview',report=link.get('report')??''
+  if(!uuid.test(project)||!['overview','assistant','reports'].includes(tab))return
+  const session=csrf.value
+  try{
+    const {data}=await api('project-overview/'+project)
+    if(!user.value||session!==csrf.value||showMaterials.value)return
+    materials(data.project)
+    if(data.materialsVisible){
+      focusReportId.value=tab==='reports'&&uuid.test(report)?report:undefined
+      materialTab.value=tab
+    }
+  }catch(e){if(user.value&&session===csrf.value)error.value=message(e)}
+}
+async function startSession(){
+  admin.value=(await api('auth/me')).isSystemAdmin
+  openPersonalTokens.value=new URLSearchParams(location.hash.slice(1)).get('entry')==='agent-tokens'
+  user.value=true;await load();await openLinkedWorkbench()
+}
 function enrollment(show:boolean){acceptingInvite.value=show;password.value='';error.value='';loginNotice.value=''}
 function accountAccepted(name:string){enrollment(false);username.value=name;loginNotice.value='账号已开通，请登录。'}
 async function login(){busy.value=true;error.value='';try{const r=await api('auth/login',{method:'POST',body:JSON.stringify({username:username.value,password:password.value})});csrf.value=r.csrfToken;sessionStorage.setItem('pmo.csrf',csrf.value);await startSession()}catch(e){error.value=message(e)}finally{password.value='';busy.value=false}}
@@ -177,7 +198,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
 <PersonalTasks :api="api" @open-task="openTask"/>
 <AuditLog v-if="admin" :api="api"/>
 <OrgDirectory v-if="admin" :api="api"/>
-<AgentTokens :api="api" :projects="rows" :admin="admin"/>
+<AgentTokens :api="api" :projects="rows" :admin="admin" :initial-open="openPersonalTokens"/>
 <el-drawer v-model="showMaterials" :title="`${materialProject?.name??''} · 项目资料`" size="min(760px,100vw)" destroy-on-close>
   <el-tabs v-if="materialProject" v-model="materialTab" :key="materialProject.projectId">
     <el-tab-pane name="overview" label="概览"><ProjectOverview :project-id="materialProject.projectId" :active="showMaterials&&materialTab==='overview'" :stages="stageNames" :api="api" @stage-read="stageRead" @navigate="materialTab=$event" @open-change="openChange"/></el-tab-pane>
@@ -195,7 +216,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
     <el-tab-pane name="reviews" label="关口送审" lazy><Reviews :project-id="materialProject.projectId" :project-revision="materialProject.revision" :focus-review-id="focusReviewId" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/></el-tab-pane>
     <el-tab-pane name="lifecycle" label="阶段流转" lazy><ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :focus-approval-id="focusApprovalId" :api="api" @stage-read="stageRead" @clear-focus="focusApprovalId=undefined"/></el-tab-pane>
     <el-tab-pane name="tasks" label="补强任务" lazy><Tasks :project-id="materialProject.projectId" :focus-task-id="focusTaskId" :api="api" @clear-focus="focusTaskId=undefined"/></el-tab-pane>
-    <el-tab-pane name="reports" label="日报周报" lazy><Reports :project-id="materialProject.projectId" :api="api"/></el-tab-pane>
+    <el-tab-pane name="reports" label="日报周报" lazy><Reports :project-id="materialProject.projectId" :focus-report-id="focusReportId" :api="api"/></el-tab-pane>
     <el-tab-pane name="health" label="三线健康" lazy><Health :project-id="materialProject.projectId" :active="materialTab==='health'" :api="api"/></el-tab-pane>
     <el-tab-pane name="retrospective" label="复盘与教训" lazy><Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"/></el-tab-pane>
     <el-tab-pane name="assistant" label="项目助理" lazy><ProjectAssistant v-if="materialTab==='assistant'" :project-id="materialProject.projectId" :revision="materialProject.revision" :api="api" @navigate="materialTab=$event"/></el-tab-pane>

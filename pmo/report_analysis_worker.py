@@ -15,7 +15,7 @@ from .contracts import Strict
 from .db import engine
 from .fact_sources import CandidateFields, Quote, _leaves, quote_location, submitted
 from .identity import Failure, active_browser_session
-from .model_gateway import Gateway, Model, ModelFailure, enabled
+from .model_gateway import Gateway, Model, ModelFailure, enabled, in_project_scope
 from .report_analysis import Suggestion, finalize, permitted, r, runs
 from .reports import _ref, reports
 from .session_schema import SESSION_ID
@@ -110,7 +110,11 @@ def process(pool: Engine, work: Claim, model: Model | None, *, disabled_code='MO
         p, row, report = _check(c, work.row)
         if row is None:
             return
-        code = 'MODEL_LEASE_EXHAUSTED' if work.exhausted else disabled_code if model is None else None
+        code: str | None
+        if not in_project_scope('REPORT', p.id):
+            code = 'MODEL_SCOPE_BLOCKED'
+        else:
+            code = 'MODEL_LEASE_EXHAUSTED' if work.exhausted else disabled_code if model is None else None
         if code:
             finalize(c, p, row, status='manual', code=code)
             return
@@ -129,7 +133,7 @@ def process(pool: Engine, work: Claim, model: Model | None, *, disabled_code='MO
         p, row, report = _check(c, work.row)
         if row is None:
             return
-        candidates = []
+        candidates: list[Suggestion] = []
         if code is None:
             try:
                 candidates = _validate(report, extracted, row.requested_at)

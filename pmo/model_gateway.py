@@ -3,7 +3,8 @@ import asyncio
 from dataclasses import dataclass
 import json
 import os
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+from uuid import UUID
 
 import httpx
 
@@ -31,6 +32,16 @@ def enabled() -> bool:
 
 def previews_enabled() -> bool:
     return os.getenv('PMO_ASSISTANT_PREVIEWS', '0') == '1'
+
+
+def in_project_scope(channel: Literal['REPORT', 'ASSISTANT'], project_id: UUID) -> bool:
+    scope = os.getenv(f'PMO_{channel}_MODEL_PROJECTS')
+    if scope is None:
+        return True  # Existing deployments manage egress separately.
+    try:
+        return project_id in {UUID(value) for value in scope.split(',')}
+    except ValueError:
+        return False  # An empty or invalid explicit scope never enables egress.
 
 
 def _fields(pairs):

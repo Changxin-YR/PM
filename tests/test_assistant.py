@@ -100,9 +100,12 @@ def test_process_and_ledger_use_trusted_sources_then_withhold_conflicts(live, te
     assert f"health-snapshot:{current['snapshotId']}" not in latest['sourceRefs']
 
 
-def test_ledger_lesson_never_crosses_project_membership(live, team):
+def test_ledger_lesson_never_crosses_project_membership(live, team, tmp_path):
+    from test_assistant_preview import request
+    from test_database_roles import serve
     from test_health import close_for_lr08
     from test_lifecycle import ANSWERS, execute, propose
+    from test_report_analysis import gateway, session_at
     from test_reviews import member
 
     pid, people, users, _ = team
@@ -129,6 +132,15 @@ def test_ledger_lesson_never_crosses_project_membership(live, team):
     next_path = f"projects/{next_draft['projectId']}/assistant/charter"
     selected = data(pm.get(next_path, params={'keyword': 'supplier', 'category': 'delivery'}))['lessonRefs']
     assert [item['lessonId'] for item in selected] == [lesson_id] and selected[0]['projectId'] == pid
+    next_project = next_path.removesuffix('/assistant/charter')
+    with gateway() as (url, calls), serve(live[0].url, tmp_path, extra_env={
+        'PMO_ASSISTANT_PREVIEWS': '1', 'PMO_ASSISTANT_MODEL_URL': url,
+        'PMO_ASSISTANT_MODEL_PROJECTS': next_draft['projectId'],
+    }) as api, session_at(pm, api.base_url) as scoped:
+        ledger = data(scoped.get(next_project + '/assistant/ledger', params=matches))
+        assert ledger['previewEnabled'] and ledger['answer'] == past
+        result = data(request(scoped, next_project, next_draft['revision'], 'ledger', **matches))
+        assert result['status'] == 'empty' and calls == []
     # Only the current draft is shared with this other applicant; its charter must not disclose the earlier project.
     with live[0].begin() as c:
         member(c, next_draft['projectId'], people['client_representative'], people['pm'], 'member')

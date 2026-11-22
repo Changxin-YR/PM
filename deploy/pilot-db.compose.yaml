@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16.14-alpine
+    environment:
+      POSTGRES_USER: pmo_bootstrap
+      POSTGRES_DB: pmo_pilot
+      POSTGRES_PASSWORD: ${PMO_DEPLOY_DB_PASSWORD:?required}
+      PMO_DEPLOY_MIGRATE_PASSWORD: ${PMO_DEPLOY_MIGRATE_PASSWORD:?required}
+      PMO_DEPLOY_API_PASSWORD: ${PMO_DEPLOY_API_PASSWORD:?required}
+      PMO_DEPLOY_OUTBOX_PASSWORD: ${PMO_DEPLOY_OUTBOX_PASSWORD:?required}
+    ports:
+      - '127.0.0.1:${PMO_PILOT_DB_PORT:?required}:5432'
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/10-pmo-roles.sql:ro
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, pmo_bootstrap, -d, pmo_pilot]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  dbdata:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${PMO_PILOT_SUBNET:-10.253.71.0/27}

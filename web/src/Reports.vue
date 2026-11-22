@@ -14,7 +14,7 @@ type SourcedFact={sourceRef:string;reportRef:string;reportHash:string;quotePath:
 type Basis={asOf:string;ruleVersion:string;projectRevision:number;sourceHash:string;sourceRefs:string[];verifiedPeriodPersonDays:string;
   verifiedPeriodPostingCount:number;omittedRequirements:number;omittedRisks:number;omittedVerifiedFacts:number;verifiedFacts:SourcedFact[];
   health:{health:string;dataTrust:string;timeLine?:string;costLine?:string;qualityLine?:string;requirementSatisfactionRate?:string;gaps:string[]}}
-type Report={reportId:string;type:Kind;period:string;periodStart:string;periodEnd:string;versionNo:number;revision:number;
+type Report={reportId:string;projectId:string;type:Kind;period:string;periodStart:string;periodEnd:string;versionNo:number;revision:number;
   status:Status;authorId:string;submittedAt?:string;confirmedAt?:string;structuredFields?:Fields;narrative?:string;
   isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean;contentHash?:string;
   legacyStructuredFields?:boolean;weeklyBasis?:Basis}
@@ -23,7 +23,7 @@ type Milestone={milestoneId:string;name:string;isKey:boolean}
 type Evidence={evidenceRef:string;linkedResourceType:string;linkedResourceId:string;originalName:string}
 type Attempt={signature:string;key:string}
 
-const props=defineProps<{projectId:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{projectId:string;focusReportId?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
 const sections:{key:Section;label:string;empty:string;add:string}[]=[
   {key:'milestone_progress',label:'里程碑进展',empty:'本期无里程碑申报',add:'添加里程碑申报'},
   {key:'requirement_progress',label:'需求进展',empty:'本期无需求进展记录',add:'添加需求进展'},
@@ -94,6 +94,7 @@ async function open(reportId:string){
   reading.value=true
   try{
     const {data}=await props.api(`reports/${reportId}`)
+    if(data.projectId!==props.projectId)throw Error('报告不属于当前项目。')
     if(ticket===detailRead&&scope===epoch)detail.value=data
   }catch(e){if(ticket===detailRead&&scope===epoch){detail.value=null;error.value=problem(e)}}
   finally{if(ticket===detailRead&&scope===epoch)reading.value=false}
@@ -173,6 +174,7 @@ watch(()=>props.projectId,()=>{
   canCreate.value=false;total.value=0;filter.value='';notice.value='';error.value='';sourceError.value='';milestones.value=[];evidence.value=[]
   void list(1)
 },{immediate:true})
+watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void open(props.focusReportId)},{immediate:true})
 </script>
 
 <template>
@@ -306,6 +308,7 @@ watch(()=>props.projectId,()=>{
         <section v-if="detail.narrative"><h4>补充说明</h4><p class="report-copy">{{detail.narrative}}</p></section>
       </div>
       <ReportFacts v-if="detail.submittedAt&&detail.contentHash" :key="detail.reportId" :project-id="projectId" :report-id="detail.reportId"
+        :initially-expanded="focusReportId===detail.reportId"
         :revision="detail.revision" :submitted-at="detail.submittedAt" :api="api"/>
     </article>
   </section>

@@ -296,7 +296,7 @@ def restore_drill(admin: URL, point: Path, parent: Path, tools: PgTools) -> tupl
     return name, restored, manifest
 
 
-def main() -> int:
+def main(*, tools: PgTools | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dev-compose', action='store_true', help='Use tools in the repository development container')
     sub = parser.add_subparsers(dest='action', required=True)
@@ -308,7 +308,9 @@ def main() -> int:
     verify.add_argument('--trusted-backup', required=True, action='store_true',
                         help='Only restore a protected point produced by the trusted source server')
     ns = parser.parse_args()
-    tools = PgTools('pmo104dev-db-1' if ns.dev_compose else None)
+    if tools is not None and ns.dev_compose:
+        parser.error('Cannot combine an injected client with --dev-compose')
+    tools = tools if tools is not None else PgTools('pmo104dev-db-1' if ns.dev_compose else None)
     try:
         if ns.action == 'backup':
             point, manifest = backup(database_url(os.environ['DATABASE_URL']), evidence_root(), ns.output, tools)

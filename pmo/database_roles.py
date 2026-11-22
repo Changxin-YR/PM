@@ -3,6 +3,7 @@
 import argparse
 from collections.abc import Iterable
 import os
+import re
 import sys
 
 import psycopg
@@ -99,11 +100,12 @@ def id_list(names: Iterable[str]) -> sql.Composed:
     return sql.SQL(', ').join(sql.Identifier(name) for name in names)
 
 
-def grant(conn: psycopg.Connection, role: str, table: str, privilege: str, columns: str | None = None) -> None:
+def grant(conn: psycopg.Connection, role: str, table: str, privilege: str, columns: str | None = None,
+          *, schema: str = 'public') -> None:
     access: sql.Composable = sql.SQL(privilege)
     if columns:
         access += sql.SQL(' ({})').format(id_list(columns.split()))
-    conn.execute(sql.SQL('GRANT {} ON TABLE {} TO {}').format(access, sql.Identifier('public', table), sql.Identifier(role)))
+    conn.execute(sql.SQL('GRANT {} ON TABLE {} TO {}').format(access, sql.Identifier(schema, table), sql.Identifier(role)))
 
 
 def role_check(conn: psycopg.Connection, role: str, owner: str) -> None:
@@ -118,7 +120,7 @@ def role_check(conn: psycopg.Connection, role: str, owner: str) -> None:
         raise RoleError('RUNTIME_ROLE_MUST_BE_UNPRIVILEGED_AND_OWN_NOTHING')
 
 
-def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
+def apply_roles(conn: psycopg.Connection, api: str, worker: str, *, synthetic_schema: str | None = None) -> None:
     if api == worker:
         raise RoleError('RUNTIME_ROLES_MUST_BE_DISTINCT')
     with conn.transaction():
@@ -130,13 +132,21 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
         name, owner, database_owner = owner_info
         if name in ('postgres', 'template0', 'template1') or owner != database_owner:
             raise RoleError('USE_THE_DEDICATED_PMO_DATABASE_OWNER')
+        schema = 'public'
+        if synthetic_schema is not None:
+            if name != 'pmo_pilot' or not re.fullmatch(r'pmo_test_[0-9a-f]{32}', synthetic_schema):
+                raise RoleError('DEDICATED_SYNTHETIC_DATABASE_REQUIRED')
+            if conn.execute("""SELECT FROM pg_class WHERE relnamespace='public'::regnamespace
+                               AND relkind IN ('r','p','v','m','f','S')""").fetchone():
+                raise RoleError('SYNTHETIC_PUBLIC_SCHEMA_MUST_BE_EMPTY')
+            schema = synthetic_schema
         if conn.execute("""SELECT nspname FROM pg_namespace WHERE left(nspname,3)<>'pg_'
-                           AND nspname NOT IN ('public','information_schema')""").fetchone():
+                           AND nspname NOT IN ('public','information_schema',%s)""", (schema,)).fetchone():
             raise RoleError('DEDICATED_DATABASE_REQUIRED')
         for role in (api, worker):
             role_check(conn, role, owner)
         relations: dict[str, str] = dict(conn.execute('''SELECT relname, pg_get_userbyid(relowner) FROM pg_class
-                            WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p','v','m','f','S')''').fetchall())
+                            WHERE relnamespace=to_regnamespace(%s) AND relkind IN ('r','p','v','m','f','S')''', (schema,)).fetchall())
         required = KNOWN | {'alembic_version', 'cost_baseline_history_seq_seq'}
         if required - relations.keys() or any(user != owner for user in relations.values()):
             raise RoleError('MIGRATED_SCHEMA_AND_OWNER_REQUIRED')
@@ -145,30 +155,30 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
         logins = id_list((api, worker))
         db = sql.Identifier(name)
         conn.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC, {}').format(db, logins))
-        conn.execute(sql.SQL('REVOKE ALL ON SCHEMA public FROM PUBLIC, {}').format(logins))
-        conn.execute(sql.SQL('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC, {}').format(logins))
-        conn.execute(sql.SQL('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, {}').format(logins))
-        conn.execute(sql.SQL('REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA public FROM PUBLIC, {}').format(logins))
+        ns = sql.Identifier(schema)
+        for object_type in ('SCHEMA {}', 'ALL TABLES IN SCHEMA {}', 'ALL SEQUENCES IN SCHEMA {}'):
+            conn.execute(sql.SQL('REVOKE ALL ON ' + object_type + ' FROM PUBLIC, {}').format(ns, logins))
+        conn.execute(sql.SQL('REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA {} FROM PUBLIC, {}').format(ns, logins))
         # PostgreSQL keeps column ACLs independently of table ACLs.
         for table, columns in conn.execute('''SELECT c.relname,array_agg(a.attname ORDER BY a.attnum)
             FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
-            WHERE c.relnamespace='public'::regnamespace AND a.attnum>0 AND NOT a.attisdropped
-              AND a.attacl IS NOT NULL GROUP BY c.relname'''):
+            WHERE c.relnamespace=to_regnamespace(%s) AND a.attnum>0 AND NOT a.attisdropped
+              AND a.attacl IS NOT NULL GROUP BY c.relname''', (schema,)):
             conn.execute(sql.SQL('REVOKE ALL ({}) ON TABLE {} FROM PUBLIC, {}').format(
-                id_list(columns), sql.Identifier('public', table), logins))
+                id_list(columns), sql.Identifier(schema, table), logins))
         conn.execute('ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC')
         conn.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(db, logins))
-        conn.execute(sql.SQL('GRANT USAGE ON SCHEMA public TO {}').format(logins))
+        conn.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(ns, logins))
 
-        conn.execute('''CREATE OR REPLACE FUNCTION public.pmo_lock_only_guard() RETURNS trigger
+        conn.execute(sql.SQL('''CREATE OR REPLACE FUNCTION {}.pmo_lock_only_guard() RETURNS trigger
             LANGUAGE plpgsql SET search_path=pg_catalog AS $$
             BEGIN
                 IF current_user <> pg_get_userbyid((SELECT relowner FROM pg_class WHERE oid=TG_RELID)) THEN
                     RAISE insufficient_privilege USING MESSAGE = 'Row-lock privilege does not permit updates';
                 END IF;
                 RETURN NULL;
-            END $$''')
-        conn.execute('''CREATE OR REPLACE FUNCTION public.pmo_zero_legacy_actual() RETURNS trigger
+            END $$''').format(ns))
+        conn.execute(sql.SQL('''CREATE OR REPLACE FUNCTION {}.pmo_zero_legacy_actual() RETURNS trigger
             LANGUAGE plpgsql SET search_path=pg_catalog AS $$
             BEGIN
                 IF NEW.actual IS DISTINCT FROM 0 AND
@@ -176,10 +186,10 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
                     RAISE insufficient_privilege USING MESSAGE = 'Actual is derived from verified postings';
                 END IF;
                 RETURN NEW;
-            END $$''')
-        conn.execute('''CREATE OR REPLACE TRIGGER pmo_zero_legacy_actual BEFORE INSERT ON public.cost_entries
-            FOR EACH ROW EXECUTE FUNCTION public.pmo_zero_legacy_actual()''')
-        conn.execute('''CREATE OR REPLACE FUNCTION public.pmo_complete_preview_receipt() RETURNS trigger
+            END $$''').format(ns))
+        conn.execute(sql.SQL('''CREATE OR REPLACE TRIGGER pmo_zero_legacy_actual BEFORE INSERT ON {}.cost_entries
+            FOR EACH ROW EXECUTE FUNCTION {}.pmo_zero_legacy_actual()''').format(ns, ns))
+        conn.execute(sql.SQL('''CREATE OR REPLACE FUNCTION {}.pmo_complete_preview_receipt() RETURNS trigger
             LANGUAGE plpgsql SET search_path=pg_catalog AS $$
             BEGIN
                 IF current_user = pg_get_userbyid((SELECT relowner FROM pg_class WHERE oid=TG_RELID)) OR
@@ -189,26 +199,26 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str) -> None:
                     RETURN NEW;
                 END IF;
                 RAISE insufficient_privilege USING MESSAGE = 'Only pending assistant previews may be completed';
-            END $$''')
-        conn.execute('''CREATE OR REPLACE TRIGGER pmo_complete_preview_receipt BEFORE UPDATE ON public.idempotency_keys
-            FOR EACH ROW EXECUTE FUNCTION public.pmo_complete_preview_receipt()''')
+            END $$''').format(ns))
+        conn.execute(sql.SQL('''CREATE OR REPLACE TRIGGER pmo_complete_preview_receipt BEFORE UPDATE ON {}.idempotency_keys
+            FOR EACH ROW EXECUTE FUNCTION {}.pmo_complete_preview_receipt()''').format(ns, ns))
         for table, column in LOCKS.items():
-            target = sql.Identifier('public', table)
+            target = sql.Identifier(schema, table)
             conn.execute(sql.SQL('CREATE OR REPLACE TRIGGER pmo_lock_only_guard BEFORE UPDATE ON {} '
-                                'FOR EACH STATEMENT EXECUTE FUNCTION public.pmo_lock_only_guard()').format(target))
-            grant(conn, api, table, 'UPDATE', column)
+                                'FOR EACH STATEMENT EXECUTE FUNCTION {}.pmo_lock_only_guard()').format(target, ns))
+            grant(conn, api, table, 'UPDATE', column, schema=schema)
         for role, read, add, edit in ((api, API_READ, API_ADD, API_EDIT), (worker, WORKER_READ, WORKER_ADD, WORKER_EDIT)):
             for table in sorted(read):
-                grant(conn, role, table, 'SELECT')
+                grant(conn, role, table, 'SELECT', schema=schema)
             for table in sorted(add):
-                grant(conn, role, table, 'INSERT')
+                grant(conn, role, table, 'INSERT', schema=schema)
             for table, columns in edit.items():
-                grant(conn, role, table, 'UPDATE', columns)
+                grant(conn, role, table, 'UPDATE', columns, schema=schema)
         # A narrowly scoped grant for the version log's identity value.
-        conn.execute(sql.SQL('GRANT USAGE ON SEQUENCE public.cost_baseline_history_seq_seq TO {}').format(sql.Identifier(api)))
+        conn.execute(sql.SQL('GRANT USAGE ON SEQUENCE {}.cost_baseline_history_seq_seq TO {}').format(ns, sql.Identifier(api)))
         # ON CONFLICT and RETURNING require SELECT on the referenced columns only.
-        grant(conn, api, 'outbox_events', 'SELECT', 'id dedupe_key')
-        grant(conn, worker, 'notifications', 'SELECT', 'rule_event_id recipient_person_id')
+        grant(conn, api, 'outbox_events', 'SELECT', 'id dedupe_key', schema=schema)
+        grant(conn, worker, 'notifications', 'SELECT', 'rule_event_id recipient_person_id', schema=schema)
 
 
 def main() -> int:

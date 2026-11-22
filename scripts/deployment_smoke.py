@@ -34,11 +34,17 @@ def main():
         raise SystemExit('Smoke checks require assertions enabled')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('project', help='A fresh pmo104-rc-<8 hex digits> project')
+    parser.add_argument('--pilot-network', action='store_true', help='Use the pilot-only fixed network and protected env file')
     args = parser.parse_args()
     if not re.fullmatch(r'pmo104-rc-[0-9a-f]{8}', args.project):
         parser.error('Expected a disposable pmo104-rc-<8 hex digits> project')
-    envfile = ROOT / '.local' / f'{args.project}.env'
-    compose = ('docker', 'compose', '-p', args.project, '--env-file', str(envfile), '-f', str(CONFIG))
+    home = ROOT / '.local' / 'pmo-synthetic-pilot' if args.pilot_network else ROOT / '.local'
+    envfile = home / f'{args.project}.env'
+    configs = [CONFIG]
+    if args.pilot_network:
+        configs.append(CONFIG.with_name('pilot-smoke.compose.yaml'))
+    compose = ('docker', 'compose', '-p', args.project, '--env-file', str(envfile),
+               *(v for config in configs for v in ('-f', str(config))))
 
     def dc(*args, stdin=None):
         return run(*compose, *args, stdin=stdin)
@@ -56,7 +62,7 @@ def main():
         labels = json.loads(run('docker', 'inspect', '--format', '{{json .Config.Labels}}', container))
         assert labels['com.docker.compose.project'] == args.project
         assert labels['com.docker.compose.service'] == service
-        assert Path(labels['com.docker.compose.project.config_files']).resolve() == CONFIG
+        assert [Path(path).resolve() for path in labels['com.docker.compose.project.config_files'].split(',')] == configs
         assert Path(labels['com.docker.compose.project.environment_file']).resolve() == envfile
         bindings = json.loads(run('docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', container))
         if service == 'web':

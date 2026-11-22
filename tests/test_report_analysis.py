@@ -96,6 +96,34 @@ def events(c, row):
         db.outbox_events.c.payload['analysisRunId'].astext == row['runId']).order_by(db.outbox_events.c.created_at)).scalars())
 
 
+def test_report_scope_blocks_queue_and_preexisting_job(team, live, analysis_api, tmp_path, monkeypatch):
+    from uuid import uuid4
+
+    author = team.users['reporter']
+    report = submit(author, team.path, narrative=NARRATIVE)
+    scope = str(uuid4())
+    with session_at(author, analysis_api) as original:
+        queued = data(request(original, report))
+    assert queued['status'] == 'queued'
+    with live[0].begin() as connection:
+        lease = connection.execute(runs.update().where(r.id == UUID(queued['runId'])).values(
+            status='running', lease_id=uuid4(), leased_until=sa.func.now() + timedelta(seconds=30),
+            attempts=1).returning(runs)).mappings().one()
+    with gateway(answer()) as (url, calls):
+        monkeypatch.setenv('PMO_REPORT_MODEL_PROJECTS', scope)
+        model = model_gateway.Gateway(httpx.URL(url), '')
+        worker.process(live[0], worker.Claim(lease, False), model)
+        with live[0].connect() as connection:
+            job = inspect_team(connection, queued)
+            assert (job.status, job.error_code) == ('manual', 'MODEL_SCOPE_BLOCKED')
+        assert not calls
+    with serve(live[0].url, tmp_path, extra_env={'PMO_REPORT_ANALYSIS': '1',
+            'PMO_REPORT_MODEL_PROJECTS': scope}) as api, session_at(author, api.base_url) as client:
+        blocked = data(request(client, report, forceNewRun=True))
+        assert (blocked['status'], blocked['errorCode']) == ('manual', 'MODEL_SCOPE_BLOCKED')
+        assert not history(client, report)['modelEnabled']
+
+
 def test_model_off_author_scope_replay_and_atomic_fallback(team):
     pm, author, reviewer, outsider = (team.users[k] for k in ('pm','reporter','reviewer','outsider'))
     draft = data(author.post(team.path + '/drafts', headers=headers(), json=body()))

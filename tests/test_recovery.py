@@ -36,7 +36,13 @@ from test_reviews import data_login, member
 def recovery_db(tmp_path, monkeypatch):
     admin = recovery.database_url(os.environ['PMO_TEST_DATABASE_URL'])
     assert admin.host in ('127.0.0.1', '::1'), 'Pass a dedicated local test cluster only'
-    if (admin.port, admin.username, admin.database) == (55439, 'pmo', 'pmo'):
+    container = os.getenv('PMO_TEST_PG_CONTAINER')
+    if container is not None:
+        from scripts import pilot_regression
+
+        assert container == pilot_regression.NAME
+        tools = pilot_regression.pg_tools(admin)
+    elif (admin.port, admin.username, admin.database) == (55439, 'pmo', 'pmo'):
         tools = recovery.PgTools('pmo104dev-db-1')
     elif shutil.which('pg_dump') and shutil.which('pg_restore'):
         tools = recovery.PgTools()
@@ -340,7 +346,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
     assert {entry.name for entry in (point / 'evidence').iterdir()} == {original, external, fact_attachment}
 
     # Run the operator command end to end, not an in-process stand-in for pg_restore.
-    cmd = [sys.executable, '-m', 'pmo.recovery']
+    module = 'scripts.pilot_regression' if os.getenv('PMO_TEST_PG_CONTAINER') else 'pmo.recovery'
+    cmd = [sys.executable, '-m', module]
     if tools.dev_container:
         cmd.append('--dev-compose')
     result = subprocess.run([*cmd, 'restore-drill', str(point), str(targets), '--trusted-backup'],

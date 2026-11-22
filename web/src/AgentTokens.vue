@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import {ref} from 'vue'
+import {onMounted,ref} from 'vue'
 import {KeyRound,Plus,RefreshCw,ShieldOff} from 'lucide-vue-next'
 type Token={tokenId:string;fingerprint:string;allowedActions:string[];allowedProjectIds:string[];allowProjectCreate:boolean;expiresAt:string;state:string;revision:number}
-const props=defineProps<{projects:{projectId:string;name:string}[];admin:boolean;api:(path:string,options?:RequestInit,headers?:(h:Headers)=>void)=>Promise<any>}>()
+const props=defineProps<{projects:{projectId:string;name:string}[];admin:boolean;initialOpen?:boolean;api:(path:string,options?:RequestInit,headers?:(h:Headers)=>void)=>Promise<any>}>()
 const show=ref(false),org=ref(false),items=ref<Token[]>([]),actions=ref<string[]>([]),page=ref(1),total=ref(0),revision=ref(0)
 const editing=ref(false),chosen=ref<string[]>([]),projects=ref<string[]>([]),hours=ref(1),target=ref<Token|null>(null),reason=ref('')
 const secret=ref(''),notice=ref(''),error=ref(''),busy=ref(false),loading=ref(false)
@@ -13,6 +13,7 @@ function reset(){epoch++;readId++;secret.value='';notice.value='';error.value=''
 async function read(p=1){const n=++readId;loading.value=true;error.value='';try{const {data}=await props.api(`${base()}?page=${p}`);if(n===readId){items.value=data.items;actions.value=data.grantableActions;revision.value=data.collectionRevision;total.value=data.total;page.value=p}}
  catch(e){if(n===readId)error.value=String(e)}finally{if(n===readId)loading.value=false}}
 function open(organization=false){reset();org.value=organization;show.value=true;void read()}
+onMounted(()=>{if(props.initialOpen)open()})
 function newGrant(){secret.value='';notice.value='';chosen.value=[];projects.value=[];hours.value=1;boundHours=0;key='';target.value=null;editing.value=true}
 function requestKey(body:string){if(!key||last!==body){key=crypto.randomUUID();last=body}return key}
 async function issue(){const n=epoch;busy.value=true;error.value='';try{
