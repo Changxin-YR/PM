@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {ref} from 'vue'
 import {ClipboardCheck} from 'lucide-vue-next'
-const props=defineProps<{api:(path:string,options?:RequestInit)=>Promise<any>;row:{changeId:string;revision:number;baseRevision:number;before:Record<string,unknown>;after:Record<string,unknown>;reason:string};pending:boolean}>()
+const props=defineProps<{api:(path:string,options?:RequestInit)=>Promise<any>;row:{changeId:string;revision:number;baseRevision:number;before:unknown;after:unknown;reason:string};pending:boolean}>()
 const emit=defineEmits<{saved:[]}>(),open=ref(false),reason=ref(''),verdict=ref(''),error=ref(''),busy=ref(false)
 let last='',key='',revision=0
 function begin(){reason.value='';verdict.value='';error.value='';open.value=true;revision=props.row.revision;key=''}

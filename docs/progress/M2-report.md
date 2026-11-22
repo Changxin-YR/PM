@@ -258,3 +258,14 @@
 | `pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：冻结规格和 mypy 87 源文件，`.local/rc0033-check-final.log`。 |
 
 带数据升级、联合恢复、ERD 及综合运行见 [M4](M4-report.md#0033-候选与综合回归)。不改变业务阈值、权限、签核或未决政策。
+
+## 变更申请和历史的嵌套契约
+
+依据 §2.1、§5.4、LR-05、Q8/T05/T07、工程 DTO 补充 §1/5/7、[ADR 0009](../adr/0009-baseline-change-authority.md) 和 [ADR 0016](../adr/0016-approved-requirement-additions.md)。基准 `72ae09b1706365ccdbf428e39bc9af007faf5128`（复现时等同产品代码的预算候选树），被测树 `783b2c2abf2f37a77fc40ee43270d79f3b690910`，仅后补证据文本。Windows、PostgreSQL 16.14 隔离 schema、回环 HTTP、真实 SDK stdio、Edge 158.0.4370.33、合成账号、模型关闭。实现：`pmo/change_contract.py`、`change_requests.py`、`change_history.py`、`mcp_server.py`，以及 Web 变更台账和需求历史。冻结契约、审批角色及迁移 `0033` 不变；未改变附件引用，不重复联合恢复。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -q tests/test_change_contracts.py --tb=short --junitxml=.local/change-contract-before.xml` | 1 | FAIL：2 项。基准 OpenAPI 接受混入取消状态的需求修改，旧快照无可辨识形状，`.local/change-contract-before.log`。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_change_contracts.py tests/test_change_requests.py tests/test_change_history.py tests/test_requirement_additions.py tests/test_requirement_baselines.py tests/test_forecast_governance.py tests/test_costs.py tests/test_runtime.py tests/test_mcp_action_matrix.py tests/test_reference_vectors_governance.py --tb=short --junitxml=.local/change-contract-verified.xml` | 0 | PASS：36 项 / 78.98 秒，`.local/change-contract-verified.log`。四类真实申请与 HTTP/stdio Schema 一致，数值类型、非本地日期、前后字段不匹配、伪造批准/新增均拒绝；同主体重放、无效写无副作用、跨项目和 Agent 终裁禁权，审批仍需独立人。获批新增和旧 JSON（含 null）保留，Agent 历史不接收非契约原文。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py -k 'draft_workflow or independent_requirement_addition or drafting_through_archive_without_model' --tb=short --junitxml=.local/change-contract-edge.xml` | 0 | PASS：3 项 / 103.53 秒，`.local/change-contract-edge.log`。旧快照标识、原值、申请与独立批准回读，新增需求与无模型三关口归档。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格、mypy 88 源文件及 Vue 类型，`.local/change-contract-check.log`、`.local/change-contract-vue-verified.log`。首轮类型声明缺口退出 1（Schema dict）和 2（Web 旧快照字段），保留 `change-contract-check-first.log`、`change-contract-vue.log`。 |

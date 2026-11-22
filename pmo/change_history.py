@@ -1,11 +1,14 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
+from pydantic import ConfigDict, JsonValue, model_serializer
 
 from . import schema_v1 as db
 from .access import Auth
+from .change_contract import HISTORY, Target, legacy_snapshot
 from .contracts import Result, Strict
 from .identity import Failure, visible
 from .projects import meta, run
@@ -19,12 +22,14 @@ def with_decision(t):
 
 
 class Entry(Strict):
+    model_config = ConfigDict(json_schema_extra=HISTORY)
     changeId: UUID
     projectId: UUID
-    targetType: str
+    targetType: Target
     targetId: UUID
-    before: dict
-    after: dict
+    before: JsonValue
+    after: JsonValue
+    legacySnapshot: Literal[True] | None = None
     status: str
     reason: str
     baseRevision: int
@@ -37,6 +42,11 @@ class Entry(Strict):
     decisionReason: str | None = None
     decidedAt: datetime | None = None
 
+    @model_serializer(mode='wrap')
+    def include_json_null_snapshots(self, serialize):
+        # A JSON null in an old snapshot is data, not an absent DTO field.
+        return {**serialize(self), 'before': self.before, 'after': self.after}
+
 
 class Page(Strict):
     items: list[Entry]
@@ -44,6 +54,14 @@ class Page(Strict):
     pageSize: int
     total: int
     asOf: datetime
+
+
+def entry(i):
+    return Entry(changeId=i.id, projectId=i.project_id, targetType=i.target_type, targetId=i.target_id,
+        before=i.before, after=i.after, legacySnapshot=legacy_snapshot(i.target_type, i.before, i.after),
+        status=i.status, reason=i.reason, baseRevision=i.base_revision, revision=i.revision, requestedBy=i.requested_by,
+        approvedBy=i.approved_by, createdAt=i.created_at, effectiveAt=i.effective_at, decidedBy=i.get('approver_id'),
+        decisionReason=i.get('rationale'), decidedAt=i.get('decided_at'))
 
 
 @router.get('/requirements/{requirementId}/changes',operation_id='pmo_requirement_change_history',response_model_exclude_none=True)
@@ -58,9 +76,7 @@ def history(requirementId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSiz
         records=c.execute(sa.select(counts.c.total,rows,target.c.project_id.label('authorized_project_id'),sa.func.statement_timestamp().label('at')).select_from(
             target.join(counts,sa.true()).outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         if not records: raise Failure(404,'RESOURCE_NOT_FOUND')
-        items=[Entry(changeId=i.id,projectId=i.project_id,targetType=i.target_type,targetId=i.target_id,before=i.before,after=i.after,
-            status=i.status,reason=i.reason,baseRevision=i.base_revision,revision=i.revision,requestedBy=i.requested_by,approvedBy=i.approved_by,
-            createdAt=i.created_at,effectiveAt=i.effective_at,decidedBy=i.approver_id,decisionReason=i.rationale,decidedAt=i.decided_at) for i in records if i.id is not None]
+        items=[entry(i) for i in records if i.id is not None]
         at=records[0].at; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items],project_id=records[0].authorized_project_id); info.asOf=at
         return Result[Page](data=Page(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=at),meta=info)
     return run(authorization,op,read)

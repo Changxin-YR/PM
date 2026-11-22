@@ -61,6 +61,8 @@ def test_browser_draft_workflow(live,actor):
         c.execute(sa.text("INSERT INTO change_approval_grants VALUES(:p,:u,'requirement','browser fixture',now()+interval '1 hour',NULL)"),dict(p=evidence_pid,u=client))
         c.execute(db.change_entries.insert().values(project_id=evidence_pid,created_by=pm,requested_by=pm,target_type='requirement',target_id=req,base_revision=1,
             status='withdrawn',before={'priority':'P0'},after={'priority':'P1'},reason='验收样例：调整优先级已撤回'))
+        c.execute(db.change_entries.insert().values(project_id=evidence_pid,created_by=pm,requested_by=pm,target_type='requirement',target_id=req,base_revision=1,
+            status='withdrawn',before={'sourceNote':'历史导入原值'},after={},reason='验收样例：存档旧记录'))
         png=BytesIO(); Image.new('RGB',(6,6),(120,90,66)).save(png,'PNG'); accounts['PMO_TEST_PNG']=b64encode(png.getvalue()).decode('ascii')
     for role,sign_as in [('BASELINE_PM','pm'),('BASELINE_CLIENT','client_representative')]:
         with httpx.Client(base_url=f'http://127.0.0.1:{api_port}/api/v1/',trust_env=False) as signer:

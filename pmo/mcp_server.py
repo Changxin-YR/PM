@@ -1,10 +1,12 @@
 """Stdio adapter. No database imports, no browser credentials, no arbitrary URLs."""
 import asyncio
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
 from uuid import UUID
 from string import Formatter
+from .change_contract import PROPOSAL, mcp_snapshots
 from .tool_routes import ROUTES
 
 import httpx
@@ -18,7 +20,24 @@ packaged_catalog = Path(__file__).with_name('mcp_catalog.json')
 source_catalog = Path(__file__).resolve().parents[1] / 'docs/spec/11_MCP_工具契约.json'
 catalog = json.loads((packaged_catalog if packaged_catalog.is_file() else source_catalog).read_text(encoding='utf-8'))
 implemented = set(ROUTES)
-tools = {t['name']: types.Tool(name=t['name'],description=t['description'],inputSchema=t['inputSchema'],outputSchema={**t['outputSchema'],'type':'object'}) for t in catalog['tools'] if t['name'] in implemented}
+
+
+def advertised(tool):
+    name = tool['name']
+    inputs, outputs = tool['inputSchema'], {**tool['outputSchema'], 'type': 'object'}
+    if name in {'pmo_requirement_change_history', 'pmo_change_propose'}:
+        outputs = deepcopy(outputs)
+        record = outputs['oneOf'][0]['properties']['data']
+        history = name == 'pmo_requirement_change_history'
+        if history:
+            record = record['properties']['items']['items']
+        else:
+            inputs = {**inputs, **PROPOSAL}
+        record.update(mcp_snapshots(history=history))
+    return types.Tool(name=name, description=tool['description'], inputSchema=inputs, outputSchema=outputs)
+
+
+tools = {t['name']: advertised(t) for t in catalog['tools'] if t['name'] in implemented}
 
 @server.list_tools()
 async def discover():
@@ -80,6 +99,9 @@ async def invoke(name,arguments):
             # REST editors need these fields; the V1 MCP output contract is closed.
             if name in {'pmo_requirement_change_history','pmo_change_propose'}:
                 for record in result['data']['items'] if name=='pmo_requirement_change_history' else [result['data']]:
+                    if record.pop('legacySnapshot', False):
+                        record.pop('before', None)
+                        record.pop('after', None)
                     for field in ('reason','requestedBy','baseRevision','revision','effectiveAt','decidedBy','decisionReason','decidedAt'): record.pop(field,None)
             if name in {'pmo_requirement_list','pmo_requirement_create','pmo_requirement_draft_update','pmo_requirement_deliver'}:
                 records=result['data']['items'] if name=='pmo_requirement_list' else [result['data']]

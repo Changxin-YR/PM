@@ -24,7 +24,9 @@ def test_proposals_bind_current_target_and_never_apply(live,actor):
             ('budget',bid,{'budget':'100.00'},{'budget':'120.00'}),('charter',cid,{'roughDuration':5},{'roughDuration':8})]:
         body={'targetType':kind,'targetId':str(tid),'before':before,'after':after,'reason':'Verified baseline difference'}
         assert api.post(path,headers=h(),json={**body,'after':{'approvedBy':str(pm)}}).status_code==422
-        assert api.post(path,headers=h(),json={**body,'before':{'other':0}}).json()['code']=='BASELINE_CHANGED'
+        assert api.post(path,headers=h(),json={**body,'before':{'other':0}}).json()['code']=='INVALID_CHANGE_FIELDS'
+        wrong={'milestone':{'plannedDate':'2026-11-08'},'budget':{'budget':'99.00'},'charter':{'roughDuration':6}}
+        assert api.post(path,headers=h(),json={**body,'before':wrong[kind]}).json()['code']=='BASELINE_CHANGED'
         assert api.post(path,headers=h(2),json=body).json()['code']=='VERSION_CONFLICT'
         key=h(); response=api.post(path,headers=key,json=body); assert response.status_code==200,response.text
         assert response.json()['data']['status']=='pending' and response.json()==api.post(path,headers=key,json=body).json()

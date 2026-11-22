@@ -48,7 +48,7 @@ def origin(pid, signed):
 
 
 def addition(change):
-    return change.target_type == 'requirement' and change.before.get('present') is False
+    return change.target_type == 'requirement' and isinstance(change.before, dict) and change.before.get('present') is False
 
 
 def valid_origin(before, stamp):

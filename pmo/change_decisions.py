@@ -9,10 +9,10 @@ from pydantic import Field, ValidationError
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
-from .change_history import Entry
+from .change_history import Entry, entry
 from .change_intents import authority, payload, snapshot
 from .requirement_additions import Fields as AdditionFields, addition, initial_signature, origin, valid_origin
-from .change_requests import OPEN, TARGETS, changes, entry
+from .change_requests import OPEN, TARGETS, changes
 from .charters import COLUMNS
 from .contracts import RULE_VERSION, Result, Strict
 from .identity import Failure, visible
@@ -113,7 +113,8 @@ def decide(auth,approve,cid,command,key,rev):
         scope_event(c,saved,False); refs=[f'change:{cid}@{saved.revision}']
         if result: refs.append(f'{i.target_type}:{result.id}@{result.revision}')
         receipt=entry(saved).model_copy(update={'decidedBy':a.person,'decisionReason':reason,'decidedAt':at})
-        return finish(c,a,op,key,rid,project.id,sig,Result[Entry](data=receipt,meta=meta(op,refs)),fingerprint(entry(i).model_dump(mode='json')))
+        return finish(c,a,op,key,rid,project.id,sig,Result[Entry](data=receipt,meta=meta(op,refs)),
+            fingerprint(entry(i).model_dump(mode='json', exclude={'legacySnapshot'})))
     return run(auth,op,write)
 
 

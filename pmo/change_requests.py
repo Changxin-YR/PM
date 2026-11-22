@@ -1,13 +1,13 @@
-from typing import Literal
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import Field, ValidationError
+from pydantic import ConfigDict, Field, JsonValue, ValidationError
 
 from . import charter_models, milestones, requirements, schema_v1 as db
 from .access import Auth, Key, Revision
-from .change_history import Entry, Page, with_decision
+from .change_contract import PROPOSAL, Target, valid_proposal
+from .change_history import Entry, Page, entry, with_decision
 from .change_intents import authority, capture
 from .scope_quality import scope_event
 from .contracts import Result, Strict
@@ -25,10 +25,11 @@ TARGETS={'requirement':db.requirements,'milestone':db.milestones,'budget':db.cos
 
 
 class Proposal(Strict):
-    targetType: Literal['requirement','milestone','budget','charter']
+    model_config = ConfigDict(json_schema_extra=PROPOSAL)
+    targetType: Target
     targetId: UUID
-    before: dict=Field(min_length=1,max_length=10)
-    after: dict=Field(min_length=1,max_length=10)
+    before: dict[str, JsonValue]
+    after: dict[str, JsonValue]
     reason: str=Field(min_length=3,max_length=2000,pattern=r'\S')
 
 
@@ -41,12 +42,6 @@ class Ledger(Page):
     decidableIds: list[UUID]
     policyPending: bool
     additionProjectRevision: int | None = None
-
-
-def entry(i):
-    return Entry(changeId=i.id,projectId=i.project_id,targetType=i.target_type,targetId=i.target_id,before=i.before,after=i.after,status=i.status,
-        reason=i.reason,baseRevision=i.base_revision,revision=i.revision,requestedBy=i.requested_by,approvedBy=i.approved_by,createdAt=i.created_at,effectiveAt=i.effective_at,
-        decidedBy=i.get('approver_id'),decisionReason=i.get('rationale'),decidedAt=i.get('decided_at'))
 
 
 @router.get('/projects/{projectId}/changes',operation_id='human_changes_list',response_model_exclude_none=True)
@@ -108,6 +103,8 @@ def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:
         row=c.execute(sa.select(t).where(t.c.id==command.targetId,t.c.project_id==projectId).with_for_update()).mappings().one_or_none()
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
         if row.revision!=int(expected): raise Failure(409,'VERSION_CONFLICT')
+        if not valid_proposal(command.targetType, command.before, command.after):
+            raise Failure(422, 'INVALID_CHANGE_FIELDS', project_id=projectId)
         try: before,after=changes(command.targetType,row,command.after)
         except ValidationError: raise Failure(422,'INVALID_CHANGE_FIELDS') from None
         if fingerprint(before)!=fingerprint(command.before): raise Failure(409,'BASELINE_CHANGED')
