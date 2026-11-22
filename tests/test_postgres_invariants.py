@@ -1,9 +1,11 @@
-"""Assert the persisted ledger invariants on the migrated PostgreSQL database."""
+"""Exercise the actual constraints of a migrated PostgreSQL database."""
 import os
 import subprocess
 import sys
+from csv import DictReader
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,7 +13,10 @@ import sqlalchemy as sa
 
 from pmo import schema_v1 as db
 from pmo.costs import plans
-from test_reviews import team as team
+from pmo.reports import reports
+from pmo.review_outcomes import outcomes
+from test_reports import body as report_body
+from test_reviews import bench, data, decide, headers, score, start_charter, team as team
 
 
 MONTH = date(2020, 2, 1)
@@ -35,6 +40,110 @@ def constraint(conn, stmt, name, sqlstate):
     with pytest.raises(sa.exc.IntegrityError) as failed, conn.begin_nested():
         conn.execute(stmt)
     assert (failed.value.orig.diag.constraint_name, failed.value.orig.sqlstate) == (name, sqlstate)
+
+
+def test_frozen_column_types_and_nullability_match_actual_storage(live):
+    matrix = next(Path('docs/spec').glob('14_*.csv'))
+    with matrix.open(encoding='utf-8', newline='') as file:
+        expected = list(DictReader(file))
+    assert len({(r['table'], r['field']) for r in expected}) == len(expected) == 421
+    with live[0].connect() as conn:
+        conn.exec_driver_sql('SET TRANSACTION READ ONLY')
+        columns = {(row.table_name, row.field): (row.physical_type, row.nullable)
+            for row in conn.execute(sa.text('''SELECT tbl.relname AS table_name, a.attname AS field,
+                format_type(a.atttypid, a.atttypmod) AS physical_type, NOT a.attnotnull AS nullable
+                FROM pg_attribute a JOIN pg_class tbl ON tbl.oid=a.attrelid
+                WHERE tbl.relnamespace=current_schema()::regnamespace AND tbl.relkind='r'
+                AND a.attnum>0 AND NOT a.attisdropped'''))}
+    differences = set()
+    for row in expected:
+        key = (row['table'], row['field'])
+        kind, nullable = columns[key]
+        storage = kind.replace('character varying(', 'varchar(').replace('character(', 'char(')
+        storage = storage.replace('timestamp with time zone', 'timestamptz')
+        assert storage == row['type_and_constraint'].split()[0].rstrip('!?'), key
+        if nullable != (row['nullable'] == 'YES'):
+            differences.add((*key, nullable))
+    # ADR 0011: a formal non-gate Decision intentionally does not fabricate a Review.
+    assert differences == {('decisions', 'review_id', True)}
+
+
+def test_project_members_and_milestone_positions_are_constrained(live, team):
+    project, people, _, _ = team
+    p, g, m = db.projects, db.project_members, db.milestones
+    with live[0].begin() as c:
+        current = dict(c.execute(p.select().where(p.c.id == project)).mappings().one())
+        current.pop('id')
+        constraint(c, p.insert().values(**current), 'projects_org_id_code_key', '23505')
+        constraint(c, p.update().where(p.c.id == project).values(revision=0), 'projects_revision_check', '23514')
+        membership = dict(c.execute(g.select().where(g.c.project_id == project, g.c.role == 'pm')).mappings().one())
+        membership.pop('id')
+        constraint(c, g.insert().values(**membership), 'project_members_project_id_person_id_role_key', '23505')
+        base = dict(name='Synthetic position', project_id=project, created_by=people['pm'], is_key=True, planned_date=MONTH)
+        for slot in (0, 9):
+            constraint(c, m.insert().values(**base, ordinal=slot), 'milestones_ordinal_check', '23514')
+        constraint(c, m.insert().values(**{**base, 'project_id': uuid4()}, ordinal=1), 'milestones_project_id_fkey', '23503')
+        for slot in range(1, 9):
+            c.execute(m.insert().values(**base, ordinal=slot))
+        constraint(c, m.insert().values(**base, ordinal=1), 'uq_milestones_ordinal', '23505')
+        cancelled = c.scalar(m.insert().values(**base, ordinal=1, is_cancelled=True).returning(m.c.id))
+        constraint(c, m.update().where(m.c.id == cancelled).values(is_cancelled=False), 'uq_milestones_ordinal', '23505')
+        assert c.scalar(sa.select(sa.func.count()).select_from(m).where(m.c.project_id == project, ~m.c.is_cancelled)) == 8
+
+
+def test_review_versions_decision_and_audit_are_append_only(live, team):
+    project, _, users, _ = team
+    applicant, reviewer = users['initiator'], users['reviewer']
+    path = start_charter(project, users)
+    first = score(reviewer, path, [3, 4, 4, 4])
+    data(applicant.post(path + '/appeals', headers=headers(first['review']['revision']),
+                       json={'reason': 'Recheck the signed evidence in an independent round.'}))
+    score(reviewer, path, [4] * 4)
+    response = decide(reviewer, path)
+    decision = data(response)['decision']
+    review_id, decision_id = UUID(first['review']['reviewId']), UUID(decision['decisionId'])
+    s, d, a = db.scorecards, db.decisions, db.audit_logs
+    with live[0].begin() as c:
+        cards = s.select().where(s.c.review_id == review_id).order_by(s.c.round)
+        saved = c.execute(cards).mappings().all()
+        assert [row.round for row in saved] == [1, 2]
+        duplicate = dict(saved[-1]); duplicate.pop('id')
+        constraint(c, s.insert().values(**duplicate), 'scorecards_review_id_reviewer_id_round_key', '23505')
+        constraint(c, s.insert().values(**{**duplicate, 'review_id': uuid4()}), 'scorecards_review_id_fkey', '23503')
+        constraint(c, s.insert().values(**{**duplicate, 'round': 0}), 'scorecards_round_check', '23514')
+        for edit in (s.update().where(s.c.id == saved[0].id).values(dimensions={}),
+                     s.delete().where(s.c.id == saved[0].id),
+                     d.update().where(d.c.id == decision_id).values(rationale='Different decision'),
+                     outcomes.delete().where(outcomes.c.decision_id == decision_id),
+                     a.update().where(a.c.request_id == response.headers['X-Request-ID']).values(result='denied')):
+            with pytest.raises(sa.exc.DBAPIError, match='append-only audit'), c.begin_nested():
+                c.execute(edit)
+        assert c.execute(cards).mappings().all() == saved
+    history = bench(reviewer, path)
+    assert history['decision'] == decision and len(history['scores']) == 2
+
+
+def test_current_confirmed_report_uniqueness_preserves_prior_receipt(live, team):
+    project, people, users, _ = team
+    pm = users['pm']
+    listing = f'projects/{project}/reports'
+    version1 = data(pm.post(listing, headers=headers(), json=report_body(narrative='Original synthetic PM report.')))
+    old_path = f"reports/{version1['reportId']}"
+    first = data(pm.post(old_path + '/confirm', headers=headers(version1['revision']), json={}))
+    version2 = data(pm.post(listing, headers=headers(), json=report_body(narrative='More recent verified context.')))
+    new_id = UUID(version2['reportId'])
+    with live[0].begin() as c:
+        r = reports.c
+        invalid = reports.update().where(r.id == new_id).values(
+            status='confirmed', confirmed_by=people['pm'], confirmed_at=sa.func.now(), is_current_confirmed=True)
+        constraint(c, invalid, 'uq_reports_period', '23505')
+        with pytest.raises(sa.exc.IntegrityError, match='Submitted report history is immutable'), c.begin_nested():
+            c.execute(reports.update().where(r.id == UUID(version1['reportId'])).values(narrative='Rewritten history'))
+    replacement = data(pm.post(f'reports/{new_id}/confirm', headers=headers(version2['revision']), json={}))
+    previous = data(pm.get(old_path))
+    assert replacement['isCurrentConfirmed'] and not previous['isCurrentConfirmed']
+    assert previous['status'] == 'confirmed' and previous['narrative'] == first['narrative']
+    assert previous['contentHash'] == first['contentHash'] and previous['confirmedAt'] == first['confirmedAt']
 
 
 def test_verified_posting_storage_checks_linkage_and_partial_uniqueness(live, team):

@@ -188,3 +188,14 @@
 | `.venv/Scripts/python.exe -m pytest -q tests/test_postgres_invariants.py tests/test_costs.py tests/test_postings.py tests/test_cost_reconciliation.py tests/test_database_roles.py tests/test_recovery.py tests/test_runtime.py --tb=short --junitxml=.local/rc0031-cost-verified.xml` | 0 | PASS：24 项 / 61.22 秒；`.local/rc0031-cost-verified.log`。覆盖四表拒绝、历史异常使所有新约束与 `alembic_version` 一起回滚、核验不可改、重复来源/冲销、独立实际值对账、受限角色；`0016→0029→0031` 带数据升级并联合恢复，真实回读金额 `65.25`、人天 `3.75`、基线、预测、来源及三份原件，候选流水不重复入账。 |
 | `.venv/Scripts/python.exe -m scripts.schema_erd --check .local/erd-0031.md`；`pwsh -NoProfile -File scripts/dev.ps1 check` | 0 | PASS：隔离 PostgreSQL 新图与 `docs/erd.md` 一致（78 表、202 外键），三套规格检查与 mypy 87 源文件 `.local/rc0031-check.log`。 |
 | `docker compose -p pmo104-rc-f98acc11 --env-file .local/pmo104-rc-f98acc11.env -f deploy/compose.yaml up --build -d --wait`；`.venv/Scripts/python.exe scripts/deployment_smoke.py pmo104-rc-f98acc11` | 0 | PASS；`.local/rc0031-compose-build.log`、`.local/rc0031-compose-smoke.log`。新增本机回环候选栈，不动既有 `0030` 或共享 `0016`；四条 `ck_*_finite` 均 `convalidated=true`。受限进程、双模型关闭、15 项目与去重回执；真实停库时 503，复启恢复 200；登出 200 且旧会话不可再用。Edge `158.0.4370.33` 30 次/操作，p95 筛选/详情各 43ms，非目标环境性能结论。 |
+
+## 0031 综合回归与库约束反例
+
+源条款：数据库字段类型与约束矩阵、数据库一致性第 2 节、主方案 §3、§20.4–20.6、FND-002/FND-003。Windows、Edge、本机 HTTP/stdio、PostgreSQL 16.14 隔离 schema 与专用库，合成账号。综合验证源码树 `9044fc9f438e3961285210f74b747e3e7c6a8fbc`（`af00acdaf2cdd7e1d0774c81522d403db005b8ba` 仅多证据文档）；追加数据库反例以该提交为基准，源码树 `c6927f61062dbf5dbe31a0cd47f3ace59982a967`。没有第二次改迁移或附件引用。
+
+| 实际命令 | 退出码 | 结果与证据 |
+|---|---:|---|
+| `.venv/Scripts/python.exe -m pytest -p scripts.mcp_test_evidence --pmo-mcp-evidence .local/rc0031-mcp.json --pmo-mcp-check-replays -q --tb=short --junitxml=.local/rc0031-backend.xml` | 0 | PASS：277 项 / 415.10 秒，`.local/rc0031-backend.log`。40 工具实测输出证据与 `mcp-stdio-0029.json` 相同（SHA-256 `584fc7468541b3e6a0c7b552e379a6a4a6951db7486092d472f46a88a162f762`），包括 18 读审计与 22 写重放。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/browser_case.py --tb=short --junitxml=.local/rc0031-edge.xml` | 0 | PASS：19 项 / 224.57 秒，`.local/rc0031-edge.log`。正常无模型三关口、对账、风险处置、归档；暂停后终止复盘、过期和客户例外等。 |
+| `.venv/Scripts/python.exe -m pytest -q tests/test_postgres_invariants.py tests/test_runtime.py --tb=short --junitxml=.local/rc0031-catalog.xml` | 0 | PASS：18 项 / 21.83 秒，`.local/rc0031-catalog.log`。实际数据库目录核对全部 421 字段类型及空值申明（唯一差异为 ADR 0011 的非关口 `Decision.review_id`）；同组织项目代码、成员角色、里程碑槽位/CHECK/FK、评分轮次唯一及不可改、决议快照/审计追加写、报告部分唯一及受保护内容反例。目录核对不替代其余领域语义。 |
+| `pwsh -NoProfile -File scripts/dev.ps1 check`；在 `web` 运行 `./node_modules/.bin/vue-tsc.cmd --noEmit` | 0 | PASS：冻结规格及类型；`.local/rc0031-final-check.log`、`.local/rc0031-vue.log`。 |
