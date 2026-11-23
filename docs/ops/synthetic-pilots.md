@@ -4,7 +4,7 @@
 
 ## 启动和复跑
 
-当前项目在 `native` 持久试点：Web `127.0.0.1:18778`，API `127.0.0.1:18779/api/v1/`，数据库 `127.0.0.1:55443/pmo_pilot`，私有原件在 `.local/pmo-synthetic-pilot-native/private-evidence`。全部限本机；回归独用 `55444`。未设置 `PMO_PILOT_RUNTIME` 会选择旧 Docker 试点（Web `18775`、API `18776`、DB `55441`、回归 `55442`），不是当前实例。
+当前项目在 `native` 持久试点：Web `127.0.0.1:18778`，API `127.0.0.1:18779/api/v1/`，数据库 `127.0.0.1:55443/pmo_pilot`，私有原件在 `.local/pmo-synthetic-pilot-native/private-evidence`。全部限本机；回归独用 `55444`。现有 `0036` 持久实例可继续由原候选提供服务。若升级该实例，先准备已验证的本机恢复点并退出其所有进程，再由新候选单独执行 `& $py -m scripts.pilot_local init --upgrade-existing`。升级和启动顺序执行。未设置 `PMO_PILOT_RUNTIME` 会选择旧 Docker 试点（Web `18775`、API `18776`、DB `55441`、回归 `55442`），不是当前实例。
 
 在 Windows PowerShell 7 的仓库根目录运行。每个新终端都显式选 `native`。如果 `status` 已就绪则无需重启；主机重启后按下列顺序恢复同一实例。原生运行器使用已准备的 PostgreSQL 16 二进制（此机为 16.14），位置 `.local/pmo-synthetic-pilot/pg16-runtime/pgsql/bin`。
 
@@ -20,7 +20,7 @@ npm.cmd --prefix web run build
 & $py -m scripts.pilot_rehearsal browser
 ```
 
-`status` 区分服务就绪、配置已保存、模型已加载。`stop` 只通知本套应用监督进程退出，保留数据库、附件及回执；`start` 始终关闭模型。只有专用 schema 能按保守合成政策演练。用 `python -m scripts.pilot_regression -- ...` 在独立回归库测试。固定制品的 Compose 探针是另一套环境，当前 `pmo104-rc-e28da52c`（回环 `18777`）。新 smoke 项目选择未用的 `PMO_SMOKE_SUBNET`，用 `deploy/pilot-smoke.compose.yaml` 和 `deployment_smoke.py <project> --pilot-network` 验证；该 override 不启用模型。
+`status` 区分服务就绪、配置已保存、模型已加载。`stop` 只通知本套应用监督进程退出，保留数据库、附件及回执；`start` 始终关闭模型。只有专用 schema 能按保守合成政策演练。用 `python -m scripts.pilot_regression -- ...` 在独立回归库测试。固定制品的 Compose 探针是另一套环境，已验证的基线栈 `pmo104-rc-15fde057`（回环 `18780`）。新 smoke 项目选择未用的 `PMO_SMOKE_SUBNET`，用 `deploy/pilot-smoke.compose.yaml` 和 `deployment_smoke.py <project> --pilot-network` 验证；该 override 不启用模型。
 
 `seed` 已完成时只读回，不覆盖用户手工操作。`pilot_rehearsal` 通过服务记录 A 的变更、锁定对账和待接收风险，并把两个 `-DRILL` 项目走到归档；A 保留实施现场，B 保留 Host 委托草稿。模拟身份：发起 `sim-init`；PM `sim-pm-a` / `sim-pm-b`；Sponsor `sim-sponsor`；评审 `sim-review-01` / `sim-review-02`；客户 `sim-customer`；流水核验 `sim-finance`；对账 `sim-reconcile`；风险接收 `sim-risk-receiver`；任命 `sim-appoint`。`sim-admin` 不代办业务。在私有终端运行 `python -m scripts.pilot_seed login <role>`（不加 `sim-`）读取合成口令，不截图或发到聊天。
 

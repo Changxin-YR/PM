@@ -1,6 +1,14 @@
 # M3 工具与目标 Host：部分实测，未整体验收
 
-## 2026-11-23 当前候选与 Host 边界
+## 2026-11-23 Codex Desktop 合成试点实测
+
+13:05（北京时间）在实际 Desktop 聊天调用本机 `pmo_synthetic_codex`，发现 40 个工具。受限合成委托只允许项目 `SIM-NEW-001` 的列表、详情及草稿编辑。列表只返回该项目，详情为 `drafting`。读取另一个合成项目返回 `RESOURCE_NOT_FOUND`，调用委托未授权的里程碑读取返回 `FORBIDDEN`。
+
+草稿从版本 7 改名到版本 8；同一幂等键重放返回版本 8，由独立人工会话经 Web API 回读版本 8。随即恢复原标题至版本 9，项目仍是 `drafting`。保留版本与审计记录后撤销 Desktop 临时委托，正在运行的旧连接再调用返回 `UNAUTHORIZED`。脱敏原始回执保存在本机 `.local/pmo-user-desktop-t09-live.json`。
+
+实际 Host 测试使用持久试点 `18778/18779`，其 API 启动于 `e28da52`。固定候选 `15fde05` 的[独立 SDK 证据](../acceptance/mcp-stdio-0036-15fde05.json)另有 40 项成功及越动作拒绝、18 项读审计与 22 项写重放；两个独立令牌之间的撤销隔离已有 SDK 证据。另在经签名验证、本机安装且由本人登录的 DeepSeek Harness Desktop `0.2.2-rc.5` 测试直接 stdio 接入。实际客户端列表仅返回 `SIM-NEW-001 / drafting`，授权详情成功，异项目与未授权动作分别返回 `RESOURCE_NOT_FOUND` 和 `FORBIDDEN`。从版本 9 修改到 10，同键重放及独立 Web API 回读均为 10。客户端恢复标题到 11。撤销 DSH 短期委托后，原连接实际返回 `UNAUTHORIZED`，服务端记录 401。两套实际 Host 使用不同的合成委托，DSH 在 Codex 委托撤销后仍可访问其授权项目。脱敏回执在本机 `.local/pmo-dsh-qualification-20261123/actual-desktop-test.json`。以下为早期批次。
+
+## 2026-11-23 早期候选与 Host 边界
 
 产品候选 `e28da52cf977f89343b274252dffb2b69d9a1345`，持久试点 API `127.0.0.1:18779/api/v1/`。全量后端回归启用 SDK 插件，实际 stdio **40/40 发现、40/40 成功调用及闭合 Schema、40/40 未授权动作拒绝（`FORBIDDEN`）、18/18 读审计、22/22 同键写重放**；无重复成功审计或 Outbox。见[逐工具输出](../acceptance/mcp-stdio-0036-e28da52.json)及 [M4 命令](M4-report.md#2026-11-23-固定候选与两组合成试点)。仓库外固定 wheel 的 11 项也已通过，见历史制品记录；两者都不是实际 Host 验收。
 
