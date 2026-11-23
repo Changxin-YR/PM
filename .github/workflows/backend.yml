@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16.14-alpine
@@ -24,4 +24,13 @@ jobs:
       - run: uv sync --locked --python 3.12
       - run: for s in docs/spec/{08,15,19}_*.py; do uv run --locked python "$s" || exit 1; done
       - run: uv run --locked mypy pmo --ignore-missing-imports
+      - name: Select PostgreSQL 16 recovery clients
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ] || [ ! -x /usr/lib/postgresql/16/bin/pg_restore ]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y postgresql-client-16
+          fi
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
       - run: uv run --locked pytest -q
