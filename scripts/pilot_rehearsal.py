@@ -2,6 +2,7 @@
 import argparse
 from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 import json
 import subprocess
 from uuid import UUID
@@ -138,6 +139,44 @@ class Rehearsal(seed.Pilot):
         self.write('reconciled-current', 'reconcile', path,
                    dict(costHash=state['costHash'], evidenceRefs=[current['evidenceRef']]), state['revision'])
 
+    def finish_costs(self):
+        if 'status' in self.steps.get('closing-reconciled-current', {}):
+            return
+        check_path = self.path + '/closing/check'
+        if 'closingCostGaps' not in self.evidence:
+            missing = sorted({gap['code'] for gap in self.get(self.pm, check_path)['missing']})
+            self.evidence['closingCostGaps'] = missing
+            local.save(self.file, self.evidence)
+        gaps = self.evidence['closingCostGaps']
+        if set(gaps) != {'MONEY_CLOSING_VARIANCE', 'EFFORT_CLOSING_VARIANCE'}:
+            raise ValueError(f'{self.code}: unexpected closing gaps before additional synthetic postings: {gaps}')
+        occurred = self.evidence.setdefault('closingCostOccurrence', datetime.now(UTC).isoformat())
+        period = datetime.fromisoformat(occurred).astimezone(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
+        lines = []
+        for kind, baseline in (('money', self.money), ('effort', self.effort)):
+            first = self.steps['post-' + kind]['body']['amount']
+            delta = format(Decimal(baseline) - Decimal(first), '.2f')
+            source = f'SIM-{self.code}-closing-{kind}'
+            posting = self.write('post-closing-' + kind, self.pm, self.path + '/cost-postings',
+                                 dict(type=kind, amount=delta, period=period, sourceRef=source))
+            self.write('verify-closing-' + kind, 'finance', f'cost-postings/{posting["postingId"]}/verify',
+                       dict(reason='Independently verified the remaining synthetic amount.', occurredAt=occurred))
+            lines.append(dict(type=kind, netActual=baseline, sourceRef=source + '-external'))
+        path = self.path + '/cost-reconciliations'
+        state = self.get('reconcile', path)
+        assert state['canCreate'] and not state.get('current')
+        previous = self.steps['reconciled-current']['data']
+        assert state['costHash'] != previous['costHash']
+        proof = self.steps['reconciliation-current-original-verify']['data']['evidenceRef']
+        self.write('closing-old-reconciliation-rejected', 'reconcile', path,
+                   dict(costHash=previous['costHash'], evidenceRefs=[proof]), state['revision'],
+                   expected=409, code='RECONCILIATION_STALE')
+        cutoff = self.evidence.setdefault('closingReconciliationCutoff', datetime.now(UTC).isoformat())
+        current = self.upload('closing-reconciliation-original', 'project', self.pid,
+            dict(schemaVersion=1, projectId=self.pid, coveredThrough=cutoff, lines=lines))
+        self.write('closing-reconciled-current', 'reconcile', path,
+                   dict(costHash=state['costHash'], evidenceRefs=[current['evidenceRef']]), state['revision'])
+
     def transition(self, stage, *, code=None):
         req = self.write('transition-request-' + (code or stage), self.pm,
             self.path + '/transition-requests', dict(toStage=stage, reason='Synthetic workflow rehearsal.'),
@@ -164,7 +203,10 @@ class Rehearsal(seed.Pilot):
                 assert 'COST_RECONCILIATION_REQUIRED' in {gap['code'] for gap in check['missing']}
             self.risk_cases(finish=True)
             self.cost_cases(finish=True)
-            assert self.get(self.pm, self.path + '/closing/check')['eligible']
+            self.finish_costs()
+            final = self.get(self.pm, self.path + '/closing/check')
+            if not final['eligible']:
+                raise ValueError(f'{self.code}: closing remains blocked: {[gap["code"] for gap in final["missing"]]}')
             self.gate('closing')
         self.transition('retrospective')
         retro = self.path + '/retrospective'
@@ -191,7 +233,8 @@ def rehearse():
     local.private_home()
     cfg = local.settings()
     manifest = local.read('pilots.json', {})
-    if not local.ready() or local.read('runtime.json', {}).get('models') != {} or not local.PILOT_CODES <= manifest.keys():
+    if (not local.wait_for(local.ready) or local.read('runtime.json', {}).get('models') != {}
+            or not local.PILOT_CODES <= manifest.keys()):
         raise ValueError('Rehearse only on the seeded model-off pilot instance.')
     with ExitStack() as stack:
         pool = seed.engine(cfg)
@@ -231,8 +274,8 @@ def rehearse():
 
 def browser():
     local.private_home()
-    local.verify_container(local.settings())
-    if not local.ready() or local.read('runtime.json', {}).get('models') != {}:
+    local.verify_database(local.settings())
+    if not local.wait_for(local.ready) or local.read('runtime.json', {}).get('models') != {}:
         raise ValueError('The pilot needs to be available with models off.')
     pilots = local.read('pilots.json')
     drill = local.read('rehearsals.json')['SIM-EXEC-001-DRILL']

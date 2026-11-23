@@ -19,14 +19,17 @@ from psycopg import sql
 from sqlalchemy import URL
 
 ROOT = Path(__file__).resolve().parents[1]
-HOME = ROOT / '.local' / 'pmo-synthetic-pilot'
+PROFILE = 'PMO_PILOT_RUNTIME'
+NATIVE = os.getenv(PROFILE) == 'native'
+HOME = ROOT / '.local' / ('pmo-synthetic-pilot-native' if NATIVE else 'pmo-synthetic-pilot')
 COMPOSE = ROOT / 'deploy' / 'pilot-db.compose.yaml'
 PYTHON = ROOT / '.venv' / 'Scripts' / 'python.exe'
-DB_PORT, WEB_PORT, API_PORT = 55441, 18775, 18776
+DB_PORT, WEB_PORT, API_PORT = (55443, 18778, 18779) if NATIVE else (55441, 18775, 18776)
 API = f'http://127.0.0.1:{API_PORT}/api/v1/'
 WEB = f'http://127.0.0.1:{WEB_PORT}'
 DB_NAME = 'pmo_pilot'
 HEAD = '0036'
+STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
 
@@ -112,7 +115,11 @@ def compose(cfg, *args, capture=False):
                           text=True, encoding='utf-8', timeout=150).stdout
 
 
-def verify_container(cfg):
+def verify_database(cfg):
+    if NATIVE:
+        from scripts.pilot_native import verify_pilot
+        verify_pilot(cfg)
+        return
     cid = compose(cfg, 'ps', '-q', 'db', capture=True).strip()
     if not re.fullmatch('[0-9a-f]{12,64}', cid):
         raise ValueError('Dedicated pilot DB container is not running.')
@@ -136,19 +143,23 @@ def init():
         cfg = {'id': uuid4().hex, 'passwords': {r: secrets.token_hex(32) for r in ('bootstrap', 'migrate', 'api', 'outbox')}}
         with bind(DB_PORT):
             save('instance.json', cfg)
-            secrets_file = local_file('database.env')
-            with secrets_file.open('x', encoding='ascii') as stream:
-                for role, value in cfg['passwords'].items():
-                    key = 'DB' if role == 'bootstrap' else role.upper()
-                    stream.write(f'PMO_DEPLOY_{key}_PASSWORD={value}\n')
-                stream.write(f'PMO_PILOT_DB_PORT={DB_PORT}\n')
+            if not NATIVE:
+                with local_file('database.env').open('x', encoding='ascii') as stream:
+                    for role, value in cfg['passwords'].items():
+                        key = 'DB' if role == 'bootstrap' else role.upper()
+                        stream.write(f'PMO_DEPLOY_{key}_PASSWORD={value}\n')
+                    stream.write(f'PMO_PILOT_DB_PORT={DB_PORT}\n')
     cfg = settings()
-    endpoint = subprocess.check_output(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
-                                       env=env_base(), encoding='utf-8').strip()
-    if not endpoint.startswith('npipe:'):
-        raise RuntimeError('Expected the local Windows Docker context.')
-    compose(cfg, 'up', '-d', '--wait', 'db')
-    verify_container(cfg)
+    if NATIVE:
+        from scripts.pilot_native import init_pilot
+        init_pilot(cfg)
+    else:
+        endpoint = subprocess.check_output(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
+                                           env=env_base(), encoding='utf-8').strip()
+        if not endpoint.startswith('npipe:'):
+            raise RuntimeError('Expected the local Windows Docker context.')
+        compose(cfg, 'up', '-d', '--wait', 'db')
+    verify_database(cfg)
     with db_connect(cfg, scoped=False) as conn:
         if conn.execute('SELECT current_database(), current_user').fetchone() != (DB_NAME, 'pmo_migrate'):
             raise ValueError('Not the dedicated pilot database.')
@@ -171,7 +182,7 @@ def init():
     with db_connect(cfg, scoped=False) as conn:
         conn.autocommit = True
         apply_roles(conn, 'pmo_api', 'pmo_outbox', synthetic_schema=schema(cfg))
-    print(f'{project(cfg)} database={DB_NAME} schema={schema(cfg)} head={HEAD}')
+    print(f'{project(cfg)} runtime={"native" if NATIVE else "docker"} database={DB_NAME} port={DB_PORT} schema={schema(cfg)} head={HEAD}')
 
 
 def bind(port):
@@ -196,7 +207,7 @@ def wait_for(check, seconds=45):
 
 def ready():
     try:
-        with httpx.Client(trust_env=False, timeout=2) as client:
+        with httpx.Client(trust_env=False, timeout=15) as client:
             return (client.get(WEB).status_code == 200
                     and client.get(API.removesuffix('/api/v1/') + '/health/ready').json() == {'status': 'ready'})
     except (httpx.HTTPError, ValueError):
@@ -257,7 +268,7 @@ def model_env(active):
 
 def serve(active):
     cfg = settings()
-    verify_container(cfg)
+    verify_database(cfg)
     with db_connect(cfg, 'api') as connection:
         identity = connection.execute('SELECT current_database(), current_schema(), current_user FROM alembic_version WHERE version_num=%s', (HEAD,)).fetchone()
         if identity != (DB_NAME, schema(cfg), 'pmo_api'):
@@ -289,7 +300,8 @@ def serve(active):
             if worker_model['PMO_REPORT_ANALYSIS'] == '1':
                 ids['reportWorker'] = start([str(PYTHON), '-m', 'pmo.report_analysis_worker', '--watch'], ROOT,
                                             separate | worker_model)
-            if not wait_for(lambda: ready() or any(p.poll() is not None for p in procs)) or any(p.poll() is not None for p in procs):
+            if (not wait_for(lambda: ready() or any(p.poll() is not None for p in procs), seconds=STARTUP_SECONDS)
+                    or any(p.poll() is not None for p in procs)):
                 raise RuntimeError('Pilot services could not start; see services.log.')
             sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
             save('runtime.json', dict(pids=ids, web=WEB, api=API, initialHead=sha, models=loaded, startedAt=datetime.now(UTC).isoformat()))
@@ -320,9 +332,11 @@ def launch(active=False):
         raise RuntimeError('Run npm.cmd --prefix web run build before starting the pilot.')
     with local_file('supervisor.log').open('a', encoding='utf-8') as log:
         child = subprocess.Popen([str(PYTHON), '-m', 'scripts.pilot_local', 'serve-models' if active else 'serve'], cwd=ROOT,
-                                env=env_base(), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                env=env_base() | ({PROFILE: 'native'} if NATIVE else {}),
+                                stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
-    if not wait_for(lambda: local_file('runtime.json').is_file() or child.poll() is not None) or child.poll() is not None:
+    if (not wait_for(lambda: local_file('runtime.json').is_file() or child.poll() is not None, seconds=STARTUP_SECONDS + 45)
+            or child.poll() is not None):
         raise RuntimeError('Pilot did not become ready. See the protected supervisor and service logs.')
     print(json.dumps(read('runtime.json'), ensure_ascii=False))
 

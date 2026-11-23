@@ -33,7 +33,7 @@ def user_name(role):
 
 
 def engine(cfg):
-    local.verify_container(cfg)
+    local.verify_database(cfg)
     pool = sa.create_engine(local.database(cfg, 'migrate'), hide_parameters=True)
     with pool.connect() as c:
         if c.exec_driver_sql('SELECT current_database(),current_schema(),current_user').one() != (

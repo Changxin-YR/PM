@@ -15,6 +15,7 @@ from scripts import pilot_local as local
 NAME = 'pmo104-pilot-regression'
 NETWORK = NAME + '-net'
 PORT = 55442
+NATIVE_PORT = 55444
 USERNAME = 'pmo_regression'
 
 
@@ -91,6 +92,27 @@ def ensure():
     return url.render_as_string(hide_password=False)
 
 
+def native_env():
+    from scripts import pilot_native
+
+    local.private_home()
+    settings = local.read('regression.json')
+    if settings is None:
+        with local.bind(NATIVE_PORT):
+            settings = {'password': secrets.token_hex(32)}
+            local.save('regression.json', settings)
+    directory = local.local_file('regression-db')
+    password = settings['password']
+    pilot_native.start(directory, local.local_file('regression-postgres.log'), NATIVE_PORT, USERNAME, password)
+    with pilot_native.connect(directory, NATIVE_PORT, USERNAME, password) as db:
+        if not db.execute('SELECT 1 FROM pg_database WHERE datname = %s', (USERNAME,)).fetchone():
+            db.execute('CREATE DATABASE pmo_regression')
+    url = URL.create('postgresql+psycopg', username=USERNAME, password=password, host='127.0.0.1',
+                     port=NATIVE_PORT, database=USERNAME)
+    return {'PMO_TEST_DATABASE_URL': url.render_as_string(hide_password=False),
+            'PATH': str(pilot_native.BIN) + os.pathsep + os.environ['PATH']}
+
+
 def main():
     if sys.argv[1:2] == ['restore-drill']:
         admin = recovery.database_url(os.environ['PMO_RESTORE_ADMIN_URL'])
@@ -100,11 +122,15 @@ def main():
     args = parser.parse_args().pytest_args
     if args[:1] == ['--']:
         args = args[1:]
-    env = local.env_base() | {'PMO_TEST_DATABASE_URL': ensure(), 'PMO_TEST_PG_CONTAINER': NAME}
+    if local.NATIVE:
+        env = local.env_base() | native_env()
+    else:
+        env = local.env_base() | {'PMO_TEST_DATABASE_URL': ensure(), 'PMO_TEST_PG_CONTAINER': NAME}
     for key in ('PMO_TEST_MCP_ENTRYPOINT',):
         if key in os.environ:
             env[key] = os.environ[key]
-    print('Regression PostgreSQL: dedicated loopback 55442; pilot and shared DBs excluded.', flush=True)
+    print(f'Regression PostgreSQL: dedicated loopback {NATIVE_PORT if local.NATIVE else PORT}; '
+          'pilot and shared DBs excluded.', flush=True)
     return subprocess.run([sys.executable, '-m', 'pytest', *args], cwd=local.ROOT, env=env, check=False).returncode
 
 

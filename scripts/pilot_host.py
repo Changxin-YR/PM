@@ -12,6 +12,13 @@ from uuid import uuid4
 
 import yaml
 
+# Installed Host configurations always select the instance explicitly.
+if '__main__' == __name__:
+    if '--native' in sys.argv[1:]:
+        os.environ['PMO_PILOT_RUNTIME'] = 'native'
+    elif not __package__:
+        os.environ.pop('PMO_PILOT_RUNTIME', None)
+
 if __package__:
     from scripts import pilot_local as local
 else:
@@ -75,13 +82,13 @@ def stdio(host):
 
 def config():
     local.private_home()
-    args = [str(Path(__file__).resolve()), 'stdio', 'codex']
+    args = [str(Path(__file__).resolve()), 'stdio', 'codex', *(['--native'] if local.NATIVE else [])]
     line = f'[mcp_servers.pmo_synthetic_codex]\ncommand = {json.dumps(str(local.PYTHON))}\nargs = {json.dumps(args)}\n'
     local.local_file('codex-mcp.toml').write_text(line, encoding='utf-8')
     print(str(local.local_file('codex-mcp.toml')))
     dsh = [{'insert': [{'id': 'pmo-synthetic-mcp', 'name': '@deepseek-ai/dsh-mcp-client', 'config': {
         'serverName': 'pmo_synthetic_dsh', 'transport': 'stdio', 'command': str(local.PYTHON),
-        'args': [str(Path(__file__).resolve()), 'stdio', 'dsh'], 'cwd': str(local.ROOT),
+        'args': [args[0], 'stdio', 'dsh', *args[3:]], 'cwd': str(local.ROOT),
     }}]}]
     local.local_file('dsh-mcp.cordis.yml').write_text(yaml.safe_dump(dsh, sort_keys=False), encoding='utf-8')
     print(str(local.local_file('dsh-mcp.cordis.yml')))
@@ -91,6 +98,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('issue', 'stdio', 'config'))
     parser.add_argument('host', choices=(*HOSTS, 'both'), nargs='?', default='both')
+    parser.add_argument('--native', action='store_true', help='Use the separate native pilot instance.')
     args = parser.parse_args()
     if args.action == 'stdio':
         if args.host not in HOSTS:
