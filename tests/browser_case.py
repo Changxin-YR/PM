@@ -384,6 +384,8 @@ def test_browser_combined_closure_and_stale_forms(live, team, revoke):
     import httpx
     from argon2 import PasswordHasher
 
+    from pmo.cost_reconciliation import receipts as cost_receipts
+    from pmo.requirement_exceptions import events as exception_events
     from pmo.risk_resolution import acceptances, resolutions
     from test_requirement_exceptions import conditional_material
     from test_reviews import data_login, result_counts
@@ -409,6 +411,11 @@ def test_browser_combined_closure_and_stale_forms(live, team, revoke):
     assert stage(users['pm'], project)['stage'] == ('closing_review' if revoke else 'closed')
     with live[0].connect() as c:
         assert result_counts(c, pid)[1:3] == ((2, 2) if revoke else (3, 3))
+        assert c.scalar(sa.select(sa.func.count()).select_from(cost_receipts)
+                        .where(cost_receipts.c.project_id == pid)) == 1
+        exception_kinds = c.execute(sa.select(exception_events.c.kind).where(exception_events.c.project_id == pid)
+                                    .order_by(exception_events.c.revision)).scalars().all()
+        assert exception_kinds == (['signed', 'revoked'] if revoke else ['signed'])
         requested, accepted = c.execute(sa.select(acceptances).where(acceptances.c.risk_id == risk)
             .order_by(acceptances.c.created_at)).mappings().all()
         assert (requested.kind, accepted.kind, accepted.request_receipt_id) == ('requested', 'receiver_confirmed', requested.id)

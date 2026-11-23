@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue'
-import {Download,FileCheck2,RefreshCw} from 'lucide-vue-next'
+import {Download,FileCheck2,RefreshCw,RotateCcw} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
-import {isRejectedWrite} from './api-error'
+import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 
 type Kind='money'|'effort'
 type Attribution='estimate'|'execution'|'scope'
@@ -14,6 +14,7 @@ type Line={type:Kind;unit:'CNY'|'person_day';actual:string;sourceRef:string;sour
 type Receipt={receiptId:string;projectId:string;revision:number;signedBy:string;signedAt:string;grantId:string;
   coveredThrough:string;ruleVersion:string;costHash:string;receiptHash:string;lines:Line[];policyStatus:'POLICY_PENDING'}
 type State={projectId:string;revision:number;costHash:string;canCreate:boolean;current:Receipt|null;policyStatus:'POLICY_PENDING'}
+type Attempt={revision:number;body:string;key:string}
 
 const props=defineProps<{projectId:string;api:(path:string,options?:RequestInit)=>Promise<any>;costsBusy:boolean}>()
 const path=`projects/${props.projectId}/cost-reconciliations`
@@ -24,12 +25,12 @@ const state=ref<State|null>(null),loading=ref(false),saving=ref(false),open=ref(
 const signingBasis=ref<Pick<State,'revision'|'costHash'>|null>(null)
 const error=ref(''),formError=ref(''),notice=ref(''),evidenceRefs=ref<string[]>([])
 const reasons=ref<Record<Kind,Attribution|''>>({money:'',effort:''})
-const disabled=computed(()=>loading.value||saving.value||props.costsBusy)
+const retry=ref<Attempt|null>(null)
+const disabled=computed(()=>loading.value||saving.value||props.costsBusy||!!retry.value)
 const current=computed(()=>state.value?.current)
 const basisChanged=computed(()=>!!state.value&&!!signingBasis.value&&
   (state.value.revision!==signingBasis.value.revision||state.value.costHash!==signingBasis.value.costHash))
 const signDisabled=computed(()=>disabled.value||basisChanged.value||state.value?.canCreate!==true)
-let attempt:{signature:string;key:string}|undefined
 
 function time(iso:string){return new Date(iso).toLocaleString('zh-CN',{hour12:false})}
 function percent(rate?:string|null){
@@ -44,7 +45,7 @@ async function read(){
   state.value=data
 }
 async function refresh(){
-  if(loading.value||saving.value)return
+  if(loading.value||saving.value||retry.value)return
   loading.value=true;error.value=''
   try{await read()}catch(e){state.value=null;error.value=message(e)}finally{loading.value=false}
 }
@@ -54,28 +55,32 @@ function begin(){
   const basis=state.value
   if(disabled.value||basis?.canCreate!==true)return
   signingBasis.value={revision:basis.revision,costHash:basis.costHash}
-  evidenceRefs.value=[];reasons.value={money:'',effort:''};formError.value='';notice.value='';attempt=undefined
+  evidenceRefs.value=[];reasons.value={money:'',effort:''};formError.value='';notice.value=''
   open.value=true
 }
-async function save(){
+function save(){
   const basis=signingBasis.value
   if(signDisabled.value||!basis||!evidenceRefs.value.length||evidenceRefs.value.length>2)return
   const overrunReasons:Partial<Record<Kind,Attribution>>={}
   for(const kind of kinds){const value=reasons.value[kind];if(value)overrunReasons[kind]=value}
   const body=JSON.stringify({costHash:basis.costHash,evidenceRefs:[...evidenceRefs.value].sort(),overrunReasons})
-  const signature=`${basis.revision}:${body}`
-  if(attempt?.signature!==signature)attempt={signature,key:crypto.randomUUID()}
+  void send({revision:basis.revision,body,key:crypto.randomUUID()})
+}
+async function send(attempt:Attempt){
+  if(loading.value||saving.value)return
   saving.value=true;formError.value='';error.value=''
   let saved=false
   try{
-    await props.api(path,{method:'POST',headers:{'If-Match':String(basis.revision),'Idempotency-Key':attempt.key},body})
-    saved=true;attempt=undefined;open.value=false;notice.value='已签署成本对账。'
+    await props.api(path,{method:'POST',headers:{'If-Match':String(attempt.revision),'Idempotency-Key':attempt.key},body:attempt.body})
+    saved=true;retry.value=null;open.value=false;notice.value='已签署成本对账。'
     await read()
   }catch(e){
     if(saved){state.value=null;error.value='对账已签署，但未能重读当前回执。'}
-    else {
+    else if(isUnconfirmedWrite(e)){
+      retry.value=attempt;formError.value='未能确认提交结果，可按原请求重试。'
+    }else{
+      retry.value=null
       if(isRejectedWrite(e)){
-        attempt=undefined
         try{await read()}catch{state.value=null;evidenceRefs.value=[]}
       }
       formError.value=message(e)
@@ -147,7 +152,7 @@ async function save(){
     </template>
   </section>
   <el-dialog v-model="open" append-to-body destroy-on-close title="签署成本对账" width="min(560px,94vw)"
-    :close-on-click-modal="false" :show-close="!saving" :close-on-press-escape="!saving">
+    :close-on-click-modal="false" :show-close="!saving&&!retry" :close-on-press-escape="!saving&&!retry">
     <form class="sign-form" @submit.prevent="save">
       <ScopedEvidencePicker v-model="evidenceRefs" :project-id="projectId" resource-type="project" :resource-id="projectId"
         label="已核验成本来源 JSON" mime-type="application/json" :max-bytes="16*1024" :limit="2" :api="api" :disabled="signDisabled"/>
@@ -160,9 +165,10 @@ async function save(){
         </label>
       </fieldset>
       <el-alert v-if="basisChanged" type="warning" title="成本快照或版本已变化，请关闭后重新发起签署。" :closable="false" show-icon/>
-      <el-alert v-else-if="formError" type="error" :title="formError" :closable="false" show-icon/>
+      <el-alert v-if="formError" type="error" :title="formError" :closable="false" show-icon/>
       <div class="actions">
-        <el-button :disabled="saving" @click="open=false">取消</el-button>
+        <el-button :disabled="saving||!!retry" @click="open=false">取消</el-button>
+        <el-button v-if="retry" :loading="saving" @click="send(retry)"><RotateCcw :size="15"/>重试上次提交</el-button>
         <el-button type="primary" native-type="submit" :disabled="signDisabled||!evidenceRefs.length" :loading="saving"><FileCheck2 :size="15"/>确认签署对账</el-button>
       </div>
     </form>

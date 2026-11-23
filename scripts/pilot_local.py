@@ -28,7 +28,7 @@ DB_PORT, WEB_PORT, API_PORT = (55443, 18778, 18779) if NATIVE else (55441, 18775
 API = f'http://127.0.0.1:{API_PORT}/api/v1/'
 WEB = f'http://127.0.0.1:{WEB_PORT}'
 DB_NAME = 'pmo_pilot'
-HEAD = '0036'
+HEAD = '0037'
 STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
@@ -135,9 +135,11 @@ def verify_database(cfg):
         raise ValueError('Pilot DB ownership/loopback checks failed.')
 
 
-def init():
+def init(*, upgrade_existing=False):
     from pmo.database_roles import apply_roles
 
+    if upgrade_existing and read('runtime.json'):
+        raise ValueError('Stop the dedicated pilot before upgrading its database.')
     cfg = read('instance.json')
     if not cfg:
         cfg = {'id': uuid4().hex, 'passwords': {r: secrets.token_hex(32) for r in ('bootstrap', 'migrate', 'api', 'outbox')}}
@@ -174,7 +176,7 @@ def init():
         if current is None or current[0] != schema(cfg):
             raise ValueError('Pilot search path mismatch.')
         version = conn.execute('SELECT version_num FROM alembic_version').fetchone() if current[1] else None
-    if version is None:
+    if version is None or (upgrade_existing and version == ('0036',)):
         subprocess.run([str(PYTHON), '-m', 'alembic', 'upgrade', HEAD], cwd=ROOT, check=True,
                        env=env_base() | {'DATABASE_URL': database(cfg, 'migrate')})
     elif version != (HEAD,):
@@ -356,10 +358,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('init', 'start', 'stop', 'status', 'configure-models', 'activate-models',
                                           'serve', 'serve-models'))
+    parser.add_argument('--upgrade-existing', action='store_true',
+                        help='Allow a stopped, dedicated pilot schema at 0036 to upgrade to 0037.')
     args = parser.parse_args()
+    if args.upgrade_existing and args.action != 'init':
+        parser.error('--upgrade-existing is only valid with init')
     private_home()
     if args.action == 'init':
-        init()
+        init(upgrade_existing=args.upgrade_existing)
     elif args.action == 'start':
         launch()
     elif args.action == 'stop':

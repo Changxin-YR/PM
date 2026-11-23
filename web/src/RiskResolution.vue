@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import {isRejectedWrite} from './api-error'
+import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import {computed,nextTick,ref,watch} from 'vue'
-import {Check,Copy,Download,FileCheck2,RefreshCw,Send,ShieldCheck} from 'lucide-vue-next'
+import {Check,Copy,Download,FileCheck2,RefreshCw,RotateCcw,Send,ShieldCheck} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 
 type Risk={riskId:string;projectId:string;ownerId?:string|null;statement:string;prob:number;impact:number;response:string;
@@ -16,6 +16,7 @@ type State={status:'unresolved'|'pending'|'accepted'|'resolved';acceptances:Acce
   canClose:boolean;canRequestAcceptance:boolean;canVerifyAcceptance:boolean} &
   ({audience:'project';risk:Risk;resolution?:Resolution}|{audience:'receiver';risk:Pick<Risk,'riskId'|'revision'>})
 type Action='close'|'request'|'confirm'|'verify'|'handoff'
+type Attempt={mode:Action;endpoint:string;revision:number;body:string;key:string;receiverOnly:boolean}
 
 const props=defineProps<{riskId:string;acceptanceId?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
 const open=defineModel<boolean>({required:true})
@@ -37,6 +38,8 @@ const confirmedHere=ref(false),issued=ref<AcceptanceReceipt|null>(null),copyNoti
 const action=ref<Action|null>(null),receiptId=ref(''),form=ref<HTMLFormElement|null>(null)
 const evidenceRefs=ref<string[]>([]),receiver=ref(''),scope=ref(''),acceptedAt=ref(''),identity=ref(''),excerpt=ref('')
 const busy=computed(()=>loading.value||saving.value)
+const retry=ref<Attempt|null>(null)
+const locked=computed(()=>busy.value||!!retry.value)
 const incoming=computed(()=>props.acceptanceId!==undefined)
 const projectView=computed(()=>!incoming.value&&state.value?.audience==='project'?state.value:null)
 const acceptances=computed(()=>state.value?.acceptances.filter(item=>!incoming.value||canConfirm(item))??[])
@@ -46,7 +49,6 @@ const externalClause=computed(()=>{
   if(action.value!=='verify'||!risk||!uuid.test(receiver.value)||!validText(scope.value,5,3000))return ''
   return `I explicitly accept risk ${risk.riskId} revision ${risk.revision} as receiver ${receiver.value.toLowerCase()} for scope: ${scope.value.trim().replace(/\s+/g,' ')}`
 })
-let attempt:{signature:string;key:string}|undefined
 
 function time(iso:string){return new Date(iso).toLocaleString('zh-CN',{hour12:false})}
 function message(e:unknown,fallback:string){return e instanceof Error?e.message:fallback}
@@ -70,7 +72,7 @@ function allowed(mode:Action,item?:Acceptance){
     case 'handoff':return canHandoff(item)
   }
 }
-function reset(){action.value=null;receiptId.value='';formError.value='';attempt=undefined}
+function reset(){action.value=null;receiptId.value='';formError.value='';retry.value=null}
 async function read(){
   const {data}:{data:State}=await props.api(`${path}/resolution`)
   if(incoming.value&&(data.risk.riskId!==props.riskId||!data.acceptances.some(item=>canConfirm(item,data.risk.revision))))throw Error(unavailable)
@@ -79,7 +81,7 @@ async function read(){
   if(action.value&&(changed||!allowed(action.value,receipt.value)))reset()
 }
 async function refresh(){
-  if(busy.value)return
+  if(locked.value)return
   loading.value=true;error.value='';issued.value=null;copyNotice.value=''
   try{await read()}catch(e){
     state.value=null;reset()
@@ -89,7 +91,7 @@ async function refresh(){
 watch(open,value=>{if(value){reset();confirmedHere.value=false;notice.value='';void refresh()}},{immediate:true})
 
 function begin(mode:Action,item?:Acceptance){
-  if(busy.value||!allowed(mode,item))return
+  if(locked.value||!allowed(mode,item))return
   reset();notice.value='';issued.value=null;copyNotice.value='';evidenceRefs.value=[];receiver.value='';scope.value='';acceptedAt.value='';identity.value='';excerpt.value=''
   receiptId.value=item?.acceptanceId??'';action.value=mode
   void nextTick(()=>form.value?.scrollIntoView({block:'nearest'}))
@@ -114,35 +116,43 @@ const command=computed(()=>{
     identityVerification:identity.value.trim(),acceptanceExcerpt:excerpt.value.trim()}}
 })
 
-async function save(){
+function save(){
   const mode=action.value,write=command.value
-  if(busy.value||!mode||!write)return
+  if(locked.value||!mode||!write)return
   const receiverOnly=incoming.value||state.value?.audience==='receiver'
-  const {endpoint,revision,payload}=write,body=JSON.stringify(payload),signature=JSON.stringify([endpoint,revision,body])
-  if(attempt?.signature!==signature)attempt={signature,key:crypto.randomUUID()}
+  const {endpoint,revision,payload}=write
+  void send({mode,endpoint,revision,body:JSON.stringify(payload),key:crypto.randomUUID(),receiverOnly})
+}
+async function send(attempt:Attempt){
+  if(busy.value)return
+  const {mode,endpoint,revision,body,key,receiverOnly}=attempt
   saving.value=true;formError.value='';error.value=''
   let saved=false
   try{
-    const {data}:{data:AcceptanceReceipt|Resolution}=await props.api(`${path}/${endpoint}`,{method:'POST',headers:{'If-Match':String(revision),'Idempotency-Key':attempt.key},body})
+    const {data}:{data:AcceptanceReceipt|Resolution}=await props.api(`${path}/${endpoint}`,{method:'POST',headers:{'If-Match':String(revision),'Idempotency-Key':key},body})
     saved=true;reset();notice.value=actions[mode].success
     if(receiverOnly){state.value=null;confirmedHere.value=true;return}
     if(mode==='request'&&'kind' in data&&data.kind==='requested'&&data.riskId===props.riskId&&uuid.test(data.acceptanceId))issued.value=data
     emit('saved');await read()
   }catch(e){
     if(saved){state.value=null;error.value='操作已提交，但未能重读风险处置回执。'}
-    else if(isRejectedWrite(e)){
-      attempt=undefined;issued.value=null
+    else if(isUnconfirmedWrite(e)){
+      retry.value=attempt;formError.value='未能确认提交结果，可按原请求重试。'
+    }else if(isRejectedWrite(e)){
+      retry.value=null;issued.value=null
       try{await read()}catch{state.value=null;reset()}
-      if(!action.value)error.value=incoming.value?unavailable:e.message
+      if(!action.value)error.value=e.message
       else formError.value=e.message
-    }else formError.value=message(e,'未能确认提交结果。')
+    }else{
+      retry.value=null;formError.value=message(e,'未能提交风险处置。')
+    }
   }finally{saving.value=false}
 }
 </script>
 
 <template>
   <el-dialog v-model="open" :title="incoming?'风险接收请求':'风险处置'" width="min(680px,94vw)" top="6vh" append-to-body
-    :close-on-click-modal="false" :show-close="!saving" :close-on-press-escape="!saving">
+    :close-on-click-modal="false" :show-close="!saving&&!retry" :close-on-press-escape="!saving&&!retry">
     <section class="resolution" aria-label="风险处置详情" :aria-busy="busy">
       <div class="resolution-header">
         <div v-if="state">
@@ -150,7 +160,7 @@ async function save(){
           <p class="meta"><template v-if="projectView">台账状态：{{riskStatuses[projectView.risk.status]??projectView.risk.status}} · </template>版本 {{state.risk.revision}}</p>
           <code class="meta">{{state.risk.riskId}}</code>
         </div>
-        <el-button v-if="!confirmedHere" :disabled="busy" :aria-label="incoming?'刷新接收请求':'刷新风险处置'"
+        <el-button v-if="!confirmedHere" :disabled="locked" :aria-label="incoming?'刷新接收请求':'刷新风险处置'"
           :title="incoming?'刷新接收请求':'刷新风险处置'" @click="refresh"><RefreshCw :size="15"/></el-button>
       </div>
       <p v-if="loading" class="meta">正在读取风险处置…</p>
@@ -164,17 +174,17 @@ async function save(){
       <template v-if="state">
         <div v-if="projectView&&(projectView.canClose||projectView.canRequestAcceptance||projectView.canVerifyAcceptance)" class="toolbar resolution-actions" role="group" aria-label="风险处置操作">
           <el-button v-for="mode in (['close','request','verify'] as const).filter(mode=>allowed(mode))" :key="mode"
-            :disabled="busy" :aria-pressed="action===mode" @click="begin(mode)"><component :is="actions[mode].icon" :size="15"/>{{actions[mode].label}}</el-button>
+            :disabled="locked" :aria-pressed="action===mode" @click="begin(mode)"><component :is="actions[mode].icon" :size="15"/>{{actions[mode].label}}</el-button>
         </div>
         <form v-if="action" :key="action" ref="form" :aria-label="actions[action].label" @submit.prevent="save">
-          <fieldset class="form-fields" :disabled="busy">
+          <fieldset class="form-fields" :disabled="locked">
             <legend>{{actions[action].label}}</legend>
             <template v-if="action==='close'||action==='request'||action==='verify'">
               <label v-if="action!=='close'">接收人 ID<input v-model.trim="receiver" maxlength="36" required/></label>
               <label v-if="action!=='close'">接收范围<textarea v-model="scope" rows="2" minlength="5" maxlength="3000" required/></label>
               <ScopedEvidencePicker v-if="projectView" :key="action" v-model="evidenceRefs" :project-id="projectView.risk.projectId" resource-type="risk" :resource-id="riskId" :api="api"
                 :label="action==='close'?'已核验关闭证据':action==='verify'?'已核验接收 PDF（不超过 1 MiB）':'已核验风险附件'"
-                :mime-type="action==='verify'?'application/pdf':undefined" :max-bytes="action==='verify'?1024*1024:undefined" :disabled="busy"/>
+                :mime-type="action==='verify'?'application/pdf':undefined" :max-bytes="action==='verify'?1024*1024:undefined" :disabled="locked"/>
               <template v-if="action==='verify'">
                 <label>接收时间（本地）<input v-model="acceptedAt" type="datetime-local" step="1" required/></label>
                 <label>身份核验依据<textarea v-model="identity" rows="2" minlength="12" maxlength="1000" required/></label>
@@ -191,8 +201,9 @@ async function save(){
           </fieldset>
           <el-alert v-if="formError" type="error" :title="formError" :closable="false" show-icon/>
           <div class="actions">
-            <el-button :disabled="busy" @click="reset">取消</el-button>
-            <el-button type="primary" native-type="submit" :disabled="busy||!command" :loading="saving"><component :is="actions[action].icon" :size="15"/>{{actions[action].submit}}</el-button>
+            <el-button :disabled="locked" @click="reset">取消</el-button>
+            <el-button v-if="retry" :loading="saving" @click="send(retry)"><RotateCcw :size="15"/>重试上次提交</el-button>
+            <el-button type="primary" native-type="submit" :disabled="locked||!command" :loading="saving"><component :is="actions[action].icon" :size="15"/>{{actions[action].submit}}</el-button>
           </div>
         </form>
 
@@ -240,8 +251,8 @@ async function save(){
                 </div>
               </details>
               <div v-if="canConfirm(item)||canHandoff(item)" class="entry-actions">
-                <el-button v-if="canConfirm(item)" :disabled="busy" @click="begin('confirm',item)"><Check :size="15"/>本人认证接收</el-button>
-                <el-button v-if="canHandoff(item)" :disabled="busy" @click="begin('handoff',item)"><ShieldCheck :size="15"/>复核签署移交</el-button>
+                <el-button v-if="canConfirm(item)" :disabled="locked" @click="begin('confirm',item)"><Check :size="15"/>本人认证接收</el-button>
+                <el-button v-if="canHandoff(item)" :disabled="locked" @click="begin('handoff',item)"><ShieldCheck :size="15"/>复核签署移交</el-button>
               </div>
             </li>
           </ul>

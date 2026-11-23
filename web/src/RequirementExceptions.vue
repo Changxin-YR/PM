@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {isRejectedWrite} from './api-error'
+import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import {computed,onMounted,ref,watch} from 'vue'
 import {Copy,RefreshCw,RotateCcw,Signature} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
@@ -50,13 +50,14 @@ async function load(){
   finally{loading.value=false}
 }
 async function send(attempt:Attempt){
+  if(saving.value||loading.value)return
   saving.value=true;error.value='';notice.value='';lastAttempt=attempt
   try{
     await props.api(attempt.url,{method:'POST',body:attempt.body,headers:{'If-Match':String(attempt.revision),'Idempotency-Key':attempt.key}})
     retry.value=null;lastAttempt=undefined;accept.value=false;revocation.value='';notice.value=attempt.notice
     await load()
   }catch(e){
-    const ambiguous=e instanceof TypeError||e instanceof SyntaxError
+    const ambiguous=isUnconfirmedWrite(e)
     retry.value=ambiguous?attempt:null
     if(isRejectedWrite(e)){lastAttempt=undefined;accept.value=false;await load()}
     error.value=ambiguous?'未能确认结果，请按原请求重试。':e instanceof Error?e.message:'操作失败。'
@@ -90,7 +91,7 @@ onMounted(load)
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
     <p v-if="notice" role="status">{{notice}}</p>
-    <el-button v-if="retry" :loading="saving" @click="send(retry)"><RotateCcw :size="14"/> 重试上次提交</el-button>
+    <el-button v-if="retry" :loading="saving" :disabled="loading" @click="send(retry)"><RotateCcw :size="14"/> 重试上次提交</el-button>
     <template v-if="state">
       <el-alert title="DEC-09 待真实业务签核" type="warning" :closable="false" show-icon/>
       <RequirementExceptionReceipt v-if="state.current" :receipt="state.current" title="当前有效的客户书面接受"/>

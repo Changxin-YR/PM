@@ -46,6 +46,38 @@ async function write(page, method, pattern, control, versioned=true) {
   return body.data
 }
 
+async function recoverWrite(page,pattern,scope,label,lockedControls,interruption) {
+  const endpoint=new RegExp(pattern+'$')
+  const isWrite=request=>request.method()==='POST'&&endpoint.test(new URL(request.url()).pathname)
+  const envelope=request=>{
+    const headers=request.headers()
+    return {key:headers['idempotency-key'],revision:headers['if-match'],body:request.postData()}
+  }
+  let sent,committed
+  const intercept=async route=>{
+    const request=route.request()
+    if(sent||!isWrite(request))return route.continue()
+    sent=envelope(request)
+    const response=await route.fetch()
+    expect(response.status()).toBe(200)
+    committed=(await response.json()).data
+    if(interruption==='network')await route.abort()
+    else await route.fulfill(interruption)
+  }
+  await page.route(endpoint,intercept)
+  try{
+    await button(scope,label).click()
+    await expect(scope.getByText(/未能确认.*按原请求重试/)).toBeVisible()
+    await expect(button(scope,label)).toBeDisabled()
+    for(const control of lockedControls)await expect(control).toBeDisabled()
+    const retry=page.waitForRequest(isWrite)
+    const repeated=await write(page,'POST',pattern,button(scope,'重试上次提交'))
+    expect(envelope(await retry)).toEqual(sent)
+    expect(repeated).toEqual(committed)
+    return repeated
+  }finally{await page.unroute(endpoint,intercept)}
+}
+
 async function requestStage(page, name, next) {
   const panel=await open(page,'阶段流转')
   await button(panel,'申请阶段流转').click()
@@ -213,13 +245,17 @@ try {
         await button(panel,'签署对账').click()
         await dialog(page,'签署成本对账').getByRole('checkbox',{name:new RegExp(chain.costProof)}).check()
       }
-      const signed=await write(otherTab,'POST','/cost-reconciliations',button(dialog(otherTab,'签署成本对账'),'确认签署对账'))
+      const otherSigning=dialog(otherTab,'签署成本对账')
+      const signed=await recoverWrite(otherTab,'/cost-reconciliations',otherSigning,'确认签署对账',
+        [button(otherSigning,'取消'),otherSigning.getByLabel('金额（元）超支归因',{exact:true})],{status:502})
       expect(signed.lines.map(x=>[x.type,x.actual])).toEqual([['money','100.00'],['effort','10.00']])
       const signing=dialog(reconciler,'签署成本对账')
       const blocked=reconciler.waitForResponse(x=>x.request().method()==='POST'&&x.url().endsWith('/cost-reconciliations'))
       await button(signing,'确认签署对账').click()
       expect((await blocked).status()).toBe(409)
       await expect(button(signing,'确认签署对账')).toBeDisabled()
+      await expect(signing.getByText('版本已变化，请重新读取后再保存。',{exact:true})).toBeVisible()
+      await expect(signing.getByText('成本快照或版本已变化，请关闭后重新发起签署。',{exact:true})).toBeVisible()
       await closeDialog(signing)
       expect((await read(reconciler,chain.project+'/cost-reconciliations')).current.receiptId).toBe(signed.receiptId)
       const denied=await direct(pm,'pm',chain.project+'/cost-reconciliations',signed.revision,
@@ -235,7 +271,8 @@ try {
       await resolution.getByLabel('接收人 ID',{exact:true}).fill(chain.receiver)
       await resolution.getByLabel('接收范围',{exact:true}).fill(scope)
       await resolution.getByRole('checkbox',{name:new RegExp(chain.riskProof)}).check()
-      const request=await write(reviewer,'POST','/handoff/acceptance',button(resolution,'提交接收请求'))
+      const request=await recoverWrite(reviewer,'/handoff/acceptance',resolution,'提交接收请求',
+        [button(resolution,'取消'),button(resolution,'刷新风险处置'),resolution.getByLabel('接收范围',{exact:true})],'network')
       expect(request.kind).toBe('requested')
       expect((await gaps()).has('BLOCKING_RISK_UNRESOLVED')).toBe(true)
       const binding={receiverPersonId:chain.receiver,acceptanceEvidenceRef:chain.riskProof}
@@ -274,7 +311,10 @@ try {
     await panel.getByLabel('接受有效截至（本地时间）',{exact:true}).fill(local)
     await panel.getByRole('checkbox',{name:new RegExp(command.evidenceRef)}).check()
     await panel.getByLabel('我作为客户代表明确接受所列需求偏差。',{exact:true}).check()
-    const receipt=await write(customer,'POST','/requirement-exceptions',button(panel,'签署书面例外'))
+    const receipt=chain ? await recoverWrite(customer,'/requirement-exceptions',panel,'签署书面例外',
+      [button(panel,'重读需求例外'),panel.getByLabel('接受有效截至（本地时间）',{exact:true})],
+      {status:409,json:{code:'REQUEST_IN_PROGRESS'}}) :
+      await write(customer,'POST','/requirement-exceptions',button(panel,'签署书面例外'))
     expect(receipt.items[0].deviation).toBe(deviation)
     await customer.reload()
     await expect((await open(customer,'需求例外')).getByText('当前有效的客户书面接受',{exact:true})).toBeVisible()
@@ -308,7 +348,9 @@ try {
       await expect(button(workbench,'登记裁决')).toHaveCount(0)
       await expect(workbench.getByText('送审所依据的材料或授权已变化。',{exact:true})).toBeVisible()
     }else{
-    const result=await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
+    const result=chain ? await recoverWrite(reviewer,'/reviews/[^/]+/decisions',workbench,'确认裁决',
+      [button(workbench,'取消'),button(workbench,'重读工作台'),judgment],'network') :
+      await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
     expect(result.decision).toMatchObject({stage:'closed',rationale:reason,option:'conditional_pass'})
     expect(result.requirementException.receiptHash).toBe(receipt.receiptHash)
     await reviewer.reload()

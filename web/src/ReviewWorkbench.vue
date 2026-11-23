@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {isRejectedWrite} from './api-error'
+import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import {computed,ref,watch} from 'vue'
 import {Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
 import RequirementExceptionReceipt, {type RequirementException} from './RequirementExceptionReceipt.vue'
@@ -87,9 +87,9 @@ async function read(){
 }
 
 async function refresh(){
-  if(busy.value)return
+  if(busy.value||retry.value)return
   loading.value=true;error.value=''
-  try{await read();retry.value=null}
+  try{await read()}
   catch(e){view.value=null;readFailed.value=true;error.value=message(e,'未能读取评审工作台。')}
   finally{loading.value=false}
 }
@@ -163,7 +163,7 @@ async function submit(previous?:Attempt){
     await read()
   }catch(e){
     if(saved){readFailed.value=true;error.value='操作已保存，但未能重读工作台。'}
-    else if(sent&&(e instanceof TypeError||e instanceof SyntaxError)){
+    else if(sent&&isUnconfirmedWrite(e)){
       retry.value=sent;error.value='未能确认提交结果，可按原请求重试。'
     }else{
       retry.value=null
@@ -180,14 +180,14 @@ async function submit(previous?:Attempt){
 
 <template>
   <el-dialog v-model="open" append-to-body title="关口人工工作台" width="min(680px,94vw)" top="6vh"
-    :close-on-click-modal="false" :show-close="!saving" :close-on-press-escape="!saving">
+    :close-on-click-modal="false" :show-close="!saving&&!retry" :close-on-press-escape="!saving&&!retry">
     <section class="workbench" aria-label="评审详情" v-loading="loading">
       <div class="workbench-header">
         <div v-if="view">
           <h3>{{gates[view.review.type]}}评审</h3>
           <span class="meta">第 {{view.round}} 轮 · {{statuses[view.review.status]}} · 版本 {{view.review.revision}}</span>
         </div>
-        <el-button :disabled="busy" @click="refresh"><RefreshCw :size="14"/> 重读工作台</el-button>
+        <el-button :disabled="busy||!!retry" @click="refresh"><RefreshCw :size="14"/> 重读工作台</el-button>
       </div>
       <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon/>
       <el-button v-if="retry" :loading="saving" :disabled="loading" @click="submit(retry)"><RotateCcw :size="14"/> 重试上次提交</el-button>

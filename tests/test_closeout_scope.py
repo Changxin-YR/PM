@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from pmo import schema_v1 as db
 from pmo.identity import explicit_grants
 from test_evidence import binary
+from test_facts import post as propose_fact, submit as submit_report
 from test_reports import body, data, deny, headers, team as team
 from test_reviews import issue
 
@@ -60,27 +61,41 @@ def test_large_pages_are_empty_with_authorized_totals(live, team):
     p = f'projects/{team.pid}'
     with live[0].begin() as c:
         c.execute(db.user_roles.insert().values(user_id=team.people['pm'].account, role='system_admin'))
+        requirement = c.scalar(db.requirements.insert().values(
+            project_id=team.pid, created_by=team.people['pm'].id, desc='Synthetic pagination boundary',
+            priority='P1', acceptance_criteria='Retain authorized totals', status='baseline',
+            baseline_version=1).returning(db.requirements.c.id))
     spec = live[1].get('/openapi.json').json()['paths']
-    report = data(pm.post(team.path, headers=headers(), json=body()))
+    report = submit_report(pm, team.path)
     report_path = f"reports/{report['reportId']}"
+    fact = data(propose_fact(pm, report))
+    covered = set()
     for path in ('projects', 'project-overview', 'analytics/weekly-health', 'analytics/health-alerts',
                  'me/approval-queue', 'me/strengthening-tasks', 'me/agent-tokens', 'admin/agents/tokens',
                  'admin/audits', 'admin/users', 'admin/members', 'admin/users/invitations',
                  'analytics/preapproval-spending', 'lessons/search', report_path + '/facts', report_path + '/analysis-runs',
+                 'approvals', f'requirements/{requirement}/disputes', f'requirements/{requirement}/changes',
+                 f"facts/{fact['factId']}/history",
                  *(f'{p}/{suffix}' for suffix in ('members', 'evidence', 'health/history', 'cost-postings',
                        'requirements', 'risks', 'stakeholders', 'reports', 'tasks', 'alerts', 'changes'))):
-        current = pm.get(path, params={'pageSize': 1})
+        filters = {'projectId': str(team.pid)} if path == 'approvals' else {}
+        current = pm.get(path, params={**filters, 'pageSize': 1})
         assert current.status_code == 200, (path, current.text)
-        far = pm.get(path, params={'page': '100000000000000000000', 'pageSize': 1})
+        far = pm.get(path, params={**filters, 'page': '100000000000000000000', 'pageSize': 1})
         template = re.sub(r'\b[0-9a-f]{8}-[0-9a-f-]{27}\b', r'[^/]+', '/api/v1/' + path)
         shape = next(route['get'] for key, route in spec.items() if 'get' in route and re.fullmatch(template, key))
+        covered.add(shape['operationId'])
         page = next(param['schema'] for param in shape['parameters'] if param['name'] == 'page')
         if 'maximum' in page:
             deny(far, 422, 'VALIDATION_FAILED')
-            far = pm.get(path, params={'page': int(page['maximum']), 'pageSize': 1})
+            far = pm.get(path, params={**filters, 'page': int(page['maximum']), 'pageSize': 1})
         assert far.status_code == 200, (path, far.text)
         assert far.json()['data']['total'] == current.json()['data']['total'], path
         assert not far.json()['data']['items'], path
+    assert covered == {
+        route['get']['operationId'] for route in spec.values()
+        if any(parameter['name'] == 'page' for parameter in route.get('get', {}).get('parameters', ()))
+    }
 
 
 @pytest.mark.parametrize('loss', ['revoke', 'expire', 'delegator', 'member', 'scope'])
