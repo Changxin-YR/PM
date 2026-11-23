@@ -9,6 +9,7 @@ from pydantic import AfterValidator, Field, StrictStr
 
 from . import fact_store as store
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .fact_sources import Candidate, Short, Status, Trust, Value, can_propose, concrete, high_evidence, recheck, submitted
 from .identity import Failure
@@ -120,7 +121,7 @@ def history(factId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         j = store.j
         q = sa.select(store.journal).where(j.fact_id == factId)
         total = c.scalar(sa.select(sa.func.count()).select_from(q.subquery()))
-        rows = c.execute(q.order_by(j.revision.desc()).offset((page-1)*pageSize).limit(pageSize)).mappings()
+        rows = c.execute(q.order_by(j.revision.desc()).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings()
         items = [RevisionEntry(revision=row.revision, action=row.action, actorId=row.actor_id, occurredAt=row.occurred_at,
             validationStatus=row.validation_status, trust=row.trust, reason=row.reason, evidenceRef=row.evidence_ref) for row in rows]
         return Result[HistoryPage](data=HistoryPage(items=items, total=total, page=page, pageSize=pageSize),
@@ -136,7 +137,7 @@ def listing(reportId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         f = store.f
         q = store.query().where(f.project_id == p.id, f.report_id == report.id)
         total = c.scalar(sa.select(sa.func.count()).select_from(q.subquery()))
-        rows = list(c.execute(q.order_by(f.created_at.desc(), f.id).offset((page-1)*pageSize).limit(pageSize)).mappings())
+        rows = list(c.execute(q.order_by(f.created_at.desc(), f.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings())
         writable = p.stage != 'archived' and submitted(report)
         return Result[Page](data=Page(items=[view(row, human=True) for row in rows], page=page, pageSize=pageSize,
             total=total, reportRevision=report.revision, canReadAnalysis=can_read_analysis(c, p, report, a.person),

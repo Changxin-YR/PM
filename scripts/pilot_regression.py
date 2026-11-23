@@ -126,7 +126,7 @@ def main():
         env = local.env_base() | native_env()
     else:
         env = local.env_base() | {'PMO_TEST_DATABASE_URL': ensure(), 'PMO_TEST_PG_CONTAINER': NAME}
-    for key in ('PMO_TEST_MCP_ENTRYPOINT',):
+    for key in ('PMO_TEST_MCP_ENTRYPOINT', 'PMO_TEST_REST_PROBE'):
         if key in os.environ:
             env[key] = os.environ[key]
     print(f'Regression PostgreSQL: dedicated loopback {NATIVE_PORT if local.NATIVE else PORT}; '

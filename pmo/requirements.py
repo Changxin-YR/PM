@@ -9,6 +9,7 @@ from . import schema_v1 as db
 from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import finish, project_access, replay
+from .pagination import pg_offset
 from .projects import fingerprint, meta, run
 
 Description = Annotated[str, Field(min_length=5,max_length=4000,pattern=r'\S')]
@@ -78,7 +79,7 @@ def listing(auth,pid,page,size,status,keyword):
         if status: predicates.append(r.c.status==status)
         if keyword: predicates.append(r.c['desc'].icontains(keyword,autoescape=True))
         total=c.scalar(sa.select(sa.func.count()).select_from(r).where(*predicates))
-        rows=c.execute(sa.select(r).where(*predicates).order_by(r.c.priority,r.c.created_at,r.c.id).limit(size).offset((page-1)*size)).mappings()
+        rows=c.execute(sa.select(r).where(*predicates).order_by(r.c.priority,r.c.created_at,r.c.id).limit(size).offset(pg_offset(page,size))).mappings()
         items=[view(row) for row in rows]
         return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total,deliveryActions=capabilities(c,a,project)),meta=meta(op,[i.sourceRefs[0] for i in items],project_id=project.id))
     return run(auth,op,query)

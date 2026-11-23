@@ -22,7 +22,7 @@
 
 从 0023 起，在持有 API 数据库权限（非迁移权限）和只读私有原件目录的独立进程运行 `python -m pmo.rule_scan --watch`；本机已迁移隔离开发库可用 `scripts/dev.ps1 rules` 处理一批。扫描处理增量输入以及中国时区每日 09:00 日槽，停机后扫描当前材料，不补造历史。Outbox 另行运行；快照不依赖投递的即时成功。进程只输出批次计数；健康日志及访问控制按实际部署环境管理。
 
-从 0025 起，报告分析默认 `PMO_REPORT_ANALYSIS=0`。要启用，在 API 和 `python -m pmo.report_analysis_worker --watch` 同步设 `PMO_REPORT_ANALYSIS=1`；只给独立分析进程注入 API 运行账号的 `DATABASE_URL`、显式 `PMO_REPORT_MODEL_URL`（HTTPS，隔离测试允许回环 HTTP）及可选的网关密钥 `PMO_REPORT_MODEL_TOKEN`。地址对应工具禁用的 JSON 转发网关；不是任一厂商的聊天接口地址，真实适配另验。该进程不挂附件卷、不持迁移或 Outbox 凭据。需先审批报告文字的外发范围和网络 ACL。作业租约 40 秒，单次调用最长 12 秒；退出码 1 或作业长期排队应报警。开启/关闭无需重写报告或补做人工签核。
+从 0025 起，报告分析默认 `PMO_REPORT_ANALYSIS=0`。要启用，在 API 和 `python -m pmo.report_analysis_worker --watch` 同步设 `PMO_REPORT_ANALYSIS=1`；只给独立分析进程注入 API 运行账号的 `DATABASE_URL`、显式 `PMO_REPORT_MODEL_URL`（HTTPS，隔离测试允许回环 HTTP）及可选的网关密钥 `PMO_REPORT_MODEL_TOKEN`。默认 `pmo_json`；若用已获准的兼容接口，显式设 `PMO_REPORT_MODEL_PROTOCOL=chat_completions_json` 及 `PMO_REPORT_MODEL_VERSION`（请求的确切模型 ID），提供完整支持 JSON 对象输出的地址。助理使用独立的 `PMO_ASSISTANT_MODEL_PROTOCOL` 和 `PMO_ASSISTANT_MODEL_VERSION`。该进程不挂附件卷、不持迁移或 Outbox 凭据。需先审批报告文字的外发范围和网络 ACL。作业租约 40 秒，单次调用最长 12 秒；退出码 1 或作业长期排队应报警。开启/关闭无需重写报告或补做人工签核。
 
 立项、结项和问答的结构化预览独立默认关闭 (`PMO_ASSISTANT_PREVIEWS=0`)。只有在批准该部署内有权限人员所读片段的外发、网关具体模型版本和出口 ACL 后，才在 API 进程设 `PMO_ASSISTANT_PREVIEWS=1`、`PMO_ASSISTANT_MODEL_URL`（HTTPS；隔离测试可用回环 HTTP）和可选 `PMO_ASSISTANT_MODEL_TOKEN`。不继承报告开关或密钥，不跟随重定向，不在普通读取时自动外发。受限 API 账号只能完成本操作的 pending 幂等记录；更新部署或由备份恢复后须按本手册重验角色、列权限及保护触发器。细节见 [ADR 0018](../adr/0018-source-bound-assistant-previews.md)。
 

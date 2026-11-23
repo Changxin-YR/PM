@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, Field, StringConstraints, ValidationError, f
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import RULE_VERSION, Result, Strict
 from .costs import DisplayedRate, Kind, cost_basis
 from .dto import Proportion, Unavailable
@@ -164,7 +165,13 @@ def _dto(project, at, values, refs, *, row=None, inputs=None, historical=False, 
             except ValidationError as exc:
                 raise Failure(500, 'HEALTH_TRACE_INVALID', project_id=project.id) from exc
         data.appeal = appeal
-        data.projectRevision = project.revision
+        if historical:
+            prefix = f'project:{project.id}@'
+            saved_revision = next((ref[len(prefix):] for ref in refs if ref.startswith(prefix)), '')
+            # Old observations without a stored project source cannot claim the live revision.
+            data.projectRevision = int(saved_revision) if saved_revision.isascii() and saved_revision.isdecimal() else None
+        else:
+            data.projectRevision = project.revision
         data.canRefresh = pm and project.stage in ACTIVE and not historical
         data.canAppeal = pm and row is not None and _appeal_allowed(row) and appeal is None
         if data.canRefresh and data.inputs is not None:
@@ -228,7 +235,7 @@ def history(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         conditions = (s.c.project_id == project.id, s.c.results.has_key('publication'))
         total = c.scalar(sa.select(sa.func.count()).select_from(s).where(*conditions))
         rows = list(c.execute(sa.select(s).where(*conditions).order_by(s.c.as_of.desc(), s.c.id.desc())
-            .offset((page - 1) * pageSize).limit(pageSize)).mappings())
+            .offset(pg_offset(page,pageSize)).limit(pageSize)).mappings())
         receipts = _appeals_for(c, [row.id for row in rows], a.person, _role(c, a, project, 'reviewer'))
         pm = _role(c, a, project, 'pm')
         items = [_stored(project, row, historical=True, human=True, pm=pm,

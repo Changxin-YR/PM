@@ -2,6 +2,7 @@
 import {computed,ref,watch} from 'vue'
 import {Download,FileCheck2,RefreshCw} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
+import {isRejectedWrite} from './api-error'
 
 type Kind='money'|'effort'
 type Attribution='estimate'|'execution'|'scope'
@@ -72,7 +73,13 @@ async function save(){
     await read()
   }catch(e){
     if(saved){state.value=null;error.value='对账已签署，但未能重读当前回执。'}
-    else formError.value=message(e)
+    else {
+      if(isRejectedWrite(e)){
+        attempt=undefined
+        try{await read()}catch{state.value=null;evidenceRefs.value=[]}
+      }
+      formError.value=message(e)
+    }
   }finally{saving.value=false}
 }
 </script>

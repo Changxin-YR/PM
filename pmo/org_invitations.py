@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from . import org_events, schema_v1 as db, sessions
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import RULE_VERSION, Result, Strict
 from .db import engine
 from .identity import Actor, Failure
@@ -98,7 +99,7 @@ def listing(authorization: Auth, page: int = Query(1, ge=1, le=10000),
         count = c.scalar(sa.select(sa.func.count()).select_from(invites).where(scope))
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
         rows = c.execute(sa.select(invites).where(scope).order_by(i.issued_at.desc(), i.id.desc())
-            .offset((page-1)*pageSize).limit(pageSize)).mappings()
+            .offset(pg_offset(page,pageSize)).limit(pageSize)).mappings()
         items = [view(row, now) for row in rows]
         return Result[Directory[Invitation]](data=Directory[Invitation](items=items, page=page, pageSize=pageSize, total=count),
             meta=meta(LIST, [f'invitation:{item.invitationId}@{item.revision}' for item in items]))

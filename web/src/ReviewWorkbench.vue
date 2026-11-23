@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isRejectedWrite} from './api-error'
 import {computed,ref,watch} from 'vue'
 import {Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
 import RequirementExceptionReceipt, {type RequirementException} from './RequirementExceptionReceipt.vue'
@@ -89,7 +90,7 @@ async function refresh(){
   if(busy.value)return
   loading.value=true;error.value=''
   try{await read();retry.value=null}
-  catch(e){readFailed.value=true;error.value=message(e,'未能读取评审工作台。')}
+  catch(e){view.value=null;readFailed.value=true;error.value=message(e,'未能读取评审工作台。')}
   finally{loading.value=false}
 }
 watch(open,value=>{if(value)void refresh()},{immediate:true})
@@ -164,7 +165,15 @@ async function submit(previous?:Attempt){
     if(saved){readFailed.value=true;error.value='操作已保存，但未能重读工作台。'}
     else if(sent&&(e instanceof TypeError||e instanceof SyntaxError)){
       retry.value=sent;error.value='未能确认提交结果，可按原请求重试。'
-    }else{retry.value=null;error.value=message(e,'提交失败。')}
+    }else{
+      retry.value=null
+      if(isRejectedWrite(e)){
+        lastAttempt=undefined
+        try{await read()}catch{view.value=null;readFailed.value=true}
+        emit('saved') // Parent lists must also reread a decision that has changed elsewhere.
+      }
+      error.value=message(e,'提交失败。')
+    }
   }finally{saving.value=false}
 }
 </script>

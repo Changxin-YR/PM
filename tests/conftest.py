@@ -15,6 +15,13 @@ import sqlalchemy as sa
 from pmo import schema_v1 as db
 from pmo.session_schema import attempts
 
+
+def acceptance_api():
+    if os.getenv('PMO_TEST_REST_PROBE') == '1':
+        return ['rest_probe_api:app', '--app-dir', 'tests']
+    return ['pmo.api:app']
+
+
 @pytest.fixture(scope='session')
 def live_stack(tmp_path_factory):
     admin=sa.create_engine(os.environ['PMO_TEST_DATABASE_URL'],hide_parameters=True)
@@ -31,7 +38,7 @@ def live_stack(tmp_path_factory):
     try:
         for args in [('upgrade','head'),('downgrade','base'),('upgrade','head')]:
             subprocess.run([sys.executable,'-m','alembic',*args],env=env,check=True)
-        proc=subprocess.Popen([sys.executable,'-m','uvicorn','pmo.api:app','--port',str(port),'--no-access-log'],env=env)
+        proc=subprocess.Popen([sys.executable,'-m','uvicorn',*acceptance_api(),'--port',str(port),'--no-access-log'],env=env)
         base=f'http://127.0.0.1:{port}'
         with httpx.Client(base_url=base,trust_env=False) as api:
             for _ in range(120):

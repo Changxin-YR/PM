@@ -11,6 +11,7 @@ from pydantic import AwareDatetime, Field
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .costs import Kind
 from .identity import Failure, visible
@@ -136,7 +137,7 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
         stmt=sa.select(t,linked.label('has_reversal')).where(t.c.project_id==p.id)
         total=c.scalar(sa.select(sa.func.count()).select_from(t).where(t.c.project_id==p.id))
         items=[]
-        for row in c.execute(stmt.order_by(t.c.created_at.desc(),t.c.id).offset((page-1)*pageSize).limit(pageSize)).mappings():
+        for row in c.execute(stmt.order_by(t.c.created_at.desc(),t.c.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings():
             verified=row.status=='verified'
             items.append(Detail(**item(row).model_dump(),revision=2 if verified else 1,period=row.period,
                 occurredAt=row.occurred_at if verified or row.posting_of_id else None,verifiedAt=row.verified_at,postingOfId=row.posting_of_id,

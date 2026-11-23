@@ -84,6 +84,8 @@ def test_verified_cost_cycle(live,actor,kind):
             assert c.scalar(sa.select(db.outbox_events.c.event_type).where(db.outbox_events.c.dedupe_key == rid)) == 'human_verify_cost_posting'
         assert auditor.post(f'cost-postings/{same}/verify',headers=key(),json=proof).json()['code']=='SOURCE_ALREADY_VERIFIED'
         k=key(2); reason={'reason':'Correct source amount'}
+        assert outside.post(loc+'reverse',headers=k,json=reason).status_code==404
+        assert admin.post(loc+'reverse',headers=k,json=reason).status_code==403
         minus=auditor.post(loc+'reverse',headers=k,json=reason); assert minus.status_code==200,minus.text
         assert auditor.post(loc+'reverse',headers=k,json=reason).json()==minus.json()
         assert second.post(loc+'reverse',headers=key(2),json=reason).json()['code']=='REVERSAL_EXISTS'

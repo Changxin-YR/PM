@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from . import model_gateway, schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import RULE_VERSION, Result, Strict
 from .fact_sources import Candidate, Quote, submitted
 from .identity import Failure
@@ -186,7 +187,7 @@ def listing(reportId: UUID, authorization: Auth, page: int = Query(1, ge=1, le=1
         p, report = _context_for_analysis(c, a, reportId, write=False)
         total = c.scalar(sa.select(sa.func.count()).select_from(runs).where(*scoped(report)))
         rows = c.execute(sa.select(runs).where(*scoped(report)).order_by(r.requested_at.desc(), r.id.desc())
-            .offset((page-1)*pageSize).limit(pageSize)).mappings()
+            .offset(pg_offset(page,pageSize)).limit(pageSize)).mappings()
         items = [view(row) for row in rows]
         busy = active(c, report)
         payload = AnalysisPage(items=items, total=total, page=page, pageSize=pageSize, reportRevision=report.revision,

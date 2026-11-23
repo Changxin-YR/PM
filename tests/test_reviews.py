@@ -558,6 +558,8 @@ def test_charter_veto_appeal_preserves_opinions_fast_confirmation(live, team):
     assert [r['round'] for r in revised['scores']] == [1, 2]
     assert revised['assessment']['total'] == '4.80'
     assert decide(reviewer, path).json()['code'] == 'SPONSOR_CONFIRMATION_REQUIRED'
+    assert reviewer.post(path + '/confirmations', headers=headers(revised['review']['revision']),
+                         json={'role': 'sponsor'}).json()['code'] == 'CONFIRMATION_ROLE_REQUIRED'
     data(sponsor.post(path + '/confirmations', headers=headers(revised['review']['revision']), json={'role': 'sponsor'}))
     assert decide(reviewer, path).json()['code'] == 'INITIATOR_CONFIRMATION_REQUIRED'
     data(owner.post(path + '/confirmations', headers=headers(bench(owner, path)['review']['revision']), json={'role': 'initiator'}))

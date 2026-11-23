@@ -9,6 +9,7 @@ from pydantic import AfterValidator, Field, StrictBool, StringConstraints
 
 from . import org_events, schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .agent_tokens import events as token_events
 from .contracts import Result, Strict
 from .identity import Failure
@@ -100,7 +101,7 @@ def user_list(authorization: Auth, page: int = Query(1, ge=1, le=10000),
         q = user_query().where(p.org_id == a.org)
         total = c.scalar(sa.select(sa.func.count()).select_from(q.subquery()))
         items = [user_view(row, a.account) for row in c.execute(q.order_by(u.username, u.id)
-            .offset((page-1)*pageSize).limit(pageSize)).mappings()]
+            .offset(pg_offset(page,pageSize)).limit(pageSize)).mappings()]
         return Result[Directory[User]](data=Directory[User](items=items, total=total, page=page, pageSize=pageSize),
             meta=meta(USERS, [f'account:{item.userId}@{item.revision}' for item in items]))
     return run(authorization, USERS, read)
@@ -114,7 +115,7 @@ def member_list(authorization: Auth, page: int = Query(1, ge=1, le=10000),
         q = sa.select(p.id, p.name, p.role, p.is_active, p.user_id, p.revision).where(p.org_id == a.org)
         total = c.scalar(sa.select(sa.func.count()).select_from(q.subquery()))
         items = [Member(personId=row.id, name=row.name, displayRole=row.role, isActive=row.is_active, userId=row.user_id,
-            revision=row.revision) for row in c.execute(q.order_by(p.name, p.id).offset((page-1)*pageSize).limit(pageSize)).mappings()]
+            revision=row.revision) for row in c.execute(q.order_by(p.name, p.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings()]
         return Result[Directory[Member]](data=Directory[Member](items=items, total=total, page=page, pageSize=pageSize),
             meta=meta(MEMBERS, [f'person:{item.personId}@{item.revision}' for item in items]))
     return run(authorization, MEMBERS, read)

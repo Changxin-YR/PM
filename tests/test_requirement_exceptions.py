@@ -317,9 +317,9 @@ def test_one_concurrent_sign_and_outbox(case):
 DEVIATION = 'In the synthetic retention export, this release omits the named report field.'
 
 
-def deliver_with_exception_material(live, team, *, close_risk=True, confirm=False, extra_priorities=(), **kwargs):
+def conditional_material(live, team, *, confirm=False, extra_priorities=(), **kwargs):
     pid, people, users, _ = team
-    pm, reviewer, customer, accountant = (users[k] for k in ('pm', 'reviewer', 'client_representative', 'outsider'))
+    pm, reviewer, customer = (users[k] for k in ('pm', 'reviewer', 'client_representative'))
     project, requirement, risk = execution_fixture(live, team, extra_priorities=extra_priorities)
     complete_milestones(pm, reviewer, project)
     data(execute(pm, project, data(propose(pm, project, 'delivering'))))
@@ -328,15 +328,6 @@ def deliver_with_exception_material(live, team, *, close_risk=True, confirm=Fals
             if item['requirementId'] != requirement:
                 confirm_requirement(pm, reviewer, customer, project, item)
     _, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk, confirm=confirm, **kwargs)
-    if close_risk:
-        data(reviewer.post(f'risks/{risk}/close', headers=headers(), json={'resolutionEvidenceRef': risk_proof['evidenceRef']}))
-    reco = project + '/cost-reconciliations'
-    ledger = data(accountant.get(reco))
-    reconciliation = {'costHash': ledger['costHash'], 'evidenceRefs': [cost_proof['evidenceRef']]}
-    if 'actuals' in kwargs:
-        reconciliation['overrunReasons'] = {'money': 'estimate', 'effort': 'execution'}
-    data(accountant.post(reco, headers=headers(ledger['revision']), json=reconciliation))
-
     def prepare(*, verify=True):
         state = data(customer.get(project + '/requirement-exceptions'))
         assert state['canSign'] and len(state['gaps']) == 1
@@ -353,6 +344,22 @@ def deliver_with_exception_material(live, team, *, close_risk=True, confirm=Fals
             json={'reason': 'Checked original synthetic acceptance and its exact intended scope', 'sha256': pdf['sha256']})) if verify else pdf
         return state, dict(scope.model_dump(mode='json'), evidenceRef=proof['evidenceRef'])
 
+    return project, risk, risk_proof, cost_proof, prepare
+
+
+def deliver_with_exception_material(live, team, *, close_risk=True, **kwargs):
+    _, _, users, _ = team
+    project, risk, risk_proof, cost_proof, prepare = conditional_material(live, team, **kwargs)
+    if close_risk:
+        data(users['reviewer'].post(f'risks/{risk}/close', headers=headers(),
+                                   json={'resolutionEvidenceRef': risk_proof['evidenceRef']}))
+    reco = project + '/cost-reconciliations'
+    accountant = users['outsider']
+    ledger = data(accountant.get(reco))
+    reconciliation = {'costHash': ledger['costHash'], 'evidenceRefs': [cost_proof['evidenceRef']]}
+    if 'actuals' in kwargs:
+        reconciliation['overrunReasons'] = {'money': 'estimate', 'effort': 'execution'}
+    data(accountant.post(reco, headers=headers(ledger['revision']), json=reconciliation))
     return project, prepare
 
 
@@ -403,8 +410,10 @@ def test_conditional_closing_freezes_revalidates_and_records_exact_scope(live, t
     finally:
         original.write_bytes(contents)
 
-    data(customer.post(path + f"/{signed['exceptionId']}/revoke", headers=headers(signed['revision']),
-        json={'reason': 'Customer withdraws acceptance before decision.'}))
+    revoke_path = path + f"/{signed['exceptionId']}/revoke"
+    revoke_key, reason = headers(signed['revision']), {'reason': 'Customer withdraws acceptance before decision.'}
+    assert reviewer.post(revoke_path, headers=revoke_key, json=reason).json()['code'] == 'INDEPENDENT_CUSTOMER_REQUIRED'
+    data(customer.post(revoke_path, headers=revoke_key, json=reason))
     assert decide(reviewer, review, verdict='conditional_pass').json()['code'] == 'REVIEW_SNAPSHOT_STALE'
     assert stage(pm, project)['stage'] == 'closing_review'
     data(pm.post(review + '/withdraw', headers=headers(frozen['review']['revision']), json={'reason': 'Replace revoked material.'}))

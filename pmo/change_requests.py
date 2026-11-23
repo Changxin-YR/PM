@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field, JsonValue, ValidationError
 
 from . import charter_models, milestones, requirements, schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .change_contract import PROPOSAL, Target, valid_proposal
 from .change_history import Entry, Page, entry, with_decision
 from .change_intents import authority, capture, lookup, independent, payload, snapshot
@@ -64,7 +65,7 @@ def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int
         if changeId is not None: query=query.where(t.c.id==changeId)
         matched=query.cte('matched')
         total=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
-        rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset(min((page-1)*pageSize,2**63-1)).limit(pageSize).subquery()
+        rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset(pg_offset(page,pageSize)).limit(pageSize).subquery()
         records=c.execute(sa.select(total.c.total,rows).select_from(total.outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         items=[entry(r) for r in records if r.id]; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items])
         policy=synthetic_confirmation(c)

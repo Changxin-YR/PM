@@ -72,6 +72,8 @@ def reconciliation(live, team, monkeypatch):
             account = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == person))
             c.execute(db.user_roles.insert().values(user_id=account, role='finance_verifier'))
             c.execute(grants.insert().values(project_id=pid, person_id=person))
+        verifier = c.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people['sponsor']))
+        c.execute(db.user_roles.insert().values(user_id=verifier, role='finance_verifier'))
         money = budget(c, pid, people['pm'], 'money', 100)
         effort = budget(c, pid, people['pm'], 'effort', 10)
         original = posting(c, pid, people, money, 'money', 100)
@@ -204,6 +206,43 @@ def test_receipt_retains_two_bases_and_becomes_stale(reconciliation, live, monke
         c.execute(grants.update().where(grants.c.id == UUID(replacement['grantId'])).values(revoked_at=sa.func.now()))
     assert signer.post(path, headers=newer_h, json=newer).status_code == 403
     assert data(pm.get(path))['current'] is None
+
+
+@pytest.mark.parametrize(('unit', 'corrected'), [('money', ('81.00', '12.00')), ('effort', ('80.00', '13.00'))])
+def test_newly_verified_actual_invalidates_only_its_net_and_stales_reconciliation(reconciliation, unit, corrected):
+    engine, pid, _, users, _, cutoff, _ = reconciliation
+    pm, signer, verifier = (users[k] for k in ('pm', 'reviewer', 'sponsor'))
+    project = f'projects/{pid}'
+    path = project + '/cost-reconciliations'
+    old_proof = evidence(users, pid, sheet(pid, cutoff))
+    old_h, old_body = command(signer, path, [old_proof], reasons={'effort': 'execution'})
+    old = data(signer.post(path, headers=old_h, json=old_body))
+    proposed = data(pm.post(project + '/cost-postings', headers=headers(), json={'type': unit, 'amount': '1.00',
+        'period': '2024-01', 'sourceRef': 'Synthetic ledger correction 42'}))
+    # A pending posting already changes the reconciliation basis, but not either verified net.
+    assert data(signer.get(path))['current'] is None
+    ledger = data(pm.get(project + '/costs'))
+    assert [ledger[kind]['actual'] for kind in ('money', 'effort')] == ['80.00', '12.00']
+    verify_path = f"cost-postings/{proposed['postingId']}/verify"
+    verification = {'reason': 'Independently checked the supplemental original', 'occurredAt': '2024-01-15T12:00:00Z'}
+    assert pm.post(verify_path, headers=headers(1), json=verification).json()['code'] == 'INDEPENDENT_VERIFIER_REQUIRED'
+    verify_key = headers(1)
+    checked = data(verifier.post(verify_path, headers=verify_key, json=verification))
+    assert checked['status'] == 'verified'
+    assert data(verifier.post(verify_path, headers=verify_key, json=verification)) == checked
+    ledger = data(pm.get(project + '/costs'))
+    assert [ledger[kind]['actual'] for kind in ('money', 'effort')] == list(corrected)
+    stale = data(signer.get(path))
+    assert stale['current'] is None and stale['costHash'] != old['costHash']
+    assert signer.post(path, headers=headers(stale['revision']), json=old_body).json()['code'] == 'RECONCILIATION_STALE'
+    assert data(signer.post(path, headers=old_h, json=old_body)) == old
+    new_proof = evidence(users, pid, sheet(pid, datetime.now(UTC), *corrected))
+    new_h, new_body = command(signer, path, [new_proof], reasons={'effort': 'execution'})
+    new = data(signer.post(path, headers=new_h, json=new_body))
+    assert [line['actual'] for line in new['lines']] == list(corrected)
+    with engine.connect() as c:
+        assert list(map(str, c.scalars(sa.select(receipts.c.id).where(receipts.c.project_id == pid)
+              .order_by(receipts.c.revision)).all())) == [old['receiptId'], new['receiptId']]
 
 
 def test_requires_independent_sources_and_parties(reconciliation, live):

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {PmoHttpError} from './api-error'
 import {computed,onMounted,ref} from 'vue'
 import {Layers3,LogOut,Plus,RefreshCw,Search,Pencil,FolderKanban} from 'lucide-vue-next'
 import Milestones from './Milestones.vue'
@@ -100,7 +101,8 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
       USERNAME_UNAVAILABLE:'该账号不可用，请另选账号。',ADMIN_ACCOUNT_PROTECTED:'不能在此修改管理员账号状态。',
       ACCOUNT_STATUS_UNCHANGED:'账号状态未变化，请刷新目录。',PERSON_INACTIVE:'成员档案已停用，不能启用其账号。',
     }
-    throw Error(descriptions[body.code]||(typeof body.code==='string'?`操作失败（${body.code}）`:`操作失败（${r.status}）`))
+    const code=typeof body.code==='string'?body.code:''
+    throw new PmoHttpError(r.status,code,descriptions[code]||(code?`操作失败（${code}）`:`操作失败（${r.status}）`))
   }
   const body=r.status===204?null:await r.json();receiveHeaders?.(r.headers);return body
 }

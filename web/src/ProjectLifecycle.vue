@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isRejectedWrite} from './api-error'
 import {computed,onMounted,ref,watch} from 'vue'
 import {ArrowRight,Gavel,Play,RefreshCw,RotateCcw,Send} from 'lucide-vue-next'
 
@@ -102,7 +103,11 @@ async function save(){
     await read(action.mode==='request'||action.mode==='resubmit'?1:undefined)
   }catch(e){
     if(saved){state.value=null;error.value='操作已提交，但未能重读项目阶段和流转记录。'}
-    else formError.value=message(e,'未能确认提交结果。')
+    else if(isRejectedWrite(e)){
+      dialog.value=false;attempt=undefined
+      try{await read()}catch{state.value=null}
+      error.value=e.message
+    }else formError.value=message(e,'未能确认提交结果。')
   }finally{saving.value=false}
 }
 </script>

@@ -9,6 +9,7 @@ from pydantic import AwareDatetime
 
 from . import schema_v1 as db
 from .access import Auth
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .health import HUMAN
 from .health_calculation import TZ, WEEK, monday
@@ -158,7 +159,7 @@ def weekly_health(authorization: Auth, weekStart: date | None = None, asOf: Awar
                    .where(sa.or_(signal.c.id.is_not(None), last.c.results['health'].astext == 'untrusted')).cte('attention'))
         counts = sa.select(sa.select(sa.func.count()).select_from(last).scalar_subquery().label('sampled'),
             sa.select(sa.func.count()).select_from(matched).scalar_subquery().label('total')).subquery()
-        selected = sa.select(matched).order_by(matched.c.as_of.desc(), matched.c.project_id).limit(pageSize).offset((page-1)*pageSize).subquery()
+        selected = sa.select(matched).order_by(matched.c.as_of.desc(), matched.c.project_id).limit(pageSize).offset(pg_offset(page,pageSize)).subquery()
         rows = c.execute(sa.select(counts, selected).select_from(counts.outerjoin(selected, sa.true()))
                          .order_by(selected.c.as_of.desc(), selected.c.project_id)).mappings().all()
         found = [row for row in rows if row.id is not None]

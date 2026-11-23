@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isRejectedWrite} from './api-error'
 import {computed,onMounted,ref,watch} from 'vue'
 import {Copy,RefreshCw,RotateCcw,Signature} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
@@ -45,7 +46,7 @@ async function load(){
     const {data}:{data:State}=await props.api(path)
     if(data.gapHash!==state.value?.gapHash){deviations.value={};proofs.value=[];accept.value=false}
     state.value=data;readFailed.value=false
-  }catch(e){readFailed.value=true;error.value=e instanceof Error?e.message:'未能读取需求例外。'}
+  }catch(e){state.value=null;readFailed.value=true;error.value=e instanceof Error?e.message:'未能读取需求例外。'}
   finally{loading.value=false}
 }
 async function send(attempt:Attempt){
@@ -57,6 +58,7 @@ async function send(attempt:Attempt){
   }catch(e){
     const ambiguous=e instanceof TypeError||e instanceof SyntaxError
     retry.value=ambiguous?attempt:null
+    if(isRejectedWrite(e)){lastAttempt=undefined;accept.value=false;await load()}
     error.value=ambiguous?'未能确认结果，请按原请求重试。':e instanceof Error?e.message:'操作失败。'
   }finally{saving.value=false}
 }

@@ -195,6 +195,75 @@ try {
   } else if(process.env.PMO_TEST_PHASE==='exception') {
     const command=JSON.parse(process.env.PMO_TEST_REQUIREMENT_EXCEPTION)
     const customer=await actor('client_representative'), reviewer=await actor('reviewer')
+    const chain=JSON.parse(process.env.PMO_TEST_CLOSEOUT??'null')
+    const read=async(page,path)=>{
+      const response=await page.request.get(new URL('api/v1/'+path,url).href)
+      expect(response.status()).toBe(200)
+      return (await response.json()).data
+    }
+    const direct=async(page,role,path,revision,data)=>page.request.post(new URL('api/v1/'+path,url).href,{
+      headers:{'X-CSRF-Token':sessions[role].csrf,'If-Match':String(revision),'Idempotency-Key':crypto.randomUUID()},data,
+    })
+    const gaps=async()=>new Set((await read(pm,chain.project+'/closing/check')).missing.map(x=>x.code))
+    if(chain){
+      expect([...(await gaps())]).toEqual(expect.arrayContaining(['COST_RECONCILIATION_REQUIRED','BLOCKING_RISK_UNRESOLVED']))
+      const reconciler=await actor('outsider'), otherTab=await actor('outsider')
+      const costs=await open(reconciler,'成本'), otherCosts=await open(otherTab,'成本')
+      for(const [page,panel] of [[reconciler,costs],[otherTab,otherCosts]]){
+        await button(panel,'签署对账').click()
+        await dialog(page,'签署成本对账').getByRole('checkbox',{name:new RegExp(chain.costProof)}).check()
+      }
+      const signed=await write(otherTab,'POST','/cost-reconciliations',button(dialog(otherTab,'签署成本对账'),'确认签署对账'))
+      expect(signed.lines.map(x=>[x.type,x.actual])).toEqual([['money','100.00'],['effort','10.00']])
+      const signing=dialog(reconciler,'签署成本对账')
+      const blocked=reconciler.waitForResponse(x=>x.request().method()==='POST'&&x.url().endsWith('/cost-reconciliations'))
+      await button(signing,'确认签署对账').click()
+      expect((await blocked).status()).toBe(409)
+      await expect(button(signing,'确认签署对账')).toBeDisabled()
+      await closeDialog(signing)
+      expect((await read(reconciler,chain.project+'/cost-reconciliations')).current.receiptId).toBe(signed.receiptId)
+      const denied=await direct(pm,'pm',chain.project+'/cost-reconciliations',signed.revision,
+        {costHash:signed.costHash,evidenceRefs:[chain.costProof]})
+      expect(denied.status()).toBe(403)
+
+      const riskPath=`risks/${chain.risk}`, receiver=await actor('receiver',false)
+      const scope='Independent acceptance of the synthetic delivery follow-up'
+      const riskPanel=await open(reviewer,'风险')
+      await button(riskPanel,'风险处置').click()
+      const resolution=dialog(reviewer,'风险处置')
+      await button(resolution,'发出接收请求').click()
+      await resolution.getByLabel('接收人 ID',{exact:true}).fill(chain.receiver)
+      await resolution.getByLabel('接收范围',{exact:true}).fill(scope)
+      await resolution.getByRole('checkbox',{name:new RegExp(chain.riskProof)}).check()
+      const request=await write(reviewer,'POST','/handoff/acceptance',button(resolution,'提交接收请求'))
+      expect(request.kind).toBe('requested')
+      expect((await gaps()).has('BLOCKING_RISK_UNRESOLVED')).toBe(true)
+      const binding={receiverPersonId:chain.receiver,acceptanceEvidenceRef:chain.riskProof}
+      const premature=await direct(reviewer,'reviewer',riskPath+'/handoff',request.riskRevision,binding)
+      expect((await premature.json()).code).toBe('RISK_ACCEPTANCE_REQUIRED')
+      const deniedReceiver=await direct(customer,'client_representative',riskPath+'/handoff/acceptance',request.riskRevision,
+        {...binding,kind:'confirm',decision:'accept',acceptanceScope:scope})
+      expect(deniedReceiver.status()).toBe(403)
+      const limited=await read(receiver,riskPath+'/resolution')
+      expect(limited.audience).toBe('receiver')
+      expect(limited.risk.statement).toBeUndefined()
+      await button(receiver,'风险接收').click()
+      await receiver.getByLabel('接收请求编号',{exact:true}).fill(`risk-request:${chain.risk}:${request.acceptanceId}`)
+      await button(receiver,'打开接收请求').click()
+      const incoming=dialog(receiver,'风险接收请求')
+      await button(incoming,'本人认证接收').click()
+      const accepted=await write(receiver,'POST','/handoff/acceptance',button(incoming,'确认本人接收'))
+      expect(accepted.kind).toBe('receiver_confirmed')
+      expect((await gaps()).has('BLOCKING_RISK_UNRESOLVED')).toBe(true)
+      await button(resolution,'刷新风险处置').click()
+      await button(resolution,'复核签署移交').click()
+      const handoff=await write(reviewer,'POST','/handoff',button(resolution,'确认签署移交'))
+      expect(handoff).toMatchObject({status:'transferred',acceptanceId:accepted.acceptanceId})
+      await closeDialog(resolution)
+      const after=await gaps()
+      expect(after.has('BLOCKING_RISK_UNRESOLVED')).toBe(false)
+      expect(after.has('COST_RECONCILIATION_REQUIRED')).toBe(false)
+    }
     const panel=await open(customer,'需求例外')
     const deviation=command.items[0].deviation
     await panel.getByLabel('具体接受的偏差',{exact:true}).fill(deviation)
@@ -227,6 +296,18 @@ try {
     await judgment.selectOption('conditional_pass')
     const reason='独立核验客户书面接受的具体需求偏差，成本与风险仍按正常结项规则检查。'
     await workbench.getByLabel('裁决理由',{exact:true}).fill(reason)
+    if(chain?.revoke){
+      const response=await direct(customer,'client_representative',
+        `${chain.project}/requirement-exceptions/${receipt.exceptionId}/revoke`,receipt.revision,{reason:'Synthetic withdrawal after review opened'})
+      expect(response.status()).toBe(200)
+      const blocked=reviewer.waitForResponse(x=>x.request().method()==='POST'&&x.url().endsWith('/decisions'))
+      await button(workbench,'确认裁决').click()
+      const rejection=await blocked
+      expect(rejection.status()).toBe(409)
+      expect((await rejection.json()).code).toBe('REVIEW_SNAPSHOT_STALE')
+      await expect(button(workbench,'登记裁决')).toHaveCount(0)
+      await expect(workbench.getByText('送审所依据的材料或授权已变化。',{exact:true})).toBeVisible()
+    }else{
     const result=await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
     expect(result.decision).toMatchObject({stage:'closed',rationale:reason,option:'conditional_pass'})
     expect(result.requirementException.receiptHash).toBe(receipt.receiptHash)
@@ -235,6 +316,7 @@ try {
     await expect(history.getByText('裁决接受的具体需求偏差',{exact:true})).toBeVisible()
     await expect(history.getByText(deviation,{exact:true})).toBeVisible()
     await expect(history.getByText(reason,{exact:true})).toBeVisible()
+    }
   } else if(process.env.PMO_TEST_PHASE==='tasks_reports') {
     const panel=await open(pm,'补强任务')
     const title='按复核记录更新交付清单'

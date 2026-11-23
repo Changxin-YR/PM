@@ -8,6 +8,7 @@ from . import schema_v1 as db
 from .audit_store import audit, stable_refs
 from .contracts import Meta, Page, ProjectDetail, ProjectView, Result, RULE_VERSION
 from .identity import Failure, authenticate, visible
+from .pagination import pg_offset
 from .db import engine
 from .charter_models import summary as charter_summary
 from .stakeholder_models import ContactSummary
@@ -75,12 +76,15 @@ def can_edit_draft(actor, row):
 def listing(header,page,size,stage,keyword):
     op='pmo_project_list'
     def query(c,a,_):
-        p=db.projects
-        filters=listing_filters(a,stage,keyword)
-        total=c.scalar(sa.select(sa.func.count()).select_from(p).where(*filters))
-        rows=c.execute(sa.select(p).where(*filters).order_by(p.c.created_at.desc(),p.c.id).offset((page-1)*size).limit(size)).mappings()
-        items=[view(row) for row in rows]
-        return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total),meta=meta(op,[f'project:{i.projectId}@{i.revision}' for i in items]))
+        matched=sa.select(db.projects).where(*listing_filters(a,stage,keyword)).cte('visible_projects')
+        counts=sa.select(sa.func.count().label('total')).select_from(matched).subquery()
+        window=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id).offset(pg_offset(page,size)).limit(size).subquery()
+        rows=c.execute(sa.select(window,counts.c.total,sa.func.statement_timestamp().label('read_at'))
+                       .select_from(counts.outerjoin(window,sa.true())).order_by(window.c.created_at.desc(),window.c.id)).mappings().all()
+        items=[view(row) for row in rows if row.id is not None]
+        info=meta(op,[f'project:{i.projectId}@{i.revision}' for i in items])
+        info.asOf=rows[0].read_at
+        return Result[Page](data=Page(items=items,page=page,pageSize=size,total=rows[0].total),meta=info)
     return run(header,op,query)
 
 

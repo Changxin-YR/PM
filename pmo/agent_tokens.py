@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .audits import is_admin
 from .contracts import Result, Strict
 from .identity import Failure, explicit_grants
@@ -85,7 +86,7 @@ def list_tokens(auth,page,size,admin):
         conditions=[t.c.org_id==a.org]
         if not admin: conditions.append(t.c.delegated_by==a.account)
         total=c.scalar(sa.select(sa.func.count()).select_from(t).where(*conditions))
-        rows=c.execute(token_query().where(*conditions).order_by(t.c.created_at.desc(),t.c.id).limit(size).offset((page-1)*size)).mappings()
+        rows=c.execute(token_query().where(*conditions).order_by(t.c.created_at.desc(),t.c.id).limit(size).offset(pg_offset(page,size))).mappings()
         items=[view(r) for r in rows]
         rev=c.scalar(sa.select(collections.c.revision).where(collections.c.account_id==a.account)) or 1
         return Result[TokenPage](data=TokenPage(items=items,page=page,pageSize=size,total=total,collectionRevision=rev,

@@ -148,6 +148,7 @@ def test_revoke_expiry_and_issuer_authority_is_live(team, admins):
         item = data(replacement)
         code = replacement.headers['X-PMO-Org-Invitation']
         path = f"admin/users/invitations/{item['invitationId']}/revoke"
+        deny(team.users['outsider'].post(path, headers=headers(1), json={'reason':'No longer needed'}),403,'FORBIDDEN')
         deny(reviewer.post(path, headers=headers(2),json={'reason':'No longer needed'}),409,'VERSION_CONFLICT')
         revoked = data(reviewer.post(path, headers=headers(1),json={'reason':'No longer needed'}))
         assert revoked['state']=='revoked' and revoked['revision']==2

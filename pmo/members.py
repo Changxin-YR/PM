@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 
 from . import schema_v1 as db
 from .access import Auth
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .identity import Actor, Failure
 from .materials import project_access
@@ -44,7 +45,7 @@ def listing(projectId: UUID, authorization: Auth, page: int=Query(1,ge=1), pageS
             m.c.accepted_at.is_not(None),m.c.revoked_at.is_(None),
             sa.or_(m.c.role!='initiator',sa.and_(m.c.person_id==project.initiator_id,project.stage=='drafting')))
         total = c.execute(sa.select(sa.func.count()).select_from(rows.subquery())).scalar_one()
-        selected = c.execute(rows.order_by(m.c.role,p.c.name,m.c.id).offset((page-1)*pageSize).limit(pageSize)).mappings().all()
+        selected = c.execute(rows.order_by(m.c.role,p.c.name,m.c.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings().all()
         return Result[Members](data=Members(items=[Member(personId=r.person_id,name=r.name,role=r.role,acceptedAt=r.accepted_at) for r in selected],
             page=page,pageSize=pageSize,total=total),meta=meta(op,[f'member:{r.id}' for r in selected]))
 

@@ -17,6 +17,7 @@ from .access import Auth, Key, Revision
 from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import finish, project_access, replay
+from .pagination import pg_offset
 from .milestone_forecasts import reconcile
 from .milestones import View, view
 from .projects import fingerprint, meta, run
@@ -129,7 +130,8 @@ def upload_write(auth,pid,key,expected,link,name,mime,data,digest):
         prior=replay(c,a,op,key,sig,Result[Evidence])
         if prior: return prior
         if p.stage=='archived': raise Failure(422,'ARCHIVED_READ_ONLY',project_id=pid)
-        total=c.scalar(sa.select(sa.func.count()).select_from(e).where(e.c.project_id==pid))
+        allowed=visible_evidence(a).where(e.c.project_id==pid).with_only_columns(e.c.id).subquery()
+        total=c.scalar(sa.select(sa.func.count()).select_from(allowed))
         if total+1!=expected: raise Failure(409,'VERSION_CONFLICT')
         storage.validate(name,mime,data,project_source=link.linkedResourceType=='project')
         storage_key=uuid4().hex
@@ -182,9 +184,10 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
     op='human_evidence_list'
     def read(c,a,_):
         project_access(c,a,projectId); reviewer=member(c,a,projectId,'reviewer')
-        query=visible_evidence(a).where(e.c.project_id==projectId)
-        if requirementId is not None: query=query.where(links.c.resource_type=='requirement',links.c.resource_id==requirementId)
-        if reportId is not None: query=query.where(links.c.resource_type=='report',links.c.resource_id==reportId)
+        allowed=visible_evidence(a).where(e.c.project_id==projectId).cte('visible_evidence')
+        query=sa.select(allowed)
+        if requirementId is not None: query=query.where(allowed.c.resource_type=='requirement',allowed.c.resource_id==requirementId)
+        if reportId is not None: query=query.where(allowed.c.resource_type=='report',allowed.c.resource_id==reportId)
         if currentBaselineOnly:
             from .requirement_delivery import baseline_evidence_time
             if requirementId is None: raise Failure(422,'REQUIREMENT_REQUIRED')
@@ -192,13 +195,19 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
             requirement=c.execute(sa.select(r).where(r.c.id==requirementId,r.c.project_id==projectId)).mappings().one_or_none()
             if not requirement: raise Failure(404,'RESOURCE_NOT_FOUND')
             since=baseline_evidence_time(c,projectId,requirement)
-            if since: query=query.where(e.c.created_at>=since)
-        if verifiedOnly: query=query.where(e.c.quarantine_status=='verified')
-        total=c.scalar(sa.select(sa.func.count()).select_from(query.subquery()))
-        count=c.scalar(sa.select(sa.func.count()).select_from(e).where(e.c.project_id==projectId))
-        rows=c.execute(query.order_by(e.c.created_at.desc(),e.c.id).offset((page-1)*pageSize).limit(pageSize)).mappings()
-        items=[item(r,reviewer and r.uploaded_by!=a.person and r.quarantine_status=='pending_review') for r in rows]
-        return Result[Page](data=Page(items=items,total=total,page=page,pageSize=pageSize,collectionRevision=count+1),meta=meta(op,[i.evidenceRef for i in items]))
+            if since: query=query.where(allowed.c.created_at>=since)
+        if verifiedOnly: query=query.where(allowed.c.quarantine_status=='verified')
+        matched=query.cte('filtered_evidence')
+        counts=sa.select(sa.select(sa.func.count()).select_from(allowed).scalar_subquery().label('visible_count'),
+                         sa.select(sa.func.count()).select_from(matched).scalar_subquery().label('total')).subquery()
+        window=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id).offset(pg_offset(page,pageSize)).limit(pageSize).subquery()
+        rows=c.execute(sa.select(window,counts.c.total,counts.c.visible_count,sa.func.statement_timestamp().label('read_at'))
+                       .select_from(counts.outerjoin(window,sa.true())).order_by(window.c.created_at.desc(),window.c.id)).mappings().all()
+        items=[item(r,reviewer and r.uploaded_by!=a.person and r.quarantine_status=='pending_review') for r in rows if r.id is not None]
+        info=meta(op,[i.evidenceRef for i in items])
+        info.asOf=rows[0].read_at
+        return Result[Page](data=Page(items=items,total=rows[0].total,page=page,pageSize=pageSize,
+                                    collectionRevision=rows[0].visible_count+1),meta=info)
     return run(authorization,op,read)
 
 

@@ -6,6 +6,7 @@ from sqlalchemy.engine import Connection
 from .contracts import Result
 from .identity import Actor, Browser, Failure
 from .materials import finish, project_access, replay
+from .pagination import pg_offset
 from .projects import fingerprint, meta, run
 from .schema_v1 import stakeholders as contacts
 from .stakeholder_models import ContactDetails, ContactPage, ContactSummary, CreateContact
@@ -39,7 +40,7 @@ def listing(auth: str | Browser | None, pid: UUID, page: int, size: int) -> Resu
         total = c.execute(sa.select(sa.func.count()).select_from(contacts).where(contacts.c.project_id == pid)).scalar_one()
         stmt = sa.select(contacts).where(contacts.c.project_id == pid).order_by(contacts.c.created_at.desc(), contacts.c.id)
         items = [ContactDetails(**ContactSummary.from_row(row).model_dump(), influence=row['influence'],
-                                expectation=row['expectation']) for row in c.execute(stmt.limit(size).offset((page-1)*size)).mappings()]
+                                expectation=row['expectation']) for row in c.execute(stmt.limit(size).offset(pg_offset(page,size))).mappings()]
         return Result[ContactPage](data=ContactPage(items=items, total=total, page=page, pageSize=size),
                                    meta=meta(op, [item.source_ref() for item in items]))
 

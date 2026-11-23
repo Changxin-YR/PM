@@ -186,6 +186,19 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     assert stage(pm, project)['stage'] == 'retrospective'
     saved = reviewer.post(f"approvals/{archive['requestId']}/decide", headers=key, json=command)
     assert data(saved)['status'] == 'applied'
+
+    def committed():
+        events = db.outbox_events
+        audits = db.audit_logs
+        with engine.connect() as c:
+            return tuple(c.scalar(sa.select(sa.func.count()).select_from(table).where(*filters))
+                         for table, filters in (
+                             *((table, (table.c.project_id == pid,)) for table in
+                               (db.decisions, db.cost_postings, db.cost_entries, db.project_retrospectives)),
+                             (events, (events.c.payload['projectId'].astext == str(pid),)),
+                             (audits, (audits.c.project_id == pid, audits.c.result == 'success',))))
+
+    archive_state = committed()
     assert reviewer.post(f"approvals/{archive['requestId']}/decide", headers=key, json=command).json() == saved.json()
     assert stage(pm, project)['stage'] == 'archived'
     assert pm.put(retro, headers=headers(2), json={'answers': ANSWERS}).status_code == 422
@@ -194,6 +207,7 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     assert pm.put(project + '/cost-budgets', headers=headers(5), json={'type': 'money', 'budget': '102.00'}).status_code == 422
     assert decide(reviewer, closing).json()['code'] == 'REVIEW_NOT_PENDING'
     assert bench(reviewer, closing)['decision'] == closing_receipt
+    assert committed() == archive_state
     with engine.connect() as c:
         steps = c.execute(sa.text('SELECT to_stage FROM project_stage_transitions WHERE project_id=:pid ORDER BY to_revision'),
                           {'pid': pid}).scalars().all()

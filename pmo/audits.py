@@ -8,6 +8,7 @@ from sqlalchemy.engine import Connection
 
 from . import schema_v1 as db
 from .access import Auth
+from .pagination import pg_offset
 from .audit_store import audit
 from .contracts import Result, Strict
 from .identity import Actor, Failure
@@ -68,6 +69,6 @@ def listing(authorization: Auth, page: int=Query(1,ge=1), pageSize: int=Query(20
         items=[AuditEntry(auditId=r.id,createdAt=r.created_at,requestId=r.request_id,actorType=r.actor_type,
                actorId=r.actor_id,delegatedBy=r.delegated_by,projectId=r.project_id,decisionId=r.decision_id,action=r.action,
                result=r.result,errorCode=r.error_code,ruleVersion=r.rule_version,sourceRefs=r.source_refs,
-               previousHash=r.before_hash,responseHash=r.after_hash) for r in c.execute(stmt.limit(pageSize).offset((page-1)*pageSize)).mappings()]
+               previousHash=r.before_hash,responseHash=r.after_hash) for r in c.execute(stmt.limit(pageSize).offset(pg_offset(page,pageSize))).mappings()]
         return Result[AuditPage](data=AuditPage(items=items,page=page,pageSize=pageSize,total=n),meta=meta(op,[f'audit:{i.auditId}' for i in items]))
     return run(authorization,op,query)

@@ -376,6 +376,45 @@ def test_browser_customer_exception_and_conditional_decision(live, team):
     assert stage(users['pm'], project)['stage'] == 'closed'
 
 
+@pytest.mark.parametrize('revoke', [False, True], ids=['complete', 'withdrawn-while-open'])
+def test_browser_combined_closure_and_stale_forms(live, team, revoke):
+    from secrets import token_urlsafe
+    from uuid import uuid4
+
+    import httpx
+    from argon2 import PasswordHasher
+
+    from pmo.risk_resolution import acceptances, resolutions
+    from test_requirement_exceptions import conditional_material
+    from test_reviews import data_login, result_counts
+
+    pid, people, users, _ = team
+    project, risk, proof, cost, prepare = conditional_material(live, team)
+    _, command = prepare()
+    receiver, username, password = uuid4(), uuid4().hex, token_urlsafe(24)
+    with live[0].begin() as c:
+        org = c.scalar(sa.select(db.projects.c.org_id).where(db.projects.c.id == pid))
+        account = c.scalar(db.user_accounts.insert().values(username=username, is_active=True,
+            password_hash=PasswordHasher().hash(password)).returning(db.user_accounts.c.id))
+        c.execute(db.persons.insert().values(id=receiver, user_id=account, org_id=org, created_by=people['initiator'],
+                                           name='Synthetic independent receiver', is_active=True))
+    with httpx.Client(base_url=users['pm'].base_url, trust_env=False) as client:
+        client.headers['X-CSRF-Token'] = data_login(client, username, password)
+        sessions = browser_sessions({**users, 'receiver': client}, 'pm', 'reviewer', 'client_representative', 'outsider', 'receiver')
+        with vite(live[2]) as (root, url):
+            run_browser(root, url, 'lifecycle', {'PMO_TEST_SESSIONS': json.dumps(sessions), 'PMO_TEST_PHASE': 'exception',
+                'PMO_TEST_REQUIREMENT_EXCEPTION': json.dumps(command), 'PMO_TEST_CLOSEOUT': json.dumps(dict(
+                    project=project, risk=risk, riskProof=proof['evidenceRef'], costProof=cost['evidenceRef'],
+                    receiver=str(receiver), revoke=revoke))})
+    assert stage(users['pm'], project)['stage'] == ('closing_review' if revoke else 'closed')
+    with live[0].connect() as c:
+        assert result_counts(c, pid)[1:3] == ((2, 2) if revoke else (3, 3))
+        requested, accepted = c.execute(sa.select(acceptances).where(acceptances.c.risk_id == risk)
+            .order_by(acceptances.c.created_at)).mappings().all()
+        assert (requested.kind, accepted.kind, accepted.request_receipt_id) == ('requested', 'receiver_confirmed', requested.id)
+        assert c.scalar(sa.select(resolutions.c.acceptance_id).where(resolutions.c.risk_id == risk)) == accepted.id
+
+
 def test_browser_tasks_and_reports(live, team):
     _, _, users, _ = team
     project, _, _ = execution_fixture(live, team)

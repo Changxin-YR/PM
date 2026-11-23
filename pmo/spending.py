@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 
 from . import schema_v1 as db
 from .access import Auth
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .costs import Kind
 from .identity import visible
@@ -47,7 +48,7 @@ def spending(authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=
             .select_from(p.join(t,t.c.project_id==p.c.id).outerjoin(approval,sa.true())).where(visible(a),t.c.status=='verified',
             t.c.verified_at<=at,t.c.occurred_at<=at,sa.or_(approval.c.approved.is_(None),t.c.occurred_at<approval.c.approved)).cte('matching'))
         total=sa.select(sa.func.count().label('total')).select_from(matching).subquery()
-        window=sa.select(matching).order_by(matching.c.occurred_at.desc(),matching.c.id).offset((page-1)*pageSize).limit(pageSize).subquery()
+        window=sa.select(matching).order_by(matching.c.occurred_at.desc(),matching.c.id).offset(pg_offset(page,pageSize)).limit(pageSize).subquery()
         rows=c.execute(sa.select(total.c.total,window).select_from(total.outerjoin(window,sa.true())).order_by(window.c.occurred_at.desc(),window.c.id)).mappings().all()
         items=[]; refs=[]
         for row in rows:

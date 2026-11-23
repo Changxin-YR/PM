@@ -9,6 +9,7 @@ from pydantic import StringConstraints
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import replay
@@ -133,7 +134,7 @@ def listing(requirementId: UUID, authorization: Auth, page: int = Query(1, ge=1,
         filters = (t.c.project_id == p.id, t.c.requirement_id == r.id)
         total = c.scalar(sa.select(sa.func.count()).select_from(t).where(*filters))
         rows = c.execute(sa.select(t).where(*filters).order_by(t.c.opened_at.desc(), t.c.id.desc())
-                         .limit(pageSize).offset((page - 1) * pageSize)).mappings().all()
+                         .limit(pageSize).offset(pg_offset(page,pageSize))).mappings().all()
         enabled = p.stage in STAGES and synthetic_confirmation(c)
         can_open = bool(enabled and r.baseline_version and r.status != 'cancelled' and _authority(c, a, p, r)
                         and not c.scalar(open_query(r).where(t.c.customer_id == a.person).limit(1)))

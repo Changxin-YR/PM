@@ -184,6 +184,8 @@ def test_draft_submit_publish_and_history(team):
     assert updated['revision'] == 2 and updated['contentHash'] != draft['contentHash']
     deny(author.patch(path, headers=headers(1), json=edit), 409, 'VERSION_CONFLICT')
     submit_key = headers(2)
+    deny(reviewer.post(path + '/submit', headers=submit_key, json={'reason': 'Reviewed original report'}),
+         404, 'RESOURCE_NOT_FOUND')
     saved = pm.post(path + '/submit', headers=submit_key, json={'reason': 'Reviewed original report'})
     submitted = data(saved)
     assert submitted['status'] == 'submitted' and submitted['revision'] == 3

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isRejectedWrite} from './api-error'
 import {computed,nextTick,ref,watch} from 'vue'
 import {Check,Copy,Download,FileCheck2,RefreshCw,Send,ShieldCheck} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
@@ -129,7 +130,12 @@ async function save(){
     emit('saved');await read()
   }catch(e){
     if(saved){state.value=null;error.value='操作已提交，但未能重读风险处置回执。'}
-    else formError.value=message(e,'未能确认提交结果。')
+    else if(isRejectedWrite(e)){
+      attempt=undefined;issued.value=null
+      try{await read()}catch{state.value=null;reset()}
+      if(!action.value)error.value=incoming.value?unavailable:e.message
+      else formError.value=e.message
+    }else formError.value=message(e,'未能确认提交结果。')
   }finally{saving.value=false}
 }
 </script>

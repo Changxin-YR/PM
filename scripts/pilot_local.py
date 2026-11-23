@@ -215,33 +215,37 @@ def ready():
 
 
 def configure_models():
+    from pmo.model_gateway import PROTOCOLS, endpoint
+
     pilots = read('pilots.json', {})
     if not PILOT_CODES <= pilots.keys():
         raise ValueError('Create both pilot projects before setting the model scope.')
     print(f'{WEB} | {DB_NAME} | synthetic projects only. No network request or service change on save.')
-    print('The URL must implement the PMO JSON contract; choose the actual version at the gateway.')
+    print('Choose pmo_json (PMO contract) or chat_completions_json (complete JSON-mode chat endpoint).')
     for name in CHANNELS:
         if input(f'Configure {name} gateway? [y/N] ').strip().lower() != 'y':
             continue
-        uri = httpx.URL(input('Compatible gateway URL: ').strip())
-        if (uri.scheme != 'https' and not (uri.scheme == 'http' and uri.host in ('127.0.0.1', '::1'))
-                or not uri.host or uri.username or uri.password or uri.query or uri.fragment):
-            raise ValueError('Expected HTTPS or literal loopback HTTP, without embedded credentials or query.')
-        version = input('Gateway-selected model/version (label only): ').strip()
+        protocol = input('Protocol [pmo_json]: ').strip() or 'pmo_json'
+        if protocol not in PROTOCOLS:
+            raise ValueError('Unsupported model protocol.')
+        uri = endpoint(input('Complete endpoint URL (no path will be appended): ').strip())
+        version = input('Actual model ID/version (for pmo_json select it at the gateway): ').strip()
         if not version or len(version) > 160 or not version.isprintable():
             raise ValueError('Model version label is required.')
         raw = input('Project codes [SIM-EXEC-001,SIM-NEW-001]: ').strip()
-        codes = raw.split(',') if raw else sorted(PILOT_CODES)
+        codes = [code.strip() for code in raw.split(',')] if raw else sorted(PILOT_CODES)
         if not set(codes) <= PILOT_CODES or len(set(codes)) != len(codes):
             raise ValueError('Only the two synthetic pilot projects can be selected.')
         token = getpass('Gateway bearer token (blank if none): ')
         if token and (not token.isascii() or any(c.isspace() or not c.isprintable() for c in token)):
             raise ValueError('Invalid bearer token format.')
-        save(f'model-{name}.json', dict(url=str(uri), version=version, projects=codes, token=token))
+        save(f'model-{name}.json', dict(url=str(uri), version=version, protocol=protocol, projects=codes, token=token))
         print(f'{name}: saved locally; not loaded or called.')
 
 
 def model_env(active):
+    from pmo.model_gateway import PROTOCOLS, endpoint
+
     pilots = read('pilots.json', {})
     api = {flag: '0' for flag in CHANNELS.values()}
     worker = {'PMO_REPORT_ANALYSIS': '0'}
@@ -252,15 +256,22 @@ def model_env(active):
             if not config:
                 continue
             codes = config['projects']
-            if not codes or not set(codes) <= PILOT_CODES or not set(codes) <= pilots.keys():
+            protocol = config.get('protocol', 'pmo_json')
+            version = config['version']
+            token = config['token']
+            if (not codes or len(set(codes)) != len(codes) or not set(codes) <= PILOT_CODES or not set(codes) <= pilots.keys()
+                    or protocol not in PROTOCOLS or not version.strip() or len(version) > 160 or not version.isprintable()
+                    or not token.isascii() or any(c.isspace() or not c.isprintable() for c in token)):
                 raise ValueError('Invalid synthetic gateway scope.')
             dest = api if name == 'assistant' else worker
             prefix = 'PMO_' + name.upper() + '_MODEL'
-            dest[prefix + '_URL'] = config['url']
-            dest[prefix + '_TOKEN'] = config['token']
+            dest[prefix + '_URL'] = str(endpoint(config['url']))
+            dest[prefix + '_TOKEN'] = token
+            dest[prefix + '_PROTOCOL'] = protocol
+            dest[prefix + '_VERSION'] = version
             dest[prefix + '_PROJECTS'] = api[prefix + '_PROJECTS'] = ','.join(pilots[code]['id'] for code in codes)
             dest[flag] = api[flag] = '1'
-            loaded[name] = {'version': config['version'], 'projects': codes}
+            loaded[name] = {'version': version, 'protocol': protocol, 'projects': codes}
         if not loaded:
             raise ValueError('No gateway has been configured.')
     return api, worker, loaded

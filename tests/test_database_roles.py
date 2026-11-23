@@ -55,7 +55,9 @@ def serve(url, tmp_path, *, evidence_dir=None, extra_env=None):
     env = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False),
            'PMO_LOCAL_HTTP': '1', 'PMO_EVIDENCE_DIR': str(evidence_dir or (tmp_path / 'private')),
            'PMO_REPORT_ANALYSIS': '0', 'PMO_ASSISTANT_PREVIEWS': '0', **(extra_env or {})}
-    proc = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'pmo.api:app', '--host', '127.0.0.1',
+    from conftest import acceptance_api
+
+    proc = subprocess.Popen([sys.executable, '-m', 'uvicorn', *acceptance_api(), '--host', '127.0.0.1',
                              '--port', str(port), '--no-access-log'], env=env)
     try:
         with httpx.Client(base_url=f'http://127.0.0.1:{port}/api/v1/', trust_env=False) as api:
@@ -220,6 +222,26 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             completed, = data(api.get(report_path(report)+'/analysis-runs'))['items']
             assert completed['runId']==analysis['runId'] and completed['errorCode']=='MODEL_DISABLED'
             assert completed['status']=='manual' and completed['fallbackTaskId']
+            # The same restricted API role can consume a real queued task in an independent process.
+            from test_model_compatible_gateway import completion
+            from test_report_analysis import NARRATIVE, answer, gateway
+
+            extract = data(api.post(path + '/reports', headers=key(), json=body(period=week_key(datetime.now(TZ).date()),
+                narrative=NARRATIVE)))
+            queued = data(api.post(report_path(extract)+'/analyze', headers=key(extract['revision']), json={}))
+            assert queued['status'] == 'queued'
+            with gateway(completion(answer())) as (url, seen):
+                worker_env = {**scan_env, 'PMO_REPORT_ANALYSIS':'1', 'PMO_REPORT_MODEL_URL':url,
+                    'PMO_REPORT_MODEL_PROTOCOL':'chat_completions_json', 'PMO_REPORT_MODEL_VERSION':'fixture-worker',
+                    'PMO_REPORT_MODEL_PROJECTS':pid}
+                process = subprocess.run([sys.executable,'-m','pmo.report_analysis_worker'], check=True,
+                    capture_output=True,text=True,env=worker_env,timeout=30)
+                assert 'processed: 1' in process.stdout
+            ready, = data(api.get(report_path(extract)+'/analysis-runs'))['items']
+            assert ready['runId'] == queued['runId'] and ready['status'] == 'ready'
+            assert [item['typedValue'] for item in ready['candidates']] == ['2.50']
+            assert len(seen) == 1 and seen[0]['model'] == 'fixture-worker'
+            assert data(api.get(report_path(extract)+'/facts'))['items'] == []
             drafts = path+'/reports/weekly-drafts'
             basis_read = data(api.get(path+'/reports'))
             generated = data(api.post(drafts, headers=key(basis_read['weeklyGenerationRevision']), json={'period':report['period']}))

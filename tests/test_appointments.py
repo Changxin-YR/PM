@@ -50,6 +50,7 @@ def test_separate_nominate_issue_and_decide(live,actor,decision):
             for person in (issuer,nominee):
                 c.execute(sa.text("INSERT INTO appointment_authorities(org_id,person_id,role,authority_ref,expires_at) VALUES(:o,:p,'pm','SYNTHETIC',now()+interval '1 hour')"),dict(o=org,p=person))
         assert recipient.post(invite+'issue',headers=key(1)).status_code==403
+        assert stranger.get('me/appointment-queue').json()['data']==[]
         assert len(office.get('me/appointment-queue').json()['data'])==1
         issuekey=key(1); issued=office.post(invite+'issue',headers=issuekey)
         assert issued.status_code==200 and issued.json()==office.post(invite+'issue',headers=issuekey).json()

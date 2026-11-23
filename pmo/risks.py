@@ -8,6 +8,7 @@ from pydantic import Field, StrictBool, model_validator
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
+from .pagination import pg_offset
 from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import finish, project_access, replay
@@ -49,13 +50,13 @@ class Update(Strict):
 class Risk(Strict):
     riskId: UUID
     projectId: UUID
-    ownerId: UUID | None
+    ownerId: UUID | None = None
     statement: str
     prob: Rating
     impact: Rating
     response: str
     isBlocking: bool
-    blockedSince: datetime | None
+    blockedSince: datetime | None = None
     status: str
     revision: int
     canEdit: bool | None=None
@@ -89,7 +90,7 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
         project=project_access(c,a,projectId)
         cond=r.c.project_id==projectId
         total=c.scalar(sa.select(sa.func.count()).select_from(r).where(cond))
-        rows=c.execute(sa.select(r).where(cond).order_by(r.c.is_blocking.desc(),r.c.created_at.desc(),r.c.id).offset((page-1)*pageSize).limit(pageSize)).mappings()
+        rows=c.execute(sa.select(r).where(cond).order_by(r.c.is_blocking.desc(),r.c.created_at.desc(),r.c.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings()
         items=[view(row) for row in rows]
         manage=project.stage in WRITABLE and can_manage(c,a,project) if a.kind=='human' else None
         if a.kind=='human':

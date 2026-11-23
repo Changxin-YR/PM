@@ -85,6 +85,8 @@ def test_admin_scope_and_live_issuer_authority(live,actor):
         auth={'Authorization':'Bearer '+secret,'Idempotency-Key':uuid4().hex}
         pid=api.post('/api/v1/projects',headers=auth,json={'code':'AFTER','name':'After issuance'}).json()['data']['projectId']
         assert owner.get(admin).status_code==403 and tid not in outsider.get(admin).text
+        assert tid not in outsider.get(path).text
+        assert outsider.post(f'{path}/{tid}/revoke',headers=headers(2),json={'reason':'Not my token'}).status_code==404
         assert outsider.post(f'{admin}/{tid}/revoke',headers=headers(2),json={'reason':'Outside scope'}).status_code==404
         assert owner.post(f'{path}/{tid}/revoke',headers=headers(1),json={'reason':'Old scope'}).status_code==409
         with engine.begin() as c:
