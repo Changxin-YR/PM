@@ -90,7 +90,7 @@ async function send(attempt:Attempt){
 </script>
 
 <template>
-  <section class="reconciliation" aria-label="成本对账" :aria-busy="loading">
+  <section class="panel reconciliation" aria-label="成本对账" :aria-busy="loading">
     <div class="toolbar reconcile-toolbar">
       <h3>成本对账</h3>
       <el-tag v-if="state?.policyStatus==='POLICY_PENDING'" size="small" type="warning">策略待签核</el-tag>
@@ -184,15 +184,16 @@ async function send(attempt:Attempt){
 .reconciliation p{margin:.3rem 0}
 .signed-note{color:var(--el-color-primary)}
 .measure-grid,.reason-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.75rem}
-.measure,.variance,.trace{border-top:1px solid var(--el-border-color);margin-top:.7rem;padding-top:.5rem}
+.measure,.variance,.trace{border-top:1px solid var(--pmo-line);margin-top:12px;padding-top:8px}
+.measure{border:1px solid var(--pmo-line);border-radius:8px;background:var(--pmo-bg);padding:16px}
 .reconciliation dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.3rem .6rem;margin:.5rem 0}
 .reconciliation dd{margin:0;font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
-.reconciliation a{color:var(--el-color-primary);display:inline-flex;align-items:center;gap:.3rem;max-width:100%}
+.reconciliation a{color:var(--pmo-primary-hover);display:inline-flex;align-items:center;gap:.3rem;max-width:100%}
 .reconciliation a svg{flex:none}
 .sources summary{cursor:pointer}
 .source{display:block}
 .sign-form{gap:.75rem}
 .reason-fields{min-width:0;border:0;padding:0;margin:0}
 .reason-fields legend{padding:0;font-weight:600;margin-bottom:.35rem}
-.reason-fields select{width:100%;border:1px solid var(--el-border-color);border-radius:var(--el-border-radius-base);color:inherit;background:var(--el-bg-color);font:inherit;padding:.4rem}
+.reason-fields select{width:100%;min-width:0}
 </style>

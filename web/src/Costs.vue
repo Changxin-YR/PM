@@ -19,13 +19,24 @@ async function save(){busy.value=true;error.value='';try{const budget=action.val
  }catch(e){error.value=String(e)}finally{busy.value=false}}
 onMounted(refresh)
 </script>
-<template><div class="toolbar"><span>成本与人天</span><el-button aria-label="刷新成本" title="刷新成本" :disabled="busy||!!action" @click="refresh"><RefreshCw :size="15"/></el-button></div>
+<template><section class="panel cost-summary">
+<div class="toolbar"><h3>成本与人天</h3><el-button aria-label="刷新成本" title="刷新成本" :disabled="busy||!!action" @click="refresh"><RefreshCw :size="15"/></el-button></div>
 <el-alert v-if="error" type="error" :title="error" :closable="false"/><span role="status">{{notice}}</span>
 <div class="columns" v-if="data"><section v-for="k in kinds" :key="k" :aria-label="labels[k]"><h3>{{labels[k]}}</h3><dl>
 <dt>获批预算</dt><dd>{{data[k].budget}}</dd><dt>核验实际</dt><dd>{{data[k].actual}}</dd><dt>剩余预测</dt><dd>{{data[k].forecastRemaining}}</dd><dt>预计总额</dt><dd>{{data[k].projectedTotal}}</dd><dt>偏差率</dt><dd>{{data[k].varianceRate===undefined||data[k].varianceRate==='UNAVAILABLE'?'不可用':(Number(data[k].varianceRate)*100).toFixed(2)+'%'}}</dd><dt>成本线</dt><dd>{{colors[data[k].color]}}</dd><dt>预算草稿</dt><dd>{{data.plan[k==='money'?'moneyBudget':'effortBudget']??'未填写'}}</dd></dl>
 <el-button v-if="data.canSaveBudget" :disabled="busy||!!action" @click="open(k,'budget')"><Pencil :size="14"/>修改预算草稿</el-button><el-button v-if="data.canSaveForecast" :disabled="busy||!!action" @click="open(k,'forecast')"><Pencil :size="14"/>修改预测</el-button></section></div>
 <form v-if="action" @submit.prevent="save"><label>{{labels[kind]}} · {{action==='budget'?'预算草稿':'剩余预测'}}<input v-model="value" inputmode="decimal" pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?" required></label>
 <label v-if="action==='forecast'">预测原因<textarea v-model="reason" minlength="3" maxlength="2000" required/></label><div class="actions"><el-button :disabled="busy" @click="action=''">取消</el-button><el-button type="primary" native-type="submit" :loading="busy"><Save :size="15"/>保存成本</el-button></div></form>
+</section>
 <CostReconciliation :project-id="projectId" :api="api" :costs-busy="busy||!!action"/>
 <Postings :project-id="projectId" :api="api" @changed="refresh"/></template>
-<style scoped>.columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:1.25rem}dl{display:grid;grid-template-columns:auto 1fr;gap:.45rem}dd{text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin:0}form{display:grid;gap:.75rem;margin-top:1rem}</style>
+<style scoped>
+.columns {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:16px}
+.columns section,.cost-summary form {min-width:0;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px;padding:16px}
+.columns h3 {margin:0;font-size:16px}
+dl {display:grid;grid-template-columns:auto minmax(0,1fr);gap:0;margin:8px 0 12px}
+dt,dd {padding:8px 0;border-bottom:1px solid var(--pmo-line)}
+dt {color:var(--pmo-secondary)}
+dd {text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin:0}
+.cost-summary form {display:grid;gap:12px;margin-top:16px}
+</style>

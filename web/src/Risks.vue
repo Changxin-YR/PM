@@ -20,7 +20,7 @@ async function save(){busy.value=true;error.value='';try{const row=edit.value,fi
  }catch(e){error.value=String(e)}finally{busy.value=false}}
 onMounted(()=>load())
 </script>
-<template><div class="toolbar"><span>项目风险 · {{total}}</span><el-button v-if="canCreate" :disabled="form||loading" @click="open(null)"><Plus :size="15"/>登记风险</el-button><el-button aria-label="刷新风险" title="刷新风险" :disabled="busy" @click="load()"><RefreshCw :size="15"/></el-button></div>
+<template><section class="panel risk-panel"><div class="toolbar"><span>项目风险 · {{total}}</span><el-button v-if="canCreate" :disabled="form||loading" @click="open(null)"><Plus :size="15"/>登记风险</el-button><el-button aria-label="刷新风险" title="刷新风险" :disabled="busy" @click="load()"><RefreshCw :size="15"/></el-button></div>
 <el-alert v-if="error" type="error" :title="error" :closable="false"/><form v-if="form" @submit.prevent="save">
 <label>风险描述<textarea v-model="statement" minlength="5" maxlength="3000" required/></label>
 <div class="ratings"><label>概率<input type="number" min="1" max="5" step="1" v-model.number="prob" required></label><label>影响<input type="number" min="1" max="5" step="1" v-model.number="impact" required></label></div>
@@ -34,5 +34,5 @@ onMounted(()=>load())
 </div></template></el-table-column></el-table>
 <el-pagination v-if="total>20" :current-page="page" :total="total" :page-size="20" layout="prev,pager,next" @current-change="load"/>
 <RiskResolution v-if="resolutionId" :key="resolutionId" v-model="resolutionOpen" :risk-id="resolutionId" :api="api" @saved="load()"/>
-</template>
-<style scoped>form{display:grid;gap:10px;padding:12px 0}.ratings{display:flex;gap:12px}.ratings label{width:6rem}.flag{display:flex;align-items:center;gap:6px}.flag input{width:auto}.risk-actions{display:flex;align-items:center;gap:2px}.risk-actions :deep(.el-button){padding:7px}</style>
+</section></template>
+<style scoped>form{display:grid;gap:12px;padding:16px;margin:0 0 16px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}.ratings{display:flex;gap:12px}.ratings label{width:6rem}.flag{display:flex;align-items:center;gap:6px}.flag input{width:auto}.risk-actions{display:flex;align-items:center;gap:2px}.risk-actions :deep(.el-button){padding:7px}</style>

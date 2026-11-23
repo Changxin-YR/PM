@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {onBeforeUnmount,ref,watch} from 'vue'
-import {ArrowRight,RefreshCw} from 'lucide-vue-next'
+import {ArrowRight,Info} from 'lucide-vue-next'
 
 type StageReceipt={fromStage:string;toStage:string;fromRevision:number;toRevision:number;transitionedAt:string;requestId:string;
   reviewId?:string;approvalRequestId?:string}
@@ -8,11 +8,12 @@ const activityNames={risk_created:'风险已登记',change_requested:'变更已�
 type Activity={kind:keyof typeof activityNames;resourceId:string;occurredAt:string}
 type Indicators={asOf:string;health:'green'|'yellow'|'red'|'untrusted'|'unavailable';publication:'official'|'preview'|'withheld'|'unavailable';
   timeLine?:'green'|'yellow'|'red';moneyVarianceRate?:string;effortVarianceRate?:string;requirementSatisfactionRate?:string}
-type Detail={project:{projectId:string;code:string;stage:string;revision:number};materialsVisible:boolean;indicators?:Indicators;
+type Identity={projectId:string;code:string;name:string;stage:string;revision:number}
+type Detail={project:Identity;materialsVisible:boolean;indicators?:Indicators;
   charterSummary?:{isFrozen:boolean;revision:number;valueProp?:string;targetClient?:string;roughCost?:string;roughEffort?:string;roughDurationDays?:number};
   recentTransitions:StageReceipt[];recentActivity?:Activity[]}
 const props=defineProps<{projectId:string;active:boolean;stages:Record<string,string>;api:(path:string)=>Promise<any>}>()
-const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number];navigate:[tab:string];openChange:[changeId:string]}>()
+const emit=defineEmits<{projectRead:[project:Identity];navigate:[tab:string];openChange:[changeId:string]}>()
 const data=ref<Detail|null>(null),loading=ref(false),error=ref(''),refs=ref<string[]>([])
 const colors={green:'绿',yellow:'黄',red:'红',untrusted:'数据不可信',unavailable:'不可用'}
 const tags={green:'success',yellow:'warning',red:'danger',untrusted:'warning',unavailable:'info'} as const
@@ -27,24 +28,22 @@ async function read(){
     const response:{data:Detail;meta:{sourceRefs:string[]}}=await props.api(`project-overview/${props.projectId}`)
     if(id!==sequence)return
     data.value=response.data;refs.value=response.meta.sourceRefs
-    const {project}=response.data
-    emit('stageRead',project.projectId,project.stage,project.revision)
+    emit('projectRead',response.data.project)
   }catch(e){if(id===sequence){data.value=null;refs.value=[];error.value=e instanceof TypeError?'无法连接服务。':e instanceof Error?e.message:'读取失败。'}}
   finally{if(id===sequence)loading.value=false}
 }
 watch(()=>props.active,active=>{if(active)void read()},{immediate:true})
 onBeforeUnmount(()=>{sequence++})
+defineExpose({refresh:read,loading})
 </script>
 
 <template>
-  <section aria-label="项目概览" :aria-busy="loading">
-    <div class="overview-heading">
-      <div v-if="data" class="meta"><strong>{{data.project.code}}</strong><el-tag size="small" type="info" effect="plain">{{stages[data.project.stage]??data.project.stage}}</el-tag><span>版本 {{data.project.revision}}</span></div>
-      <span v-else>{{loading?'读取项目概览…':'项目概览'}}</span>
-      <el-button aria-label="刷新项目概览" title="刷新项目概览" :disabled="loading" @click="read"><RefreshCw :size="15"/></el-button>
-    </div>
+  <section class="overview" aria-label="项目概览" :aria-busy="loading">
     <el-alert v-if="error" :title="error" type="error" :closable="false"/>
-    <p v-else-if="data&&!data.materialsVisible" class="muted">当前账号仅可查看项目基本信息。</p>
+    <div v-else-if="loading&&!data" class="overview-section" role="status">
+      <p class="muted">读取项目概览…</p><el-skeleton :rows="3" animated/>
+    </div>
+    <p v-else-if="data&&!data.materialsVisible" class="overview-message"><Info :size="16" aria-hidden="true"/>当前账号仅可查看项目基本信息。</p>
     <template v-else-if="data">
       <section class="overview-section" aria-label="立项概要">
         <h3>立项概要</h3>
@@ -62,7 +61,7 @@ onBeforeUnmount(()=>{sequence++})
       </section>
       <section v-if="data.indicators" class="overview-section" aria-label="当前四指标">
         <div class="overview-heading"><h3>当前四指标</h3><el-button text @click="emit('navigate','health')">三线健康 <ArrowRight :size="15"/></el-button></div>
-        <div class="meta"><el-tag :type="tags[data.indicators.health]" size="small" effect="plain">{{colors[data.indicators.health]}}</el-tag>
+        <div class="meta indicator-status"><el-tag :type="tags[data.indicators.health]" size="small" effect="plain">{{colors[data.indicators.health]}}</el-tag>
           <span>{{publication[data.indicators.publication]}}</span><time :datetime="data.indicators.asOf">{{time(data.indicators.asOf)}} 北京时间</time></div>
         <dl class="overview-metrics">
           <div><dt>时间线</dt><dd>{{data.indicators.timeLine?colors[data.indicators.timeLine]:'不可用'}}</dd></div>
@@ -71,6 +70,7 @@ onBeforeUnmount(()=>{sequence++})
           <div><dt>需求满足率</dt><dd>{{ratio(data.indicators.requirementSatisfactionRate)}}</dd></div>
         </dl>
       </section>
+      <div class="overview-activity">
       <section class="overview-section" aria-label="最近阶段活动">
         <div class="overview-heading"><h3>最近阶段活动</h3><el-button text @click="emit('navigate','lifecycle')">阶段流转 <ArrowRight :size="15"/></el-button></div>
         <p v-if="!data.recentTransitions.length" class="muted">暂无已提交的阶段流转。</p>
@@ -92,17 +92,40 @@ onBeforeUnmount(()=>{sequence++})
           </li>
         </ol>
       </section>
+      </div>
       <details class="overview-section sources"><summary>数据来源</summary><ul><li v-for="source in refs" :key="source"><code>{{source}}</code></li></ul></details>
     </template>
   </section>
 </template>
 
 <style scoped>
-.overview-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem;min-height:32px}.overview-heading strong{color:#24362c;overflow-wrap:anywhere}
-.overview-section{border-top:1px solid #dce2df;padding:.8rem 0}.overview-section h3{font-size:1rem;margin:.15rem 0 .55rem}
-.meta{display:flex;align-items:center;min-width:0;flex-wrap:wrap;gap:.3rem .6rem;color:#516069;font-size:.82rem}.muted{color:#516069;font-size:.84rem;margin:.35rem 0}
-.overview-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.75rem;margin:.7rem 0}.overview-metrics div{border-left:2px solid #d7e2df;padding:0 .55rem;min-width:0}
-dt{font-size:.8rem;color:#516069}dd{margin:.25rem 0;font-weight:600;overflow-wrap:anywhere}.purpose,.sources{overflow-wrap:anywhere}.purpose{white-space:pre-wrap}
-.edges{margin:.4rem 0;padding-left:1.15rem}.edges li{padding:.25rem 0}.edges li svg{vertical-align:middle}.edges li .muted{display:block}.sources summary{cursor:pointer}
-.activity li>div{display:inline-block;vertical-align:middle}.activity button{margin-left:.45rem}
+.overview {display:grid;gap:16px;min-width:0}
+.overview-heading {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-height:32px}
+.overview-section {padding:16px 20px;background:var(--pmo-surface);border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-panel);min-width:0}
+.overview-section h3 {font-size:16px;font-weight:600;margin:0}
+.overview-section > h3 {margin-bottom:12px}
+.meta {display:flex;align-items:center;min-width:0;flex-wrap:wrap;gap:4px 8px;color:var(--pmo-muted);font-size:13px}
+.muted {color:var(--pmo-muted);font-size:13px;margin:4px 0}
+.indicator-status,.overview-message {padding:8px 12px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}
+.overview-message {display:flex;align-items:center;gap:8px;color:var(--pmo-secondary);margin:0}
+.indicator-status {margin-top:8px}
+.overview-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:12px 0 4px}
+.overview-metrics div {border-inline-start:2px solid var(--pmo-line);padding-inline-start:12px}
+dt {font-size:13px;color:var(--pmo-secondary)}
+dd {margin:4px 0 0;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.purpose,.sources {overflow-wrap:anywhere}
+.purpose {white-space:pre-wrap;margin:12px 0 4px}
+.overview-activity {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.edges {margin:4px 0 0;padding-inline-start:24px}
+.edges li {padding:8px 0;border-bottom:1px solid var(--pmo-line)}
+.edges li:last-child {border-bottom:0;padding-bottom:0}
+.edges li svg {vertical-align:middle}
+.edges li .muted {display:block}
+.sources summary {cursor:pointer;font-weight:600}
+.activity li>div {display:inline-block;vertical-align:middle}
+.activity button {margin-inline-start:8px}
+@media (max-width:840px) {
+  .overview-activity {grid-template-columns:1fr}
+  .overview-metrics {grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 </style>

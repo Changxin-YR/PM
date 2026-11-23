@@ -18,6 +18,8 @@ let lastAttempt:Attempt|undefined
 const gaps=computed(()=>state.value?.gaps??[])
 const targets=computed(()=>gaps.value.map(row=>row.requirementId))
 const locked=computed(()=>loading.value||saving.value||readFailed.value||!!retry.value)
+const navigationLocked=computed(()=>saving.value||!!retry.value)
+defineExpose({navigationLocked})
 const clean=(s:string)=>s.trim().replace(/\s+/gu,' ').normalize('NFC')
 function statement(value:string){const n=Array.from(value).length;return n>=5&&n<=1000&&/[\p{L}\p{N}]/u.test(value)&&!/\p{C}/u.test(value)}
 const scope=computed(()=>{
@@ -84,7 +86,7 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="exceptions" v-loading="loading">
+  <section class="panel exceptions" v-loading="loading">
     <div class="exception-header">
       <h3>需求书面例外</h3>
       <el-button size="small" :disabled="saving||loading||!!retry" @click="load"><RefreshCw :size="14"/> 重读需求例外</el-button>
@@ -127,14 +129,14 @@ onMounted(load)
 </template>
 
 <style scoped>
-.exceptions{display:grid;gap:.6rem;max-width:54rem;overflow-wrap:anywhere}
+.exceptions{display:grid;gap:12px;overflow-wrap:anywhere}
 .exception-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
 h3,p{margin:.25rem 0}
 form,.gap,label{display:grid;gap:.4rem;min-width:0}
 form{gap:.7rem;justify-items:start}
 form>label,.gap,fieldset,details{width:100%;box-sizing:border-box}
 .gap{border-bottom:1px solid var(--el-border-color);padding:.55rem 0}
-textarea,input:not([type=checkbox]){box-sizing:border-box;padding:.45rem;color:inherit;border:1px solid var(--el-border-color);border-radius:4px;background:var(--el-bg-color);font:inherit}
+
 .check{display:flex;align-items:baseline;gap:.4rem}
 .muted,code{color:var(--el-text-color-secondary)}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;border-left:2px solid var(--el-border-color);padding-left:.6rem}

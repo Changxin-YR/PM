@@ -1,4 +1,5 @@
 import {join} from 'node:path'
+import {showNavigation} from './workspace-navigation.mjs'
 import {chromium, expect} from '@playwright/test'
 
 const url=process.env.PMO_BROWSER_URL
@@ -13,6 +14,7 @@ async function open(role, width){
   await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf), session.csrf)
   const page=await context.newPage()
   await page.goto(url)
+  await showNavigation(page)
   await page.getByRole('button',exact('预警中心')).click()
   await page.getByRole('tab',exact('每周三线')).click()
   return {context,page,panel:page.getByRole('region',exact('每周三线'))}

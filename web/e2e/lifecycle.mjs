@@ -9,10 +9,15 @@ const exact = name => ({name, exact:true})
 const button = (scope, name) => scope.getByRole('button', exact(name))
 const dialog = (page, name) => page.getByRole('dialog', exact(name))
 const project = page => button(page, '查看 '+projectName+' 的项目资料')
-const drawer = page => dialog(page, projectName+' · 项目资料')
+const drawer = page => page.getByRole('region',exact(projectName+' · 项目资料'))
 
 async function closeDialog(panel) {
-  await button(panel,'Close this dialog').click()
+  await button(panel,'关闭此对话框').click()
+  await expect(panel).toBeHidden()
+}
+
+async function closeWorkbench(panel) {
+  await button(panel,'返回评审记录').click()
   await expect(panel).toBeHidden()
 }
 
@@ -81,7 +86,7 @@ async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) 
   const loaded = reviewer.waitForResponse(r=>new URL(r.url()).pathname.endsWith(`/reviews/${receipt.reviewId}/workbench`))
   await button(row,'打开评审工作台').click()
   const state = (await (await loaded).json()).data
-  const workbench = dialog(reviewer,'关口人工工作台')
+  const workbench = reviewer.getByRole('region',exact('关口人工工作台'))
   await button(workbench,'填写评分').click()
   for (const dimension of state.dimensions) {
     const fields = workbench.getByRole('group',exact(dimension.label))
@@ -177,7 +182,7 @@ try {
       const panel=await open(pm,'关口送审')
       const row=panel.getByRole('row').filter({has:pm.getByRole('cell',exact(original))})
       await button(row,'打开评审工作台').click()
-      return dialog(pm,'关口人工工作台')
+      return pm.getByRole('region',exact('关口人工工作台'))
     }
     const workbench=await openOriginal()
     await button(workbench,'撤回评审').click()
@@ -189,7 +194,7 @@ try {
     await expect(history.getByText('当前阶段：执行中',{exact:true})).toBeVisible()
     const reopened=await openOriginal()
     await expect(reopened.getByText(reason,{exact:true})).toBeVisible()
-    await closeDialog(reopened)
+    await closeWorkbench(reopened)
     await directStage(pm,'已重新核对里程碑完成凭证。','delivering','交付验收')
     const ready=await open(pm,'关口送审')
     await button(ready,'提交结项评审').click()
@@ -297,7 +302,7 @@ try {
     const openClosing=async()=>{
       const reviewing=await open(reviewer,'关口送审')
       await button(reviewing.getByRole('row').filter({has:reviewer.getByRole('cell',exact('结项'))}),'打开评审工作台').click()
-      return dialog(reviewer,'关口人工工作台')
+      return reviewer.getByRole('region',exact('关口人工工作台'))
     }
     const workbench=await openClosing()
     await expect(workbench.getByText(deviation,{exact:true})).toBeVisible()
@@ -371,7 +376,7 @@ try {
     await expect(history.getByRole('listitem')).toHaveCount(20)
     await expect(history.getByText('Synthetic history request 21',{exact:true})).toBeVisible()
     await expect(history.getByText('Synthetic history request 01',{exact:true})).toHaveCount(0)
-    await button(pages,'Go to next page').click()
+    await button(pages,'下一页').click()
     await expect(history.getByRole('listitem')).toHaveCount(1)
     await expect(history.getByText('Synthetic history request 01',{exact:true})).toBeVisible()
     await expect(current).toBeVisible()
@@ -436,7 +441,7 @@ try {
     await expect(judge.locator('option[value=approve]')).toBeDisabled()
     await closeDialog(judge)
     await button(owner,'我的终止确认').click()
-    const inbox=dialog(owner,'我的终止确认')
+    const inbox=owner.getByRole('region',exact('我的终止确认'))
     await expect(inbox.getByText(requestReason,{exact:true})).toBeVisible()
     await button(inbox,'处理').click()
     await inbox.getByLabel('确认理由',{exact:true}).fill('作为原发起人，确认不再继续该方案。')
@@ -484,7 +489,7 @@ try {
     await write(pm,'POST','/projects/[^/]+/reviews',button(dialog(pm,'确认送审'),'确认送审'))
     const reviewing=await open(reviewer,'关口送审')
     await button(reviewing.getByRole('row').filter({has:reviewer.getByRole('cell',exact('结项'))}),'打开评审工作台').click()
-    const workbench=dialog(reviewer,'关口人工工作台')
+    const workbench=reviewer.getByRole('region',exact('关口人工工作台'))
     await button(workbench,'登记裁决').click()
     await workbench.getByLabel('裁决',{exact:true}).selectOption('pass')
     const reason='独立核对了验收、双口径财务对账和风险关闭凭据。'
@@ -492,7 +497,7 @@ try {
     const outcome=await write(reviewer,'POST','/reviews/[^/]+/decisions',button(workbench,'确认裁决'))
     expect(outcome.decision).toMatchObject({stage:'closed',rationale:reason})
     await expect(workbench.getByText(reason,{exact:true})).toBeVisible()
-    await closeDialog(workbench)
+    await closeWorkbench(workbench)
 
     await pm.reload()
     await directStage(pm,'关闭后的独立项目复盘。','retrospective','复盘')

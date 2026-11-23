@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed,onMounted,ref,watch} from 'vue'
+import {computed,nextTick,onMounted,ref,watch} from 'vue'
 import {ClipboardList,RefreshCw,RotateCcw,Send} from 'lucide-vue-next'
 import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import ReviewWorkbench from './ReviewWorkbench.vue'
@@ -17,16 +17,29 @@ const statuses={draft:'草稿',pending:'待评审',decided:'已裁决'}
 const busy=ref(false),confirm=ref(false),error=ref(''),notice=ref(''),allowed=ref(false)
 const draft=ref<Draft|null>(null),items=ref<Review[]>([]),total=ref(0),revision=ref('')
 const workbenchId=ref(''),workbenchOpen=ref(false)
+const workbench=ref<InstanceType<typeof ReviewWorkbench>|null>(null),reviewsHeading=ref<HTMLElement|null>(null)
+let workbenchTrigger:HTMLElement|null=null
 const gate=computed(()=>draft.value?.gateCheck.gate)
 const retry=ref<Attempt|null>(null)
 const locked=computed(()=>busy.value||!!retry.value)
+const navigationLocked=computed(()=>!!workbench.value?.navigationLocked||(confirm.value&&locked.value))
+defineExpose({navigationLocked})
 const path=`projects/${props.projectId}`
 let seenRevision=0
 
-function openWorkbench(reviewId:string){
+function openWorkbench(reviewId:string,event?:MouseEvent){
+  if(navigationLocked.value)return
+  workbenchTrigger=event?.currentTarget instanceof HTMLElement?event.currentTarget:null
   workbenchId.value=reviewId
   workbenchOpen.value=true
 }
+watch(workbenchOpen,open=>{
+  if(!open)void nextTick(()=>{
+    const target=workbenchTrigger?.isConnected?workbenchTrigger:reviewsHeading.value
+    target?.focus()
+    workbenchTrigger=null
+  })
+})
 
 async function read(){
   draft.value=null;allowed.value=false;revision.value=''
@@ -85,9 +98,9 @@ watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
 </script>
 
 <template>
-  <section class="reviews" aria-label="关口送审" v-loading="busy && !confirm">
+  <section v-show="!workbenchOpen" class="panel reviews" aria-label="关口送审" v-loading="busy && !confirm">
     <div class="review-actions">
-      <h3>当前阶段：{{stageLabel}}</h3>
+      <h3 ref="reviewsHeading" tabindex="-1">当前阶段：{{stageLabel}}</h3>
       <el-button :disabled="locked" @click="refresh"><RefreshCw :size="14"/> 重读阶段与材料</el-button>
     </div>
     <el-alert v-if="notice" :title="notice" type="success" :closable="false" show-icon/>
@@ -106,9 +119,9 @@ watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
     <el-table :data="items" row-key="reviewId" empty-text="暂无评审记录" style="width:100%">
       <el-table-column label="关口" min-width="70"><template #default="{row}">{{labels[row.type as Gate]}}</template></el-table-column>
       <el-table-column label="状态" min-width="84"><template #default="{row}">{{statuses[row.status as Review['status']]}}</template></el-table-column>
-      <el-table-column prop="reviewId" label="评审编号" min-width="156" show-overflow-tooltip/>
+      <el-table-column prop="reviewId" label="评审编号" min-width="180"/>
       <el-table-column label="操作" width="128"><template #default="{row}">
-        <el-button text aria-label="打开评审工作台" @click="openWorkbench(row.reviewId)"><ClipboardList :size="15"/> 工作台</el-button>
+        <el-button text aria-label="打开评审工作台" @click="openWorkbench(row.reviewId,$event)"><ClipboardList :size="15"/> 工作台</el-button>
       </template></el-table-column>
     </el-table>
   </section>
@@ -121,14 +134,15 @@ watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
       <el-button type="primary" :disabled="locked" :loading="busy" @click="submit">确认送审</el-button>
     </template>
   </el-dialog>
-  <ReviewWorkbench v-if="workbenchId" :key="workbenchId" v-model="workbenchOpen" :review-id="workbenchId" :api="api" @saved="refresh"/>
+  <ReviewWorkbench v-if="workbenchId" :key="workbenchId" ref="workbench" v-model="workbenchOpen" :review-id="workbenchId" :api="api" @saved="refresh"/>
 </template>
 
 <style scoped>
 .review-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .reviews h3,.reviews h4{margin:.75rem 0}
 .reviews :deep(.el-alert){margin:.5rem 0}
-.gate-review{border-block:1px solid var(--el-border-color);margin:.5rem 0 1rem;padding-bottom:.75rem}
+.gate-review{border:1px solid var(--pmo-line);background:var(--pmo-bg);border-radius:8px;margin:12px 0 20px;padding:12px 16px}
+.gate-review h4{margin:0 0 12px}
 .gate-review>details,.gate-gaps li{margin-bottom:.5rem}
 .gate-review code{display:block;overflow-wrap:anywhere;padding:.15rem .4rem}
 .gate-gaps{padding-left:1.3rem}

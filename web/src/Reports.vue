@@ -178,7 +178,7 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
 </script>
 
 <template>
-  <section class="reports" aria-label="日报与周报">
+  <section class="panel reports" aria-label="日报与周报">
     <div class="report-toolbar">
       <label>报告类型 <select v-model="filter" aria-label="筛选报告类型" :disabled="busy||!!editor||reading" @change="changeFilter">
         <option value="">全部</option><option value="weekly">周报</option><option value="daily">日报</option>
@@ -319,13 +319,14 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
 .report-toolbar,.report-actions,.report-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .report-actions{justify-content:flex-start}.report-actions :deep(.el-button){margin-left:0}.report-actions svg{margin-right:4px}
 .report-toolbar label{display:flex;align-items:center;gap:8px}.report-toolbar select{width:auto;min-width:96px}
-.report-form,.report-detail{display:grid;gap:12px;border-top:1px solid var(--el-border-color-light);padding:12px 0}
-.report-form h3,.report-detail h3,.report-detail h4{margin:0;font-size:14px}.report-form label{display:grid;gap:4px;min-width:0}
+.report-form,.report-detail{display:grid;gap:16px;border:1px solid var(--pmo-line);background:var(--pmo-bg);border-radius:8px;padding:16px}
+.report-form h3,.report-detail h3,.report-detail h4{margin:0;font-size:16px}.report-form label{display:grid;gap:4px;min-width:0}
 .report-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,136px),1fr));gap:8px;align-items:end}
-.report-form fieldset{min-width:0;padding:8px 10px;border:1px solid var(--el-border-color-light);margin:0}
+.report-form fieldset{min-width:0;padding:12px 16px;border:1px solid var(--pmo-line);background:var(--pmo-surface);border-radius:8px;margin:0}
 .report-form legend{padding:0 4px;font-weight:600}.report-entry{margin-bottom:10px;display:grid;gap:6px}
 .report-entry-text{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:4px}
 .report-read-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}
+.report-read-grid section {min-width:0;padding:12px 16px;background:var(--pmo-surface);border:1px solid var(--pmo-line);border-radius:8px}
 .report-read-grid ul{padding-left:18px;margin:6px 0}.report-read-grid li{margin-bottom:6px;overflow-wrap:anywhere}
 .report-meta{justify-content:flex-start;gap:16px;margin:0}.report-meta div{display:flex;align-items:baseline;gap:7px}.report-meta dd{margin:0}
 .report-copy{display:block;white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0}

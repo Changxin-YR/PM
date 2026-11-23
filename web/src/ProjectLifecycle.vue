@@ -122,7 +122,7 @@ async function send(attempt:Attempt){
 </script>
 
 <template>
-  <section class="lifecycle" aria-label="项目生命周期" :aria-busy="busy">
+  <section class="panel lifecycle" aria-label="项目生命周期" :aria-busy="busy">
     <div class="toolbar lifecycle-toolbar">
       <div v-if="state" class="stage-heading">
         <strong>当前阶段：{{stageName(state.stage)}}</strong>

@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL
 const sessions=JSON.parse(process.env.PMO_TEST_SESSIONS)
@@ -16,7 +17,8 @@ async function actor(role,width){
 
 async function reports(page){
   await button(page,'查看 Synthetic review 的项目资料').click()
-  const drawer=page.getByRole('dialog',{name:'Synthetic review · 项目资料',exact:true})
+  const drawer=page.getByRole('region',{name:'Synthetic review · 项目资料',exact:true})
+  await showNavigation(page)
   await drawer.getByRole('tab',{name:'日报周报',exact:true}).click()
   return drawer.getByRole('region',{name:'日报与周报',exact:true})
 }

@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {returnToLedger, showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL, sessions=JSON.parse(process.env.PMO_TEST_SESSIONS)
 const browser=await chromium.launch({channel:process.env.PMO_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':'chromium')})
@@ -7,7 +8,7 @@ const button=(root,name)=>root.getByRole('button',exact(name))
 
 async function project(page, tab){
   await button(page,'查看 Synthetic review 的项目资料').click()
-  const dialog=page.getByRole('dialog',exact('Synthetic review · 项目资料'))
+  const dialog=page.getByRole('region',exact('Synthetic review · 项目资料'))
   await dialog.getByRole('tab',exact(tab)).click()
   return dialog
 }
@@ -48,8 +49,9 @@ try {
   await expect(drawer.getByText(gap,{exact:true})).toHaveCount(0)
 
   const reviewer=await actor('reviewer',504)
+  await showNavigation(reviewer)
   await button(reviewer,'我的审批收件箱').click()
-  const inbox=reviewer.getByRole('dialog',exact('我的审批收件箱'))
+  const inbox=reviewer.getByRole('region',exact('我的审批收件箱'))
   const pending=inbox.getByRole('listitem').filter({hasText:'需求变更'})
   await expect(pending.getByText('可批准 / 可拒绝',{exact:false})).toBeVisible()
   const opened=reviewer.waitForResponse(r=>{
@@ -58,7 +60,7 @@ try {
   })
   await button(pending,'打开记录').click()
   expect((await opened).status()).toBe(200)
-  const review=reviewer.getByRole('dialog',exact('Synthetic review · 项目资料'))
+  const review=reviewer.getByRole('region',exact('Synthetic review · 项目资料'))
   await expect(button(review,'申请新增需求')).toHaveCount(0)
   await button(review.getByRole('row').filter({hasText:reason}),'审核变更').click()
   const decision=reviewer.getByRole('dialog',exact('审核变更'))
@@ -66,7 +68,8 @@ try {
   await decision.getByLabel('裁决理由').fill('核对范围与验收标准后批准。')
   expect((await post(reviewer,button(decision,'确认裁决'),`/changes/${request.changeId}/approve`)).status).toBe('applied')
   await expect(review.getByRole('row').filter({hasText:reason}).getByText('已生效',{exact:true})).toBeVisible()
-  await review.locator('.el-drawer__close-btn').click()
+  await returnToLedger(reviewer)
+  await showNavigation(reviewer)
   await button(reviewer,'我的审批收件箱').click()
   await expect(inbox.getByText('可处理 · 0')).toBeVisible()
   await pm.reload()

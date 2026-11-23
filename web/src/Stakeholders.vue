@@ -27,6 +27,7 @@ async function save(){
 onMounted(()=>load())
 </script>
 <template>
+  <section class="panel stakeholder-panel">
   <div class="toolbar"><span>项目联系人 · {{total}} 人</span>
     <el-button v-if="['drafting','designing'].includes(stage)" :disabled="editing" @click="open"><Plus :size="15"/>登记联系人</el-button>
     <el-button aria-label="刷新联系人" title="刷新联系人" @click="load()"><RefreshCw :size="15"/></el-button>
@@ -45,5 +46,6 @@ onMounted(()=>load())
     <el-table-column prop="influence" label="影响力"/><el-table-column prop="expectation" label="期望" min-width="150"/>
   </el-table>
   <el-pagination v-if="total>pageSize" :current-page="page" :total="total" :page-size="pageSize" layout="prev,pager,next" @current-change="load"/>
+  </section>
 </template>
-<style scoped>form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));gap:12px;padding:14px 0}.actions{grid-column:1/-1}textarea{resize:vertical;min-height:3rem}</style>
+<style scoped>form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));gap:12px;padding:16px;margin:0 0 16px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}.actions{grid-column:1/-1}textarea{resize:vertical;min-height:3rem}</style>

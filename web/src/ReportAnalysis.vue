@@ -82,9 +82,9 @@ onBeforeUnmount(()=>{++epoch;cancelTimer()})
 </template>
 
 <style scoped>
-.analysis{display:grid;gap:6px;min-width:0;padding:8px 0;border-top:1px solid var(--el-border-color-light)}
+.analysis{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid var(--pmo-line);border-radius:8px;background:var(--pmo-bg)}
 .analysis-toolbar,.analysis-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.analysis-toolbar{justify-content:space-between}
 .analysis-actions :deep(.el-button){margin-left:0}.analysis svg{margin-right:4px}.analysis-run{border-top:1px solid var(--el-border-color-lighter);padding:6px 0}
-.analysis-muted{color:var(--el-text-color-secondary);margin:0}.analysis-proposal{padding:6px 0;overflow-wrap:anywhere}
-.analysis-proposal blockquote{margin:3px 0;padding-left:8px;border-left:2px solid var(--el-border-color);white-space:pre-wrap}
+.analysis-muted{color:var(--el-text-color-secondary);margin:0}.analysis-proposal{padding:8px 0;overflow-wrap:anywhere}
+.analysis-proposal blockquote{margin:4px 0;padding-left:12px;border-left:2px solid var(--el-border-color);white-space:pre-wrap}
 </style>

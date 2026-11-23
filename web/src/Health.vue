@@ -81,7 +81,7 @@ async function send(){
 </script>
 
 <template>
-  <section aria-label="三线健康" :aria-busy="loading||saving">
+  <section class="panel" aria-label="三线健康" :aria-busy="loading||saving">
     <div class="toolbar health-toolbar">
       <h3>当前健康</h3>
       <div class="controls">
@@ -150,10 +150,10 @@ async function send(){
 
 <style scoped>
 .health-toolbar,.controls,.history-meta,.health-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}
-.health-toolbar{justify-content:space-between}.health-toolbar h3{margin:.4rem 0}.health-meta{color:#516069;font-size:.88rem}
+.health-toolbar{justify-content:space-between}.health-toolbar h3{margin:.4rem 0}.health-meta{color:var(--pmo-muted);font-size:.88rem}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:.65rem;margin:1rem 0}
-.metrics div{border-left:2px solid #d7e2df;padding:.3rem .7rem}.metrics dt{font-size:.86rem;color:#516069}.metrics dd{margin:.25rem 0;font-weight:650;font-size:1.05rem}
-.trace,.appeal{font-size:.88rem;overflow-wrap:anywhere;margin:.5rem 0}.trace summary{cursor:pointer;color:#176b56}.trace ul,.gaps{padding-inline-start:1.3rem}
-.history{padding:0;list-style:none}.history>li{border-top:1px solid #dfe6e4;padding:.75rem 0}.history time{font-variant-numeric:tabular-nums}
+.metrics div{border-left:2px solid var(--pmo-line);padding:.3rem .7rem}.metrics dt{font-size:.86rem;color:var(--pmo-muted)}.metrics dd{margin:.25rem 0;font-weight:650;font-size:1.05rem}
+.trace,.appeal{font-size:.88rem;overflow-wrap:anywhere;margin:.5rem 0}.trace summary{cursor:pointer;color:var(--pmo-primary-hover)}.trace ul,.gaps{padding-inline-start:1.3rem}
+.history{padding:0;list-style:none}.history>li{border-top:1px solid var(--pmo-line);padding:.75rem 0}.history time{font-variant-numeric:tabular-nums}
 .appeal{display:grid;grid-template-columns:5rem minmax(0,1fr);gap:.25rem}.appeal dd{margin:0}
 </style>

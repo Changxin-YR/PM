@@ -1,24 +1,34 @@
 <script setup lang="ts">
-import {ref} from 'vue'
-import {ArrowLeft,Eye,ListChecks,Search} from 'lucide-vue-next'
+import {nextTick,onMounted,ref} from 'vue'
+import {ArrowLeft,Eye,Search} from 'lucide-vue-next'
 type Entry={auditId:string;createdAt:string;requestId:string;actorType:'human'|'agent';actorId:string;action:string;result:'success'|'denied'|'failed';
   errorCode?:string;delegatedBy?:string;projectId?:string;decisionId?:string;ruleVersion?:string;sourceRefs?:string[];previousHash?:string;responseHash?:string}
 const props=defineProps<{api:(path:string)=>Promise<any>}>()
 const labels={success:'成功',denied:'拒绝',failed:'失败'}
-const show=ref(false),items=ref<Entry[]>([]),rid=ref(''),outcome=ref(''),error=ref(''),busy=ref(false),page=ref(1),total=ref(0)
+const items=ref<Entry[]>([]),rid=ref(''),outcome=ref(''),error=ref(''),busy=ref(false),page=ref(1),total=ref(0)
 const selected=ref<Entry|null>(null)
+const detailHeading=ref<HTMLHeadingElement>()
 let seq=0,filter=''
 function search(){filter=new URLSearchParams([...(rid.value.trim()?[['requestId',rid.value.trim()]]:[]),...(outcome.value?[['result',outcome.value]]:[])]).toString();void load(1)}
 async function load(n:number){const id=++seq;busy.value=true;error.value='';selected.value=null;try{
   const {data}=await props.api(`admin/audits?page=${n}&${filter}`);if(id===seq){items.value=data.items;total.value=data.total;page.value=n}
 }catch(e){if(id===seq){error.value=e instanceof Error?e.message:'读取失败';items.value=[];total.value=0}}finally{if(id===seq)busy.value=false}}
-function open(){rid.value='';outcome.value='';show.value=true;search()}
+onMounted(search)
+function showDetail(entry:Entry){
+  selected.value=entry
+  void nextTick(()=>detailHeading.value?.focus())
+}
+function returnToList(){
+  const auditId=selected.value?.auditId
+  selected.value=null
+  void nextTick(()=>{if(auditId)document.getElementById(`audit-detail-${auditId}`)?.focus()})
+}
 </script>
-<template><el-button @click="open"><ListChecks :size="16"/>审计记录</el-button>
-<el-drawer v-model="show" title="组织审计记录" size="min(960px,100vw)" destroy-on-close>
+<template>
+<section class="panel" aria-label="组织审计记录">
   <section v-if="selected" aria-label="审计详情">
-    <el-button :icon="ArrowLeft" @click="selected=null">返回审计记录</el-button>
-    <h3>{{selected.action}} · {{labels[selected.result]}}</h3>
+    <el-button :icon="ArrowLeft" @click="returnToList">返回审计记录</el-button>
+    <h2 ref="detailHeading" tabindex="-1">{{selected.action}} · {{labels[selected.result]}}</h2>
     <dl class="audit-details">
       <dt>时间</dt><dd>{{new Date(selected.createdAt).toLocaleString('zh-CN')}}</dd>
       <dt>请求编号</dt><dd><code>{{selected.requestId}}</code></dd>
@@ -36,13 +46,13 @@ function open(){rid.value='';outcome.value='';show.value=true;search()}
     </dl>
   </section>
   <template v-else>
-  <form class="toolbar" @submit.prevent="search"><label>请求编号<input v-model="rid" maxlength="36"></label>
+  <form class="toolbar audit-filter" @submit.prevent="search"><label>请求编号<input v-model="rid" maxlength="36"></label>
     <label>结果<select v-model="outcome" aria-label="审计结果"><option value="">全部</option><option v-for="(text,value) in labels" :key="value" :value="value">{{text}}</option></select></label>
     <el-button native-type="submit"><Search :size="15"/>查询记录</el-button></form>
-  <el-alert v-if="error" type="error" :title="error" :closable="false"/>
-  <el-table v-loading="busy" :data="items" row-key="auditId" empty-text="没有匹配的记录">
+  <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon/>
+  <el-table v-else v-loading="busy" :data="items" row-key="auditId" :empty-text="busy?'正在读取…':'没有匹配的记录'">
     <el-table-column width="56"><template #default="{row}">
-      <el-tooltip content="查看审计详情"><el-button text :icon="Eye" aria-label="查看审计详情" @click="selected=row"/></el-tooltip>
+      <el-tooltip content="查看审计详情"><el-button :id="`audit-detail-${row.auditId}`" text :icon="Eye" aria-label="查看审计详情" @click="showDetail(row)"/></el-tooltip>
     </template></el-table-column>
     <el-table-column label="发生时间" min-width="150"><template #default="{row}">{{new Date(row.createdAt).toLocaleString('zh-CN')}}</template></el-table-column>
     <el-table-column prop="action" label="操作" min-width="170"/><el-table-column label="结果" width="75"><template #default="{row}">{{labels[(row as Entry).result]}}</template></el-table-column>
@@ -51,13 +61,17 @@ function open(){rid.value='';outcome.value='';show.value=true;search()}
     <el-table-column label="请求 / 裁决编号" min-width="290"><template #default="{row}">
       <div>{{row.requestId}}</div><small v-if="row.decisionId">裁决：{{row.decisionId}}</small>
     </template></el-table-column>
-  </el-table><el-pagination :current-page="page" :total="total" :page-size="20" layout="total,prev,pager,next" @current-change="load"/>
+  </el-table><el-pagination v-if="!error" :current-page="page" :total="total" :page-size="20" layout="total,prev,pager,next" @current-change="load"/>
   </template>
-</el-drawer></template>
+</section>
+</template>
 
 <style scoped>
 .audit-details{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 16px;font-size:14px}
 .audit-details dt{color:var(--el-text-color-secondary)}
 .audit-details dd{margin:0;overflow-wrap:anywhere}
 .audit-details ul{margin:0;padding-left:18px}
+.audit-filter{align-items:end;flex-wrap:wrap}
+.audit-filter select{min-width:108px}
+@media(max-width:480px){.audit-details{grid-template-columns:1fr;gap:4px}.audit-details dd{margin-bottom:8px}}
 </style>

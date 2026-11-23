@@ -268,7 +268,7 @@ async function send(attempt:Attempt){
 .resolution-header{justify-content:space-between}
 .resolution h3,.resolution h4{margin:0 0 .35rem}
 .resolution p{margin:.3rem 0}
-.group{border-top:1px solid var(--el-border-color);padding-top:.65rem;margin-top:.8rem}
+.group{border:1px solid var(--pmo-line);border-radius:8px;background:var(--pmo-bg);padding:12px 16px;margin-top:12px}
 .toolbar{margin-top:.7rem;padding:.65rem 0}
 .meta,summary{color:var(--el-text-color-secondary);font-size:13px}
 .result-note{color:var(--el-color-primary)}
@@ -279,7 +279,7 @@ async function send(attempt:Attempt){
 .bindings dd{margin:0}
 .scope{white-space:pre-wrap}
 summary{cursor:pointer}
-.resolution a{display:inline-flex;align-items:center;gap:.3rem;color:var(--el-color-primary);max-width:100%}
+.resolution a{display:inline-flex;align-items:center;gap:.3rem;color:var(--pmo-primary-hover);max-width:100%}
 .resolution a svg{flex:none}
 .receipts{list-style:none;padding:0;margin:.35rem 0}
 .receipts li{padding:.65rem 0}

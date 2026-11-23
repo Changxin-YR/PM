@@ -78,6 +78,6 @@ legend{padding:0 .25rem;font-weight:600}
 .option{display:flex;gap:.45rem;align-items:baseline;min-width:0;overflow-wrap:anywhere}
 .option input{width:auto;flex:none}
 .option code{display:block;font-size:12px;color:var(--el-text-color-secondary)}
-.option-row a{display:inline-flex;color:var(--el-color-primary);padding:.35rem}
+.option-row a{display:inline-flex;color:var(--pmo-primary-hover);padding:8px}
 .meta{color:var(--el-text-color-secondary);font-size:13px}
 </style>

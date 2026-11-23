@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL, sessions=JSON.parse(process.env.PMO_TEST_SESSIONS)
 const browser=await chromium.launch({channel:process.env.PMO_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':'chromium')})
@@ -17,7 +18,8 @@ async function actor(role,width){
 
 async function open(page){
   await button(page,'查看 Synthetic review 的项目资料').click()
-  const project=page.getByRole('dialog',exact('Synthetic review · 项目资料'))
+  const project=page.getByRole('region',exact('Synthetic review · 项目资料'))
+  await showNavigation(page)
   await project.getByRole('tab',exact('需求')).click()
   const row=project.getByRole('row').filter({hasText:'Export results'})
   await row.locator('.el-table__expand-icon').click()

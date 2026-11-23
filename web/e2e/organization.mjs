@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL
 const session=JSON.parse(process.env.PMO_TEST_SESSIONS).pm
@@ -23,7 +24,7 @@ try{
   await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf),session.csrf)
   const admin=await context.newPage();await admin.goto(url)
   await button(admin,'组织人员').click()
-  const panel=admin.getByRole('dialog',{name:'组织人员',exact:true})
+  const panel=admin.getByRole('region',{name:'组织人员',exact:true})
   await panel.getByRole('tab',{name:'邀请',exact:true}).click()
   await button(panel,'邀请人员').click()
   const form=panel.getByRole('form',{name:'邀请人员',exact:true})
@@ -50,7 +51,9 @@ try{
   await member.getByLabel('密码',{exact:true}).fill(password)
   await button(member,'登录').click()
   await expect(member.getByText('已授权项目 · 0',{exact:true})).toBeVisible()
+  await showNavigation(member)
   await expect(button(member,'组织人员')).toHaveCount(0)
+  await button(member,'关闭导航').click()
 
   await panel.getByRole('tab',{name:'成员',exact:true}).click()
   await expect(panel.getByRole('row').filter({hasText:'合成组织成员'})).toContainText('评审人')

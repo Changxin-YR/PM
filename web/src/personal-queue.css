@@ -1,0 +1,34 @@
+.queue {
+  min-height: 120px;
+  overflow-wrap: anywhere;
+}
+
+.queue-toolbar, li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.queue-toolbar button { margin-left: auto; }
+ul { list-style: none; margin: 16px 0 0; padding: 0; }
+li { padding: 16px 0; border-top: 1px solid var(--pmo-line); }
+li button { flex: none; }
+.queue-description { min-width: 0; }
+small { display: block; margin-top: 4px; color: var(--pmo-muted); font-size: 13px; }
+.waiting { color: var(--el-color-warning-dark-2); }
+
+.queue-empty {
+  min-height: 126px;
+  margin: 0;
+  padding: 20px;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  color: var(--pmo-muted);
+}
+
+@media (max-width: 480px) {
+  li { flex-direction: column; align-items: flex-start; }
+}

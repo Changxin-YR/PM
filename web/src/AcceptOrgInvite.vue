@@ -21,8 +21,9 @@ async function accept(){
 </script>
 
 <template>
-  <div class="mark"><UserRoundPlus :size="25"/></div>
+  <div class="mark"><UserRoundPlus :size="25" aria-hidden="true"/></div>
   <h1>接受组织邀请</h1>
+  <p class="auth-subtitle">使用邀请码加入组织</p>
   <form aria-label="接受组织邀请" @input="changed" @submit.prevent="accept">
     <label>邀请码<input v-model.trim="invitationCode" type="password" autocomplete="off" minlength="43" maxlength="43" required :disabled="busy"></label>
     <label>显示姓名<input v-model.trim="displayName" maxlength="120" required :disabled="busy"></label>

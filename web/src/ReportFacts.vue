@@ -168,10 +168,10 @@ watch(()=>[props.reportId,props.revision],()=>{
 </template>
 
 <style scoped>
-.facts{border-top:1px solid var(--el-border-color-light);padding-top:8px}
+.facts{border:1px solid var(--pmo-line);border-radius:8px;padding:16px;background:var(--pmo-surface)}
 .fact-bar,.fact-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.fact-bar{justify-content:space-between}
 .fact-actions :deep(.el-button){margin-left:0}.facts svg{margin-right:4px}.fact-content,.fact-row,.fact-form{display:grid;gap:8px;min-width:0}
-.fact-row,.fact-form{border-top:1px solid var(--el-border-color-lighter);padding:10px 0;overflow-wrap:anywhere}
+.fact-row,.fact-form{border:1px solid var(--pmo-line);border-radius:8px;padding:12px;background:var(--pmo-bg);overflow-wrap:anywhere}
 .fact-form label{display:grid;gap:4px;min-width:0}.fact-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:8px}
 .fact-wide{grid-column:1/-1}.fact-row blockquote{margin:0;border-left:2px solid var(--el-border-color);padding-left:8px;white-space:pre-wrap}
 .fact-row code{overflow-wrap:anywhere}.fact-muted{color:var(--el-text-color-secondary);margin:0}.fact-notice{color:var(--el-color-success-dark-2);margin:0}

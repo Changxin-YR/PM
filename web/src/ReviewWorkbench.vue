@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
-import {computed,ref,watch} from 'vue'
-import {Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
+import {computed,nextTick,ref,watch} from 'vue'
+import {ArrowLeft,Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
 import RequirementExceptionReceipt, {type RequirementException} from './RequirementExceptionReceipt.vue'
 
 const gates={charter:'立项',feasibility:'落地',closing:'结项'}
@@ -51,6 +51,7 @@ const emit=defineEmits<{saved:[]}>()
 const path=`reviews/${props.reviewId}`
 const view=ref<Workbench|null>(null),loading=ref(false),saving=ref(false),readFailed=ref(false)
 const error=ref(''),notice=ref(''),retry=ref<Attempt|null>(null)
+const heading=ref<HTMLElement|null>(null)
 const selected=ref<Action['id']|''>(''),scoreDraft=ref<Record<string,ScoreDraft>>({})
 const reason=ref(''),verdict=ref<keyof typeof verdicts|''>(''),conditions=ref<Condition[]>([])
 let conditionId=0,lastAttempt:Attempt|undefined
@@ -60,6 +61,12 @@ const available=computed(()=>actions.filter(action=>view.value?.[action.flag]))
 const current=computed(()=>available.value.find(action=>action.id===selected.value))
 const materialRefs=computed(()=>Array.from(new Set(view.value?.materialRefs??[])))
 const workDisabled=computed(()=>busy.value||readFailed.value||!!retry.value)
+const navigationLocked=computed(()=>saving.value||!!retry.value)
+defineExpose({navigationLocked})
+
+function close(){
+  if(!navigationLocked.value)open.value=false
+}
 
 function message(e:unknown,fallback:string){return e instanceof Error?e.message:fallback}
 function textLength(value:string){return Array.from(value.trim()).length}
@@ -93,7 +100,11 @@ async function refresh(){
   catch(e){view.value=null;readFailed.value=true;error.value=message(e,'未能读取评审工作台。')}
   finally{loading.value=false}
 }
-watch(open,value=>{if(value)void refresh()},{immediate:true})
+watch(open,value=>{
+  if(!value)return
+  void refresh()
+  void nextTick(()=>heading.value?.focus())
+},{immediate:true})
 
 const command=computed(()=>{
   const data=view.value,action=current.value
@@ -179,9 +190,13 @@ async function submit(previous?:Attempt){
 </script>
 
 <template>
-  <el-dialog v-model="open" append-to-body title="关口人工工作台" width="min(680px,94vw)" top="6vh"
-    :close-on-click-modal="false" :show-close="!saving&&!retry" :close-on-press-escape="!saving&&!retry">
-    <section class="workbench" aria-label="评审详情" v-loading="loading">
+  <section v-if="open" class="panel workbench" aria-label="关口人工工作台" :aria-busy="loading||saving"
+    @keydown.esc.stop.prevent="close">
+    <div class="workbench-title">
+      <h2 ref="heading" tabindex="-1">评审工作台</h2>
+      <el-button :disabled="navigationLocked" @click="close"><ArrowLeft :size="15" aria-hidden="true"/>返回评审记录</el-button>
+    </div>
+    <div v-loading="loading" class="workbench-content">
       <div class="workbench-header">
         <div v-if="view">
           <h3>{{gates[view.review.type]}}评审</h3>
@@ -217,7 +232,7 @@ async function submit(previous?:Attempt){
           </el-button>
         </div>
         <form v-if="current" :aria-label="current.label" @submit.prevent="submit()">
-          <fieldset class="form-fields" :disabled="workDisabled">
+          <fieldset class="form-fields" :class="{'score-fields':current.id==='score'}" :disabled="workDisabled">
             <template v-if="current.id==='score'">
               <fieldset v-for="dimension in view.dimensions" :key="dimension.key" class="form-block">
                 <legend>{{dimension.label}}</legend>
@@ -320,30 +335,34 @@ async function submit(previous?:Attempt){
           </li></ul>
         </section>
       </template>
-    </section>
-  </el-dialog>
+    </div>
+  </section>
 </template>
 
 <style scoped>
 .workbench{min-height:4rem;overflow-wrap:anywhere}
-.workbench-header,.workbench-actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.workbench-title,.workbench-header,.workbench-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.workbench-title{justify-content:space-between;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--pmo-line)}
+.workbench-title h2{font-size:18px;margin:0}
+.workbench-content{min-height:48px}
 .workbench-header{justify-content:space-between}
 .workbench h3,.workbench h4{margin:0 0 .4rem}
 .workbench p{margin:.4rem 0}
 .meta{color:var(--el-text-color-secondary);font-size:13px}
 .result-note{color:var(--el-color-primary)}
-.group{border-top:1px solid var(--el-border-color);padding-top:.65rem;margin-top:.8rem}
+.group{border:1px solid var(--pmo-line);border-radius:8px;padding:12px 16px;margin-top:12px}
 .compact-list{margin:.35rem 0;padding-left:1.25rem}
 summary{cursor:pointer}
 .workbench-actions{margin-top:.8rem}
-.workbench form{gap:.5rem}
-.form-fields,.form-block{min-width:0;margin:0;display:grid;gap:.65rem}
+.workbench form{display:grid;gap:12px}
+.form-fields,.form-block{min-width:0;margin:0;display:grid;gap:12px}
 .form-fields{padding:0;border:0}
-.form-block{border:1px solid var(--el-border-color);padding:.7rem;border-radius:var(--el-border-radius-base)}
+.score-fields{grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));align-items:start}
+.form-block{border:1px solid var(--pmo-line);background:var(--pmo-bg);padding:12px 16px;border-radius:var(--el-border-radius-base)}
 .form-block legend{font-weight:600;padding:0 .25rem}
 .field-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:.6rem}
 .field-row label{min-width:0}
-select{min-width:0;width:100%;padding:.4rem;color:inherit;font:inherit;border:1px solid var(--el-border-color);border-radius:var(--el-border-radius-base);background:var(--el-bg-color)}
+select{min-width:0;width:100%}
 .add-condition{justify-self:start}
 .ref-options{max-height:9rem;overflow:auto;margin-top:.3rem}
 .ref-option{display:flex;align-items:baseline;padding:.2rem 0}

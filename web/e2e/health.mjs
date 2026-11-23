@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL
 const sessions=JSON.parse(process.env.PMO_TEST_SESSIONS)
@@ -14,8 +15,9 @@ async function actor(role,width=1280){
   return page
 }
 async function health(page){
-  const drawer=page.getByRole('dialog',exact('Synthetic review · 项目资料'))
+  const drawer=page.getByRole('region',exact('Synthetic review · 项目资料'))
   await page.getByRole('button',exact('查看 Synthetic review 的项目资料')).click()
+  await showNavigation(page)
   await drawer.getByRole('tab',exact('三线健康')).click()
   const state=drawer.getByRole('region',exact('三线健康'))
   await expect(state.getByRole('heading',exact('当前健康'))).toBeVisible()
@@ -38,11 +40,13 @@ try{
   await expect(screen.getByText('关键里程碑申报缺少已核验佐证',{exact:true})).toBeVisible()
   await expect(screen.getByText('正式快照',{exact:true})).toHaveCount(1)
   await expect(screen.getByText('0.00%',{exact:true})).toHaveCount(0)
-  const drawer=pm.getByRole('dialog',exact('Synthetic review · 项目资料'))
+  const drawer=pm.getByRole('region',exact('Synthetic review · 项目资料'))
+  await showNavigation(pm)
   await drawer.getByRole('tab',exact('成本')).click()
   const effort=drawer.getByRole('region',exact('人天'))
   await expect(effort.getByText('不可用',{exact:true})).toBeVisible()
   await expect(effort.getByText('NaN%',{exact:true})).toHaveCount(0)
+  await showNavigation(pm)
   await drawer.getByRole('tab',exact('三线健康')).click()
   const reason='本次关键进展的独立佐证尚未上传。'
   await screen.getByRole('button',exact('申请复核')).click()

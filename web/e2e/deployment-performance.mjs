@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {returnToLedger} from './workspace-navigation.mjs'
 
 const url = new URL(process.env.PMO_BROWSER_URL)
 if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw Error('Requires a loopback stack')
@@ -43,7 +44,7 @@ try {
     const [detail] = await Promise.all([page.waitForResponse(r =>
       new URL(r.url()).pathname === `/api/v1/project-overview/${project.projectId}`), link.click()])
     expect(detail.status()).toBe(200)
-    const drawer = page.getByRole('dialog', {name:`${project.name} · 项目资料`,exact:true})
+    const drawer = page.getByRole('region', {name:`${project.name} · 项目资料`,exact:true})
     await expect(drawer.getByRole('region',{name:'立项概要',exact:true})).toBeVisible()
     const endDetail = performance.now()
     const tab = drawer.getByRole('tab',{name:'里程碑',exact:true})
@@ -57,7 +58,7 @@ try {
       detailMs.push(endDetail-startDetail)
       milestonesMs.push(endMilestones-endDetail)
     }
-    await button(drawer,'Close this dialog').click()
+    await returnToLedger(page)
     await expect(drawer).toBeHidden()
   }
 

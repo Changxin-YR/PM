@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {onMounted,ref} from 'vue'
-import {Download,FileCheck2,Flag,RefreshCw,Upload} from 'lucide-vue-next'
+import {Download,FileCheck2,FileImage,FileText,Flag,RefreshCw,Upload} from 'lucide-vue-next'
 type Proof={evidenceId:string;evidenceRef:string;originalName:string;mimeType:string;sizeBytes:number;sha256:string;revision:number;status:string;canVerify:boolean;description:string;linkedResourceType:string;linkedResourceId:string}
 type Milestone={milestoneId:string;name:string;revision:number;actualDate?:string}
 const props=defineProps<{projectId:string;stage:string;api:(p:string,o?:RequestInit)=>Promise<any>}>()
@@ -34,7 +34,8 @@ async function save(){busy.value=true;error.value='';try{let url:string,body:For
  }catch(e){error.value=String(e)}finally{busy.value=false}}
 onMounted(()=>refresh(1))
 </script>
-<template><div class="toolbar"><span>证据附件 · {{total}}</span><el-button :disabled="busy||!!mode" @click="begin('upload')"><Upload :size="15"/>上传附件</el-button><el-button title="刷新附件" aria-label="刷新附件" :disabled="busy||!!mode" @click="refresh()"><RefreshCw :size="15"/></el-button></div>
+<template><section class="panel evidence-panel">
+<div class="toolbar"><strong>证据附件 · {{total}}</strong><el-button :disabled="busy||!!mode||stage==='archived'" @click="begin('upload')"><Upload :size="15"/>上传附件</el-button><el-button title="刷新附件" aria-label="刷新附件" :disabled="busy||!!mode" @click="refresh()"><RefreshCw :size="15"/></el-button></div>
 <el-alert v-if="error" type="error" :title="error" :closable="false"/><span role="status">{{notice}}</span>
 <form v-if="mode" @submit.prevent="save"><template v-if="mode==='upload'">
   <label>关联类型<select v-model="kind" :disabled="busy" @change="changeKind" required><option v-for="(label,k) in kinds" :key="k" :value="k">{{label}}</option></select></label>
@@ -46,7 +47,41 @@ onMounted(()=>refresh(1))
 </template>
 <template v-else-if="mode==='verify'&&chosen"><a :href="`/api/v1/evidence/${chosen.evidenceId}?download=true`" download><Download :size="15"/>下载核对原文件</a><code>{{chosen.sha256}}</code><label>核验说明<textarea v-model="note" required minlength="4" maxlength="1000"/></label><label class="flag"><input type="checkbox" v-model="checked" required>已核对原文件与关联资料</label></template>
 <template v-else-if="chosen"><p>{{milestone(chosen)?.name}} · {{chosen.originalName}}</p><label>实际完成日期<input type="date" v-model="day" required></label><label>完成说明<textarea v-model="note" minlength="4" maxlength="1000"/></label></template><div class="actions"><el-button :disabled="busy" @click="mode=''">取消</el-button><el-button native-type="submit" type="primary" :loading="busy">{{mode==='upload'?'提交附件':mode==='verify'?'确认核验附件':'确认里程碑完成'}}</el-button></div></form>
-<el-table :data="items" v-loading="busy" row-key="evidenceId" empty-text="暂无证据附件"><el-table-column type="expand"><template #default="{row}"><dl><dt>业务引用</dt><dd>{{row.evidenceRef}}</dd><dt>SHA-256</dt><dd>{{row.sha256}}</dd><dt>资源编号</dt><dd>{{row.linkedResourceId}}</dd><dt>说明</dt><dd>{{row.description||'—'}}</dd></dl></template></el-table-column><el-table-column prop="originalName" label="文件" min-width="150"/><el-table-column label="关联资料" min-width="115"><template #default="{row}">{{milestone(row)?.name??kinds[row.linkedResourceType]}}</template></el-table-column><el-table-column label="状态" width="85"><template #default="{row}">{{row.status==='verified'?'已核验':'待核验'}}</template></el-table-column>
-<el-table-column label="操作" width="128"><template #default="{row}"><a :href="`/api/v1/evidence/${row.evidenceId}?download=true`" download title="下载原文件" aria-label="下载原文件"><Download :size="16"/></a><el-button v-if="row.canVerify" text aria-label="核验附件" title="核验附件" :disabled="!!mode||busy" @click="begin('verify',row)"><FileCheck2 :size="16"/></el-button><el-button v-if="canComplete&&row.status==='verified'&&milestone(row)&&!milestone(row)?.actualDate" text aria-label="登记里程碑完成" title="登记里程碑完成" :disabled="!!mode||busy" @click="begin('complete',row)"><Flag :size="16"/></el-button></template></el-table-column></el-table>
-<el-pagination v-if="total>20" :disabled="busy||!!mode" :current-page="page" :total="total" :page-size="20" layout="prev,pager,next" @current-change="refresh"/></template>
-<style scoped>form{display:grid;gap:.7rem;margin:.8rem 0}.flag{display:flex;align-items:center;gap:.5rem}.flag input{width:auto}a{display:inline-flex;align-items:center;gap:.4rem;color:#176b56}code,dd{overflow-wrap:anywhere}dl{padding:0 1rem}dd{margin:0 0 .6rem}</style>
+<el-table :data="items" v-loading="busy" row-key="evidenceId" empty-text="暂无证据附件">
+  <el-table-column type="expand" width="44">
+    <template #default="{row}">
+      <dl class="evidence-detail"><dt>业务引用</dt><dd>{{row.evidenceRef}}</dd><dt>SHA-256</dt><dd>{{row.sha256}}</dd><dt>资源编号</dt><dd>{{row.linkedResourceId}}</dd><dt>说明</dt><dd>{{row.description||'—'}}</dd></dl>
+    </template>
+  </el-table-column>
+  <el-table-column label="文件" min-width="210">
+    <template #default="{row}"><span class="file-name"><component :is="row.mimeType?.startsWith('image/')?FileImage:FileText" :size="17" aria-hidden="true"/>{{row.originalName}}</span></template>
+  </el-table-column>
+  <el-table-column label="关联资料" min-width="132"><template #default="{row}">{{milestone(row)?.name??kinds[row.linkedResourceType]}}</template></el-table-column>
+  <el-table-column label="状态" width="108">
+    <template #default="{row}"><el-tag size="small" :type="row.status==='verified'?'success':'info'">{{row.status==='verified'?'已核验':'待核验'}}</el-tag></template>
+  </el-table-column>
+  <el-table-column label="操作" width="153"><template #default="{row}">
+    <div class="evidence-actions">
+      <a :href="`/api/v1/evidence/${row.evidenceId}?download=true`" download title="下载原文件" aria-label="下载原文件"><Download :size="16"/>下载</a>
+      <el-button v-if="row.canVerify" text aria-label="核验附件" title="核验附件" :disabled="!!mode||busy||stage==='archived'" @click="begin('verify',row)"><FileCheck2 :size="16"/></el-button>
+      <el-button v-if="canComplete&&row.status==='verified'&&milestone(row)&&!milestone(row)?.actualDate" text aria-label="登记里程碑完成" title="登记里程碑完成" :disabled="!!mode||busy" @click="begin('complete',row)"><Flag :size="16"/></el-button>
+    </div>
+  </template></el-table-column>
+</el-table>
+<el-pagination v-if="total>20" :disabled="busy||!!mode" :current-page="page" :total="total" :page-size="20" layout="prev,pager,next" @current-change="refresh"/>
+</section></template>
+
+<style scoped>
+.evidence-panel form {display:grid;gap:12px;margin:0 0 16px;padding:16px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}
+.evidence-panel .toolbar {flex-wrap:wrap}
+.flag,.file-name,.evidence-actions {display:flex;align-items:center;gap:8px}
+.flag input {width:auto}
+a {display:inline-flex;align-items:center;gap:6px;color:var(--pmo-primary-hover)}
+.file-name svg {color:var(--pmo-primary-hover);flex:none}
+.evidence-actions {gap:4px;flex-wrap:wrap}
+.evidence-actions :deep(.el-button) {padding-inline:8px}
+code,dd,.file-name {overflow-wrap:anywhere}
+.evidence-detail {display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 16px;margin:0;padding:12px 20px}
+.evidence-detail dt {color:var(--pmo-secondary)}
+.evidence-detail dd {margin:0;white-space:pre-wrap}
+</style>

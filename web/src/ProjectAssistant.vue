@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed,onBeforeUnmount,shallowRef,ref,watch} from 'vue'
-import {ArrowRight,ClipboardList,RefreshCw,Search} from 'lucide-vue-next'
+import {ArrowRight,Bell,ChartNoAxesColumnIncreasing,CircleHelp,ClipboardList,Database,Flag,Layers3,ListChecks,RefreshCw,Search,TriangleAlert} from 'lucide-vue-next'
 import AssistantLines from './AssistantLines.vue'
 
 type Mode='charter'|'process'|'closing'|'ledger'
@@ -102,8 +102,9 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
 
 <template>
   <section class="assistant" aria-label="项目助理" :aria-busy="loading">
-    <el-segmented v-model="mode" :options="modes" block aria-label="助理模式"/>
-    <form class="filters" @submit.prevent="load">
+    <div class="assistant-toolbar">
+      <el-segmented v-model="mode" :options="modes" aria-label="助理模式"/>
+      <form class="filters" @submit.prevent="load">
       <label v-if="mode==='ledger'">查询主题<select v-model="topic">
         <option v-for="item in topics" :key="item.value" :value="item.value">{{item.label}}</option>
       </select></label>
@@ -112,11 +113,12 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       <label v-if="useCategory">教训分类<input v-model="category" maxlength="80" autocomplete="off"></label>
       <el-button v-if="useKeyword" native-type="submit" :loading="loading"><Search :size="15"/>查询</el-button>
       <el-tooltip v-else content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
-    </form>
+      </form>
+    </div>
     <p v-if="loading" class="meta" role="status">正在读取…</p>
     <el-alert v-if="error" type="error" :title="error" :closable="false"/>
 
-    <template v-if="charter">
+    <section v-if="charter" class="panel assistant-panel">
       <div class="assistant-row"><h3>立项材料与评分</h3><el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button></div>
       <p v-if="charter.completeness.eligible" class="meta">材料预检通过 · 未代替人工裁决</p>
       <dl v-if="charter.scoreSummary" class="summary-grid">
@@ -131,15 +133,16 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       <h3>历史教训</h3>
       <AssistantLines v-if="charter.lessonRefs.length" :items="charter.lessonRefs"/>
       <p v-else class="meta">没有匹配的已确认教训。</p>
-    </template>
+    </section>
 
     <template v-if="process">
+      <section class="panel assistant-panel">
       <div class="assistant-row"><h3>过程核对</h3><el-button text @click="emit('navigate','reports')">日报周报<ArrowRight :size="14"/></el-button></div>
-      <dl class="summary-grid">
-        <div><dt>三线总体</dt><dd><span class="health-swatch" :data-state="process.health.health" aria-hidden="true"/>{{healthNames[process.health.health]??process.health.health}}</dd></div>
-        <div><dt>规则提醒</dt><dd>{{process.alerts.length}}</dd></div>
-        <div><dt>待澄清</dt><dd>{{process.conflicts.length}}</dd></div>
-        <div><dt>报告分析</dt><dd>{{process.analysis?(analysisNames[process.analysis.status]??process.analysis.status):process.modelEnabled?'尚无分析':'模型关闭'}}</dd></div>
+      <dl class="summary-grid process-grid">
+        <div><dt><Layers3 :size="19" aria-hidden="true"/>三线总体</dt><dd><span class="health-swatch" :data-state="process.health.health" aria-hidden="true"/>{{healthNames[process.health.health]??process.health.health}}</dd></div>
+        <div><dt><Bell :size="19" aria-hidden="true"/>规则提醒</dt><dd>{{process.alerts.length}}</dd></div>
+        <div><dt><CircleHelp :size="19" aria-hidden="true"/>待澄清</dt><dd>{{process.conflicts.length}}</dd></div>
+        <div><dt><ChartNoAxesColumnIncreasing :size="19" aria-hidden="true"/>报告分析</dt><dd>{{process.analysis?(analysisNames[process.analysis.status]??process.analysis.status):process.modelEnabled?'尚无分析':'模型关闭'}}</dd></div>
       </dl>
       <dl v-if="process.health.dataTrust==='trusted'" class="summary-grid">
         <div v-for="[label,line] in [['时间',process.health.timeLine],['成本',process.health.costLine],['质量',process.health.qualityLine]]" :key="label??''">
@@ -152,19 +155,22 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
         <h3>待核验候选</h3>
         <AssistantLines :items="process.factCandidates.map(item=>({text:`${item.subject}：${item.quote}`,observedAt:item.asOf,sourceRefs:[item.sourceRef]}))"/>
       </template>
+      </section>
+      <section class="panel assistant-panel">
       <h3>周报预览 · {{process.weeklyDraft.period}}</h3>
       <dl class="sections">
-        <div><dt>里程碑</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.milestone_progress" :key="index">{{row.summary}}</dd>
+        <div><dt><Flag :size="17" aria-hidden="true"/>里程碑</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.milestone_progress" :key="index">{{row.summary}}</dd>
           <dd v-if="!process.weeklyDraft.structuredFields.milestone_progress.length">暂无记录</dd></div>
-        <div><dt>已核验人天</dt><dd>{{process.weeklyDraft.verifiedPersonDays??'暂无已核验流水'}}</dd></div>
-        <div><dt>需求进展</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.requirement_progress" :key="index">{{row.summary}}</dd>
+        <div><dt><Database :size="17" aria-hidden="true"/>已核验人天</dt><dd>{{process.weeklyDraft.verifiedPersonDays??'暂无已核验流水'}}</dd></div>
+        <div><dt><ListChecks :size="17" aria-hidden="true"/>需求进展</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.requirement_progress" :key="index">{{row.summary}}</dd>
           <dd v-if="!process.weeklyDraft.structuredFields.requirement_progress.length">暂无记录</dd></div>
-        <div><dt>风险阻塞</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.risks_and_blockers" :key="index">{{row.summary}}</dd>
+        <div><dt><TriangleAlert :size="17" aria-hidden="true"/>风险阻塞</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.risks_and_blockers" :key="index">{{row.summary}}</dd>
           <dd v-if="!process.weeklyDraft.structuredFields.risks_and_blockers.length">暂无记录</dd></div>
       </dl>
+      </section>
     </template>
 
-    <template v-if="closing">
+    <section v-if="closing" class="panel assistant-panel">
       <div class="assistant-row"><h3>结项门槛</h3><el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button></div>
       <p v-if="closing.gateEligible===null" class="meta">当前未处于结项检查阶段。</p>
       <p v-else-if="closing.gateEligible" class="meta">未发现结项缺口 · 待人工裁决</p>
@@ -175,15 +181,15 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       <h3>待确认教训摘录</h3>
       <AssistantLines v-if="closing.lessonDrafts.length" :items="closing.lessonDrafts"/>
       <p v-else class="meta">暂无可引用的复盘回答。</p>
-    </template>
+    </section>
 
-    <template v-if="ledger">
+    <section v-if="ledger" class="panel assistant-panel">
       <div class="assistant-row"><h3>台账结果</h3><el-button v-if="topic==='health'" text @click="emit('navigate','health')">三线明细<ArrowRight :size="14"/></el-button></div>
       <AssistantLines :items="ledger.answer"/>
       <p v-for="unknown in ledger.unknowns" :key="unknown" class="meta">{{unknown}}</p>
-    </template>
+    </section>
 
-    <section v-if="enabled" class="suggestions" aria-label="模型建议预览" :aria-busy="suggesting">
+    <section v-if="enabled" class="panel assistant-panel" aria-label="模型建议预览" :aria-busy="suggesting">
       <div class="assistant-row">
         <h3>{{ledger?'模型整理 · 来源摘录':'模型建议 · 待人工核对'}}</h3>
         <el-button size="small" :loading="suggesting" :disabled="loading||loadedQuery!==query" @click="suggest">
@@ -200,7 +206,7 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       </template>
     </section>
 
-    <details v-if="packet" class="packet-sources">
+    <details v-if="packet" class="panel packet-sources">
       <summary>截至 {{time(packet.meta.asOf)}} · 依据</summary>
       <small>{{packet.meta.ruleVersion}}</small>
       <code v-for="source in packet.meta.sourceRefs" :key="source">{{source}}</code>
@@ -209,22 +215,42 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
 </template>
 
 <style scoped>
-.assistant{min-width:0;overflow-wrap:anywhere}
-.filters{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:12px 0}
-.filters label{flex:1 1 140px;min-width:0;margin:0}
-.filters input,.filters select{width:100%;min-width:0}
-.filters :deep(.el-button){min-height:38px}
-.assistant-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px;margin-top:12px}
-h3{font-size:14px;margin:12px 0 4px}
-.assistant-row h3{margin:0}
-.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,113px),1fr));gap:8px;margin:8px 0}
-.summary-grid div,.sections div{border-bottom:1px solid var(--el-border-color-light);padding:6px 0;min-width:0}
-dt{color:var(--el-text-color-secondary);font-size:12px}dd{margin:3px 0}
-.health-swatch{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--el-color-info)}
-.health-swatch[data-state=green]{background:var(--el-color-success)}.health-swatch[data-state=yellow]{background:var(--el-color-warning)}
-.health-swatch[data-state=red]{background:var(--el-color-danger)}
-.sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:8px 16px}
-.packet-sources{margin-top:12px;color:var(--el-text-color-secondary);border-top:1px solid var(--el-border-color-light);padding:8px 0}
-.suggestions{border-top:1px solid var(--el-border-color-light);margin-top:10px}
-summary{cursor:pointer}code{display:block;font-size:12px;margin:3px 0}
+.assistant {display:grid;gap:16px;min-width:0;overflow-wrap:anywhere}
+.assistant > .panel + .panel {margin-top:0}
+.assistant-toolbar,.filters {display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.assistant-toolbar :deep(.el-segmented) {max-width:100%;background:var(--pmo-surface);border:1px solid var(--pmo-line)}
+.assistant-toolbar :deep(.el-segmented__item-label) {line-height:24px}
+.filters label {flex:1 1 140px;min-width:0;margin:0}
+.filters input,.filters select {width:100%;min-width:0}
+.assistant-row {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+h3 {font-size:16px;font-weight:600;margin:16px 0 8px}
+.assistant-row h3,.assistant-panel > h3:first-child {margin:0}
+.summary-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px;margin:16px 0 8px}
+.summary-grid div {border-inline-start:2px solid var(--pmo-line);padding:0 12px;min-width:0}
+dt {color:var(--pmo-muted);font-size:13px}
+dd {margin:4px 0 0}
+.summary-grid dd {font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.process-grid div {position:relative;padding-inline-start:52px}
+.process-grid dt > svg {position:absolute;inset-inline-start:8px;top:50%;transform:translateY(-50%);box-sizing:content-box;color:var(--pmo-primary-hover);background:var(--pmo-selected);border-radius:8px;padding:8px}
+.health-swatch {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--el-color-info)}
+.health-swatch[data-state=green] {background:var(--el-color-success)}
+.health-swatch[data-state=yellow] {background:var(--el-color-warning)}
+.health-swatch[data-state=red] {background:var(--el-color-danger)}
+.sections {margin:12px 0 0}
+.sections div {display:grid;grid-template-columns:minmax(100px,155px) minmax(0,1fr);align-items:baseline;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--pmo-line)}
+.sections div:last-child {border-bottom:0;padding-bottom:0}
+.sections dt {display:flex;align-items:center;gap:8px;color:var(--pmo-text);font-weight:600}
+.sections dd {grid-column:2;margin:0;color:var(--pmo-secondary);white-space:pre-wrap}
+.packet-sources,.meta {color:var(--pmo-muted)}
+.packet-sources summary {cursor:pointer;font-weight:500}
+code {display:block;font-size:12px;margin:4px 0}
+@media (max-width:560px) {
+  .assistant-toolbar {align-items:stretch}
+  .assistant-toolbar :deep(.el-segmented) {width:100%;min-width:0}
+  .assistant-toolbar :deep(.el-segmented__item) {flex:1;min-width:0;padding:2px}
+  .assistant-toolbar :deep(.el-segmented__item-label) {font-size:12px}
+  .filters {width:100%}
+  .sections div {grid-template-columns:1fr}
+  .sections dd {grid-column:1}
+}
 </style>

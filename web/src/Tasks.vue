@@ -125,7 +125,7 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
 </script>
 
 <template>
-  <section class="task-panel" aria-label="补强任务">
+  <section class="panel task-panel" aria-label="补强任务">
     <div class="toolbar task-toolbar">
       <span>{{focusTaskId?'选中的任务':'补强任务'}} · {{total}}</span>
       <el-button v-if="focusTaskId" :disabled="!!mode||loading||busy" @click="emit('clearFocus')">查看全部任务</el-button>
@@ -188,8 +188,8 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
           <small v-if="row.completedAt">完成：<time :datetime="row.completedAt">{{dateFormat.format(new Date(row.completedAt))}}</time></small>
         </template>
       </el-table-column>
-      <el-table-column label="来源" min-width="104">
-        <template #default="scope"><span :title="scope.row.sourceId">{{displaySources[(scope.row as Task).sourceType]}}<small>{{scope.row.sourceId?.slice(0,8)}}</small></span></template>
+      <el-table-column label="来源" min-width="158">
+        <template #default="scope"><span>{{displaySources[(scope.row as Task).sourceType]}}<small>{{scope.row.sourceId}}</small></span></template>
       </el-table-column>
       <el-table-column label="操作" width="64">
         <template #default="{row}">
@@ -208,7 +208,7 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
 .task-toolbar svg,.task-actions svg{margin-right:4px}
 .task-toolbar button:last-child svg{margin-right:0}
 .task-notice{margin:8px 0;color:var(--el-color-success-dark-2)}
-.task-form{display:grid;gap:12px;padding:12px 0}
+.task-form{display:grid;gap:12px;padding:16px;margin-bottom:16px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}
 h3{margin:0;font-size:15px;overflow-wrap:anywhere}
 fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0;padding:0;border:0;min-width:0}
 .wide{grid-column:1/-1}

@@ -45,7 +45,7 @@ try {
   await context.close()
 
   const tokens = await signIn(`/#project=${b.id}&entry=agent-tokens`, logins.init)
-  const drawer = tokens.page.getByRole('dialog',{name:'我的 Agent 令牌',exact:true})
+  const drawer = tokens.page.getByRole('region',{name:'我的 Agent 令牌',exact:true})
   await expect(drawer.getByRole('button',{name:'刷新令牌',exact:true})).toBeVisible()
   await tokens.context.close()
   console.log('PASS: pilot Edge login, four assistant modes, report analysis, cross-project report refusal and token drawer')

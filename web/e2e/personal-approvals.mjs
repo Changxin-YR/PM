@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url = new URL(process.env.PMO_BROWSER_URL)
 const sessions = JSON.parse(process.env.PMO_TEST_SESSIONS)
@@ -7,9 +8,12 @@ const browser = await chromium.launch({channel:process.env.PMO_BROWSER_CHANNEL |
 const exact = name => ({name,exact:true})
 const button = (scope,name) => scope.getByRole('button',exact(name))
 const dialog = (page,name) => page.getByRole('dialog',exact(name))
-const inbox = page=>dialog(page,'我的审批收件箱')
+const inbox = page=>page.getByRole('region',exact('我的审批收件箱'))
 const empty='暂无可处理的审批。'
-const openInbox=page=>button(page,'我的审批收件箱').click()
+async function openInbox(page){
+  await showNavigation(page)
+  await button(page,'我的审批收件箱').click()
+}
 async function actor(role,width){
   const context=await browser.newContext({viewport:{width,height:850}})
   const {cookie,csrf}=sessions[role]
@@ -39,7 +43,7 @@ try{
   await expect(inbox(reviewer).getByText(/Second synthetic review/)).toBeVisible()
   await expect(inbox(reviewer).getByText(/已暂停/)).toHaveCount(0)
   await button(inbox(reviewer),'打开记录').click()
-  const workbench=dialog(reviewer,'关口人工工作台')
+  const workbench=reviewer.getByRole('region',exact('关口人工工作台'))
   await button(workbench,'登记裁决').click()
   await workbench.getByLabel('裁决',{exact:true}).selectOption('pass')
   const reviewReason='已经独立核对本轮合成评审证据。'

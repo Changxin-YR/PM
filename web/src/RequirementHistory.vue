@@ -8,4 +8,9 @@ const labels:Record<string,string>={draft:'草稿',pending:'待审批',approved:
 async function load(n:number){open.value=true;busy.value=true;error.value='';items.value=[];try{const r=await props.api(`requirements/${props.id}/changes?page=${n}&pageSize=10`);items.value=r.data.items;page.value=n;total.value=r.data.total}catch(e){error.value=String(e)}finally{busy.value=false}}
 </script>
 <template><el-button text aria-label="需求变更历史" title="需求变更历史" @click="load(1)"><History :size="16"/></el-button><el-dialog v-model="open" append-to-body title="需求变更历史" width="min(620px,95vw)"><el-alert v-if="error" type="error" :title="error" :closable="false"/><div v-loading="busy"><p v-if="!items.length&&!busy&&!error">暂无变更记录</p><article v-for="i in items" :key="i.changeId"><strong>{{labels[i.status]??i.status}} · {{i.reason}}</strong><p v-if="i.legacySnapshot">旧快照 · 非现行格式</p><p>申请时间：{{new Date(i.createdAt).toLocaleString()}} · 基准版本 {{i.baseRevision}} · 记录版本 {{i.revision}}</p><dl><dt>修改前</dt><dd><pre>{{JSON.stringify(i.before,null,2)}}</pre></dd><dt>修改后</dt><dd><pre>{{JSON.stringify(i.after,null,2)}}</pre></dd><dt>申请人</dt><dd>{{i.requestedBy}}</dd><dt>审批人</dt><dd>{{i.approvedBy??'—'}}</dd><template v-if="i.decidedBy"><dt>裁决人</dt><dd>{{i.decidedBy}}</dd><dt>裁决理由</dt><dd>{{i.decisionReason}}</dd></template><dt>生效时间</dt><dd>{{i.effectiveAt?new Date(i.effectiveAt).toLocaleString():'—'}}</dd></dl></article></div><el-pagination v-if="total>10" :current-page="page" :page-size="10" :total="total" :disabled="busy" layout="prev,pager,next" @current-change="load"/></el-dialog></template>
-<style scoped>article{padding:.6rem 0;border-bottom:1px solid #d5ded9}p{font-size:.85rem}dl{display:grid;grid-template-columns:5rem minmax(0,1fr);gap:.4rem}dd,pre{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}</style>
+<style scoped>
+article {padding:12px 0;border-bottom:1px solid var(--pmo-line)}
+p {font-size:13px;color:var(--pmo-secondary)}
+dl {display:grid;grid-template-columns:5rem minmax(0,1fr);gap:8px}
+dd,pre {margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+</style>

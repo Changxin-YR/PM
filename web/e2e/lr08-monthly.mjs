@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL, session=JSON.parse(process.env.PMO_TEST_SESSIONS).sponsor
 const [due,observedMonth]=JSON.parse(process.env.PMO_TEST_LR08_MONTHS)
@@ -10,8 +11,9 @@ try {
   await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf),session.csrf)
   const page=await context.newPage()
   await page.goto(url)
+  await showNavigation(page)
   await page.getByRole('button',{name:'预警中心',exact:true}).click()
-  const dialog=page.getByRole('dialog',{name:'预警中心',exact:true})
+  const dialog=page.getByRole('region',{name:'预警中心',exact:true})
   await dialog.getByRole('combobox',{name:'规则'}).selectOption('LR-08')
   async function month(value){
     const wait=page.waitForResponse(r=>{

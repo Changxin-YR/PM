@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import {ref} from 'vue'
+import {nextTick,ref,watch} from 'vue'
 import {ClipboardCheck,RefreshCw} from 'lucide-vue-next'
 
 type Entry={requestId:string;projectName:string;revision:number;reason:string;requestedBy:string}
-const props=defineProps<{api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const open=ref(false),busy=ref(false),loading=ref(false),items=ref<Entry[]>([]),active=ref<Entry|null>(null)
+const props=defineProps<{active?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const busy=ref(false),loading=ref(false),items=ref<Entry[]>([]),active=ref<Entry|null>(null)
 const reason=ref(''),error=ref(''),notice=ref('')
+const reasonInput=ref<HTMLTextAreaElement>()
 let recent:{signature:string;key:string}|undefined
 async function load(){
   if(loading.value)return
@@ -15,6 +16,19 @@ async function load(){
   finally{loading.value=false}
 }
 function select(row:Entry|null){active.value=row;reason.value='';error.value='';notice.value=''}
+function openForm(row:Entry){
+  select(row)
+  void nextTick(()=>reasonInput.value?.focus())
+}
+function returnToList(){
+  const id=active.value?.requestId
+  select(null)
+  void nextTick(()=>{if(id)document.getElementById(`termination-item-${id}`)?.focus()})
+}
+watch(()=>props.active,visible=>{
+  if(!visible||busy.value||(active.value&&recent))return
+  select(null);void load()
+},{immediate:true})
 async function confirm(){
   const item=active.value,why=reason.value.trim()
   if(!item||busy.value||why.length<4||why.length>2000)return
@@ -31,35 +45,34 @@ async function confirm(){
 </script>
 
 <template>
-  <el-button @click="open=true;select(null);load()"><ClipboardCheck :size="15"/> 我的终止确认</el-button>
-  <el-dialog v-model="open" title="我的终止确认" width="min(540px,94vw)" append-to-body :show-close="!busy"
-    :close-on-click-modal="false" :close-on-press-escape="!busy">
-    <div v-loading="loading" class="confirmations">
+  <section v-loading="loading" class="panel confirmations" aria-label="我的终止确认">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
       <p v-if="notice" role="status">{{notice}}</p>
       <form v-if="active" @submit.prevent="confirm">
         <h3>{{active.projectName}} · 终止落地评审</h3>
         <p>{{active.reason}}</p>
-        <label>确认理由<textarea v-model="reason" rows="3" required minlength="4" maxlength="2000" :disabled="busy"/></label>
-        <div class="actions"><el-button :disabled="busy" @click="select(null)">返回</el-button>
+        <small v-if="active.requestedBy">申请人 ID <code>{{active.requestedBy}}</code></small>
+        <label>确认理由<textarea ref="reasonInput" v-model="reason" rows="3" required minlength="4" maxlength="2000" :disabled="busy"/></label>
+        <div class="actions"><el-button :disabled="busy" @click="returnToList">返回</el-button>
           <el-button native-type="submit" type="primary" :disabled="reason.trim().length<4" :loading="busy"><ClipboardCheck :size="15"/> 确认终止申请</el-button></div>
       </form>
       <template v-else>
-        <div class="actions"><el-button :disabled="loading" title="刷新待确认" aria-label="刷新待确认" @click="load"><RefreshCw :size="15"/></el-button></div>
-        <p v-if="!items.length&&!loading&&!error">暂无待确认的终止申请。</p>
-        <ul v-else><li v-for="item in items" :key="item.requestId"><div><strong>{{item.projectName}}</strong><p>{{item.reason}}</p></div>
-          <el-button size="small" @click="select(item)">处理</el-button></li></ul>
+        <div class="actions"><el-button :disabled="loading" title="刷新待确认" aria-label="刷新待确认" @click="load"><RefreshCw :size="15"/> 刷新</el-button></div>
+        <p v-if="!items.length&&!loading&&!error" class="confirmations-empty"><ClipboardCheck :size="28" aria-hidden="true"/>暂无待确认的终止申请。</p>
+        <ul v-if="items.length"><li v-for="item in items" :key="item.requestId"><div><strong>{{item.projectName}}</strong><p>{{item.reason}}</p><small v-if="item.requestedBy">申请人 ID <code>{{item.requestedBy}}</code></small></div>
+          <el-button :id="`termination-item-${item.requestId}`" size="small" @click="openForm(item)">处理</el-button></li></ul>
       </template>
-    </div>
-  </el-dialog>
+  </section>
 </template>
 
 <style scoped>
-.confirmations{min-height:4rem;overflow-wrap:anywhere}
+.confirmations{min-height:120px;overflow-wrap:anywhere}
+.confirmations form{max-width:760px}
+.confirmations-empty{min-height:126px;display:grid;justify-items:center;align-content:center;gap:12px;color:var(--pmo-muted)}
 ul{list-style:none;padding:0}
-li{display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.6rem 0;border-top:1px solid var(--el-border-color)}
-p,h3{margin:.35rem 0}
-label{display:grid;gap:.35rem;margin:.6rem 0}
-textarea{padding:.45rem;border:1px solid var(--el-border-color);border-radius:4px;color:inherit;background:var(--el-bg-color);font:inherit}
-.actions{display:flex;justify-content:flex-end;gap:.35rem;margin-top:.4rem}
+li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 0;border-top:1px solid var(--pmo-line)}
+li .el-button{flex:none}
+p,h3{margin:8px 0}
+small{color:var(--pmo-muted);font-size:13px}
+label{margin:16px 0}
 </style>

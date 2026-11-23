@@ -118,7 +118,7 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
 </script>
 
 <template>
-  <section class="retrospective" aria-label="项目复盘与教训" :aria-busy="busy">
+  <section class="panel retrospective" aria-label="项目复盘与教训" :aria-busy="busy">
     <div class="toolbar section-toolbar">
       <div class="section-heading"><h3>项目复盘</h3>
         <el-tag v-if="state?.kind" size="small" type="info">{{state.kind==='terminated'?'终止复盘':'结项复盘'}}</el-tag>

@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url = new URL(process.env.PMO_BROWSER_URL)
 const task = JSON.parse(process.env.PMO_TEST_TASK)
@@ -12,19 +13,20 @@ try{
   await context.addCookies([{name:'pmo_session',value:owner.cookie,domain:url.hostname,path:'/api/v1',httpOnly:true,sameSite:'Strict'}])
   await context.addInitScript(token => sessionStorage.setItem('pmo.csrf',token),owner.csrf)
   const page=await context.newPage();await page.goto(url.href)
-  const trigger=button(page,'我的补强待办'),queue=page.getByRole('dialog',exact('我的补强待办'))
+  const trigger=button(page,'我的补强待办'),queue=page.getByRole('region',exact('我的补强待办'))
   const items=queue.getByRole('list',exact('待办任务')).getByRole('listitem')
   const pages=queue.getByRole('navigation',exact('补强待办分页'))
+  await showNavigation(page)
   await trigger.click()
   await expect(queue.getByText('未办结 · 24',{exact:true})).toBeVisible()
   await expect(queue.locator('time').first()).toHaveAttribute('datetime',/^\d{4}-/)
   await expect(items).toHaveCount(20)
   await expect(queue.getByText(task.title,{exact:true})).toBeVisible()
-  await button(pages,'Go to next page').click()
+  await button(pages,'下一页').click()
   await expect(items).toHaveCount(4)
   await expect(queue.getByText('Second project follow-up',{exact:true})).toBeVisible()
   await expect(queue.getByText('Only for the other assignee')).toHaveCount(0)
-  await button(pages,'Go to previous page').click()
+  await button(pages,'上一页').click()
 
   const target=items.filter({hasText:task.title})
   const [read]=await Promise.all([page.waitForResponse(response=>{
@@ -43,6 +45,7 @@ try{
   expect(saved.request().headers()['idempotency-key']).toBeTruthy()
   await expect(panel.getByRole('status')).toHaveText('任务已更新。')
   await page.reload()
+  await showNavigation(page)
   await trigger.click()
   await expect(queue.getByText('未办结 · 23',{exact:true})).toBeVisible()
   await expect(queue.getByText(task.title,{exact:true})).toHaveCount(0)

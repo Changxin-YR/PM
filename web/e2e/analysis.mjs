@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL
 const session=JSON.parse(process.env.PMO_TEST_SESSIONS).pm
@@ -9,7 +10,8 @@ const button=(scope,name)=>scope.getByRole('button',{name,exact:true})
 
 async function openReport(page){
   await button(page,'查看 Synthetic review 的项目资料').click()
-  const drawer=page.getByRole('dialog',{name:'Synthetic review · 项目资料',exact:true})
+  const drawer=page.getByRole('region',{name:'Synthetic review · 项目资料',exact:true})
+  await showNavigation(page)
   await drawer.getByRole('tab',{name:'日报周报',exact:true}).click()
   const reports=drawer.getByRole('region',{name:'日报与周报',exact:true})
   const versions=reports.getByRole('row').filter({hasText:'2025-W01'})
@@ -43,7 +45,7 @@ try{
     await expect(button(initial.analysis,'转人工处理')).toHaveCount(0)
     await expect(button(initial.analysis,'选用为候选')).toHaveCount(0)
     await expect(button(initial.facts,'提报候选')).toHaveCount(0)
-    await button(initial.analysis,'Go to next page').click()
+    await button(initial.analysis,'下一页').click()
     await expect(rows).toHaveCount(1)
     await button(initial.analysis,'刷新报告分析').click()
     await expect(rows).toHaveCount(1)
@@ -60,12 +62,14 @@ try{
     const restored=await openReport(page)
     await expect(restored.analysis.getByText(outcome,{exact:true})).toBeVisible()
     await expect(restored.facts.getByText('暂无候选事实',{exact:true})).toBeVisible()
+    await showNavigation(page)
     await restored.drawer.getByRole('tab',{name:'项目助理',exact:true}).click()
     const assistant=restored.drawer.getByRole('region',{name:'项目助理',exact:true})
     await assistant.getByText('过程管家',{exact:true}).click()
     await expect(assistant.getByText(model?'候选已生成':'待人工处理',{exact:true})).toBeVisible()
     if(model)await expect(assistant.getByText(/Work took 2\.50 days\./)).toBeVisible()
     else await expect(assistant.getByRole('heading',{name:'待核验候选',exact:true})).toHaveCount(0)
+    await showNavigation(page)
     await restored.drawer.getByRole('tab',{name:'日报周报',exact:true}).click()
     await expect(restored.facts.getByText('暂无候选事实',{exact:true})).toBeVisible()
     if(model){
