@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {isRejectedWrite} from './api-error'
+import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import {computed,onMounted,ref,watch} from 'vue'
 import {ArrowRight,Gavel,Play,RefreshCw,RotateCcw,Send} from 'lucide-vue-next'
 
@@ -12,6 +12,7 @@ type Inbox={items:Entry[];page:number;pageSize:number;total:number;projectId:str
   requestable:string[];canResubmit:boolean;policyPending:boolean}
 type Mode='request'|'execute'|'decide'|'resubmit'
 type Intent={mode:Mode;revision:number;fromStage:string;toStage?:string;requestId?:string}
+type Attempt={mode:Mode;path:string;revision:number;body:string;key:string}
 type Decision='approve'|'reject'
 
 const props=defineProps<{projectId:string;projectRevision?:number;focusApprovalId?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
@@ -29,10 +30,11 @@ const modes={
 const state=ref<Inbox|null>(null),loading=ref(false),saving=ref(false),dialog=ref(false)
 const error=ref(''),formError=ref(''),notice=ref('')
 const intent=ref<Intent|null>(null),destination=ref(''),reason=ref(''),decision=ref<Decision|''>(''),holdUntil=ref('')
+const retry=ref<Attempt|null>(null)
 const busy=computed(()=>loading.value||saving.value)
+const locked=computed(()=>busy.value||!!retry.value)
 const outdated=computed(()=>!!state.value&&(props.projectRevision??0)>state.value.projectRevision)
 const destinations=computed(()=>state.value?.requestable??[])
-let attempt:{signature:string;key:string}|undefined
 
 function stageName(stage:string){return stages[stage]??stage}
 function time(iso:string){return new Date(iso).toLocaleString('zh-CN',{hour12:false})}
@@ -49,7 +51,7 @@ async function read(page=state.value?.page??1){
   if(!outdated.value)emit('stageRead',data.projectId,data.stage,data.projectRevision)
 }
 async function refresh(page=state.value?.page??1){
-  if(busy.value)return
+  if(locked.value)return
   loading.value=true;error.value=''
   try{await read(page)}catch(e){state.value=null;error.value=message(e,'未能读取阶段流转。')}finally{loading.value=false}
 }
@@ -59,13 +61,13 @@ watch(()=>props.focusApprovalId,()=>void refresh(1))
 
 function begin(mode:Mode,item?:Entry){
   const inbox=state.value
-  if(!inbox||busy.value||outdated.value)return
+  if(!inbox||locked.value||outdated.value)return
   if(mode==='request'&&!destinations.value.length||mode==='resubmit'&&!inbox.canResubmit)return
   if((mode==='execute'||mode==='decide')&&!eligible(mode,item))return
   intent.value={mode,revision:inbox.projectRevision,fromStage:inbox.stage,
     toStage:mode==='resubmit'?'drafting':item?.toStage,requestId:item?.requestId}
   destination.value=destinations.value.length===1?destinations.value[0]??'':''
-  reason.value='';decision.value='';holdUntil.value='';formError.value='';notice.value='';attempt=undefined;dialog.value=true
+  reason.value='';decision.value='';holdUntil.value='';formError.value='';notice.value='';dialog.value=true
 }
 const needsHold=computed(()=>intent.value?.mode==='decide'&&intent.value.toStage==='on_hold'&&decision.value==='approve')
 const awaitsInitiator=computed(()=>state.value?.items.some(row=>row.requestId===intent.value?.requestId&&row.awaitsInitiator)??false)
@@ -87,27 +89,34 @@ const command=computed(()=>{
     ...(needsHold.value?{holdUntil:new Date(timestamp).toISOString()}:{})}}
 })
 
-async function save(){
+function save(){
   const action=intent.value,write=command.value
-  if(busy.value||!action||!write)return
-  const body=JSON.stringify(write.payload),signature=JSON.stringify([write.path,action.revision,body])
-  if(attempt?.signature!==signature)attempt={signature,key:crypto.randomUUID()}
+  if(locked.value||!action||!write)return
+  void send({mode:action.mode,path:write.path,revision:action.revision,body:JSON.stringify(write.payload),key:crypto.randomUUID()})
+}
+async function send(attempt:Attempt){
+  if(busy.value)return
+  const {mode,path,revision,body,key}=attempt
   saving.value=true;formError.value='';error.value=''
   let saved=false
   try{
-    const {data}:{data:{status:string}}=await props.api(write.path,{method:'POST',body,
-      headers:{'If-Match':String(action.revision),'Idempotency-Key':attempt.key}})
-    saved=true;dialog.value=false;attempt=undefined
-    notice.value=action.mode==='request'?'阶段流转申请已登记。':data.status==='rejected'?'阶段流转申请已拒绝。':
-      action.mode==='resubmit'?'已退回草稿。':'阶段流转已执行。'
-    await read(action.mode==='request'||action.mode==='resubmit'?1:undefined)
+    const {data}:{data:{status:string}}=await props.api(path,{method:'POST',body,
+      headers:{'If-Match':String(revision),'Idempotency-Key':key}})
+    saved=true;dialog.value=false;retry.value=null
+    notice.value=mode==='request'?'阶段流转申请已登记。':data.status==='rejected'?'阶段流转申请已拒绝。':
+      mode==='resubmit'?'已退回草稿。':'阶段流转已执行。'
+    await read(mode==='request'||mode==='resubmit'?1:undefined)
   }catch(e){
     if(saved){state.value=null;error.value='操作已提交，但未能重读项目阶段和流转记录。'}
-    else if(isRejectedWrite(e)){
-      dialog.value=false;attempt=undefined
+    else if(isUnconfirmedWrite(e)){
+      retry.value=attempt;formError.value='未能确认提交结果，可按原请求重试。'
+    }else if(isRejectedWrite(e)){
+      dialog.value=false;retry.value=null
       try{await read()}catch{state.value=null}
       error.value=e.message
-    }else formError.value=message(e,'未能确认提交结果。')
+    }else{
+      retry.value=null;formError.value=message(e,'阶段流转操作未能提交。')
+    }
   }finally{saving.value=false}
 }
 </script>
@@ -122,9 +131,9 @@ async function save(){
       </div>
       <div class="controls">
         <el-button v-if="focusApprovalId" :disabled="busy||dialog" @click="emit('clearFocus')">查看全部流转</el-button>
-        <el-button v-if="!focusApprovalId&&destinations.length" type="primary" :disabled="busy||outdated" @click="begin('request')"><Send :size="15"/>申请阶段流转</el-button>
-        <el-button v-if="!focusApprovalId&&state?.canResubmit" :disabled="busy||outdated" @click="begin('resubmit')"><RotateCcw :size="15"/>退回草稿重提</el-button>
-        <el-button aria-label="刷新阶段流转" title="刷新阶段流转" :disabled="busy" @click="refresh()"><RefreshCw :size="15"/></el-button>
+        <el-button v-if="!focusApprovalId&&destinations.length" type="primary" :disabled="locked||outdated" @click="begin('request')"><Send :size="15"/>申请阶段流转</el-button>
+        <el-button v-if="!focusApprovalId&&state?.canResubmit" :disabled="locked||outdated" @click="begin('resubmit')"><RotateCcw :size="15"/>退回草稿重提</el-button>
+        <el-button aria-label="刷新阶段流转" title="刷新阶段流转" :disabled="locked" @click="refresh()"><RefreshCw :size="15"/></el-button>
       </div>
     </div>
     <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon/>
@@ -159,8 +168,8 @@ async function save(){
           </dl>
         </details>
         <div v-if="eligible('execute',item)||eligible('decide',item)" class="entry-actions">
-          <el-button v-if="eligible('execute',item)" :disabled="busy||outdated" @click="begin('execute',item)"><Play :size="15"/>执行阶段流转</el-button>
-          <el-button v-if="eligible('decide',item)" :disabled="busy||outdated" @click="begin('decide',item)"><Gavel :size="15"/>裁决阶段流转</el-button>
+          <el-button v-if="eligible('execute',item)" :disabled="locked||outdated" @click="begin('execute',item)"><Play :size="15"/>执行阶段流转</el-button>
+          <el-button v-if="eligible('decide',item)" :disabled="locked||outdated" @click="begin('decide',item)"><Gavel :size="15"/>裁决阶段流转</el-button>
         </div>
       </li>
     </ul>
@@ -171,9 +180,9 @@ async function save(){
   </section>
 
   <el-dialog v-model="dialog" :title="intent?modes[intent.mode].title:''" width="min(550px,94vw)" append-to-body destroy-on-close
-    :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
+    :close-on-click-modal="false" :close-on-press-escape="!saving&&!retry" :show-close="!saving&&!retry">
     <form v-if="intent" class="lifecycle-form" @submit.prevent="save">
-      <fieldset :disabled="busy||outdated">
+      <fieldset :disabled="locked||outdated">
         <legend>项目版本 {{intent.revision}}</legend>
         <p class="edge">{{stageName(intent.fromStage)}} <template v-if="intent.toStage"><ArrowRight :size="14" aria-hidden="true"/> {{stageName(intent.toStage)}}</template></p>
         <label v-if="intent.mode==='request'">目标阶段<select aria-label="目标阶段" v-model="destination" required>
@@ -189,8 +198,9 @@ async function save(){
       </fieldset>
       <el-alert v-if="formError" type="error" :title="formError" :closable="false" show-icon/>
       <div class="actions">
-        <el-button :disabled="saving" @click="dialog=false">取消</el-button>
-        <el-button type="primary" native-type="submit" :disabled="busy||!command" :loading="saving"><component :is="modes[intent.mode].icon" :size="15"/>{{modes[intent.mode].submit}}</el-button>
+        <el-button :disabled="saving||!!retry" @click="dialog=false">取消</el-button>
+        <el-button v-if="retry" :loading="saving" @click="send(retry)"><RotateCcw :size="15"/>重试上次提交</el-button>
+        <el-button type="primary" native-type="submit" :disabled="locked||!command" :loading="saving"><component :is="modes[intent.mode].icon" :size="15"/>{{modes[intent.mode].submit}}</el-button>
       </div>
     </form>
   </el-dialog>

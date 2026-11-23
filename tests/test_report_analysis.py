@@ -66,10 +66,11 @@ def gateway(*replies):
             runner.join(timeout=5)
 
 
-@pytest.fixture(scope='module')
-def analysis_api(live_stack, tmp_path_factory):
-    engine, _, _, _ = live_stack
-    with serve(engine.url, tmp_path_factory.mktemp('analysis-api'), extra_env={'PMO_REPORT_ANALYSIS':'1'}) as server:
+@pytest.fixture
+def analysis_api(team, tmp_path, monkeypatch):
+    scope = str(team.pid)
+    monkeypatch.setenv('PMO_REPORT_MODEL_PROJECTS', scope)
+    with serve(team.engine.url, tmp_path, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as server:
         yield server.base_url
 
 
@@ -96,12 +97,12 @@ def events(c, row):
         db.outbox_events.c.payload['analysisRunId'].astext == row['runId']).order_by(db.outbox_events.c.created_at)).scalars())
 
 
-def test_report_scope_blocks_queue_and_preexisting_job(team, live, analysis_api, tmp_path, monkeypatch):
+@pytest.mark.parametrize('scope_case', ('missing', 'empty', 'invalid', 'outside'))
+def test_report_scope_blocks_queue_and_preexisting_job(team, live, analysis_api, tmp_path, monkeypatch, scope_case):
     from uuid import uuid4
 
     author = team.users['reporter']
     report = submit(author, team.path, narrative=NARRATIVE)
-    scope = str(uuid4())
     with session_at(author, analysis_api) as original:
         queued = data(request(original, report))
     assert queued['status'] == 'queued'
@@ -109,19 +110,23 @@ def test_report_scope_blocks_queue_and_preexisting_job(team, live, analysis_api,
         lease = connection.execute(runs.update().where(r.id == UUID(queued['runId'])).values(
             status='running', lease_id=uuid4(), leased_until=sa.func.now() + timedelta(seconds=30),
             attempts=1).returning(runs)).mappings().one()
+    key = 'PMO_REPORT_MODEL_PROJECTS'
+    monkeypatch.delenv(key, raising=False)
+    scopes = {'empty': '', 'invalid': f'{team.pid},invalid', 'outside': str(uuid4())}
+    if scope_case != 'missing':
+        monkeypatch.setenv(key, scopes[scope_case])
     with gateway(answer()) as (url, calls):
-        monkeypatch.setenv('PMO_REPORT_MODEL_PROJECTS', scope)
         model = model_gateway.Gateway(httpx.URL(url), '')
         worker.process(live[0], worker.Claim(lease, False), model)
         with live[0].connect() as connection:
             job = inspect_team(connection, queued)
             assert (job.status, job.error_code) == ('manual', 'MODEL_SCOPE_BLOCKED')
+        with serve(live[0].url, tmp_path, extra_env={'PMO_REPORT_ANALYSIS': '1', 'PMO_REPORT_MODEL_URL': url}) as api, \
+                session_at(author, api.base_url) as client:
+            blocked = data(request(client, report, forceNewRun=True))
+            assert (blocked['status'], blocked['errorCode']) == ('manual', 'MODEL_SCOPE_BLOCKED')
+            assert not history(client, report)['modelEnabled']
         assert not calls
-    with serve(live[0].url, tmp_path, extra_env={'PMO_REPORT_ANALYSIS': '1',
-            'PMO_REPORT_MODEL_PROJECTS': scope}) as api, session_at(author, api.base_url) as client:
-        blocked = data(request(client, report, forceNewRun=True))
-        assert (blocked['status'], blocked['errorCode']) == ('manual', 'MODEL_SCOPE_BLOCKED')
-        assert not history(client, report)['modelEnabled']
 
 
 def test_model_off_author_scope_replay_and_atomic_fallback(team):

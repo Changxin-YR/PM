@@ -228,7 +228,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
             withdrawal_reason='Explicit synthetic withdrawal', withdrawal_request_id=uuid4()))
     guarded = subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', '0026'], capture_output=True, text=True, env=cli)
     assert guarded.returncode != 0 and 'Refusing to discard requirement dispute history' in guarded.stderr
-    with serve(source, tmp_path, evidence_dir=originals, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as pm:
+    scope = {'PMO_REPORT_ANALYSIS': '1', 'PMO_REPORT_MODEL_PROJECTS': str(project)}
+    with serve(source, tmp_path, evidence_dir=originals, extra_env=scope) as pm:
         pm.cookies.set('pmo_session', preupgrade_session, domain='127.0.0.1', path='/api/v1')
         pm.headers['X-CSRF-Token'] = preupgrade_csrf
         identity = pm.get('auth/me')
@@ -276,8 +277,8 @@ def test_joint_recovery_keeps_only_snapshot_objects(recovery_db, tmp_path, monke
         assert data(request(pm, published))['status']=='queued'
         with gateway(answer()) as (url, calls):
             done = subprocess.run([sys.executable,'-m','pmo.report_analysis_worker'], check=True, capture_output=True, text=True,
-                env={**os.environ,'DATABASE_URL':source.render_as_string(hide_password=False),
-                     'PMO_REPORT_ANALYSIS':'1','PMO_REPORT_MODEL_URL':url,'PMO_REPORT_MODEL_TOKEN':''})
+                env={**os.environ, **scope, 'DATABASE_URL':source.render_as_string(hide_password=False),
+                     'PMO_REPORT_MODEL_URL':url,'PMO_REPORT_MODEL_TOKEN':''})
             assert 'processed: 1' in done.stdout and len(calls)==1
         analysis, = history(pm, published)['items']
         assert analysis['status']=='ready' and analysis['requestedBy']==str(owner)

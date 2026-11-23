@@ -43,6 +43,28 @@ def test_saved_configuration_loads_only_into_the_right_process(monkeypatch, tmp_
     assert model_gateway.Gateway.for_previews() is None
 
 
+@pytest.mark.parametrize(('channel', 'enabled_flag', 'load'), (
+    ('REPORT', 'PMO_REPORT_ANALYSIS', model_gateway.Gateway.from_env),
+    ('ASSISTANT', 'PMO_ASSISTANT_PREVIEWS', model_gateway.Gateway.for_previews),
+))
+def test_env_loader_requires_explicit_project_uuids(monkeypatch, channel, enabled_flag, load):
+    project, other = uuid4(), uuid4()
+    prefix = f'PMO_{channel}_MODEL'
+    monkeypatch.setenv(enabled_flag, '1')
+    monkeypatch.setenv(f'{prefix}_URL', 'http://127.0.0.1:32101/model')
+    monkeypatch.setenv(f'{prefix}_PROTOCOL', 'pmo_json')
+    scope = f'{prefix}_PROJECTS'
+    for invalid in (None, '', f'{project},not-a-uuid', f'{project},'):
+        if invalid is None:
+            monkeypatch.delenv(scope, raising=False)
+        else:
+            monkeypatch.setenv(scope, invalid)
+        assert load() is None and not model_gateway.in_project_scope(channel, project)
+    monkeypatch.setenv(scope, f'{project}, {other}')
+    assert load() is not None and model_gateway.in_project_scope(channel, project)
+    assert model_gateway.in_project_scope(channel, other)
+
+
 def test_chat_mode_wraps_schema_and_nonexecutable_business_source():
     sample = {'excerpts': [{'sourceId': 's1', 'text': 'Synthetic authorized fragment only'}]}
     results = [{'reviewDraft': []}, {'lessonDrafts': []}, {'answer': []}, answer()]

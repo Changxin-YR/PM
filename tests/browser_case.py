@@ -73,6 +73,11 @@ def test_browser_draft_workflow(live,actor):
     with engine.begin() as c: c.execute(db.projects.update().where(db.projects.c.id==evidence_pid).values(stage='executing'))
     with vite(api_port) as (root, url):
         run_browser(root, url, 'draft', {**accounts,'PMO_TEST_USER':username,'PMO_TEST_PASSWORD':password})
+    with engine.connect() as c:
+        assert c.scalar(sa.text("SELECT count(*) FROM reviews WHERE project_id=:p AND type='charter'"),
+                        {'p': review_pid}) == 1
+        assert c.scalar(sa.text("SELECT count(*) FROM requirement_transitions WHERE requirement_id=:r AND status='customer_confirmed'"),
+                        {'r': req}) == 1
 
 
 @contextmanager
@@ -168,7 +173,7 @@ def test_browser_separates_model_previews_from_official_results(live, team, tmp_
     from test_assistant_preview import enabled_api
 
     execution_fixture(live, team)
-    with enabled_api(live, tmp_path, {'reviewDraft': [{'sourceId': 's1', 'lens': 'test_success'}]},
+    with enabled_api(live, tmp_path, team[0], {'reviewDraft': [{'sourceId': 's1', 'lens': 'test_success'}]},
                      {'answer': [{'sourceId': 's24'}]}, {'answer': [{'sourceId': 's24'}]}) as (api, calls):
         with vite(api.base_url.port) as (root, url):
             run_browser(root, url, 'assistant-model', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(team[2], 'pm'))})
@@ -269,10 +274,11 @@ def test_browser_report_analysis(live, team, model_on, tmp_path):
     params = {'PMO_TEST_SESSIONS':json.dumps(browser_sessions(users, 'pm')),
               'PMO_TEST_MODEL':str(int(model_on))}
     if model_on:
+        scope = {'PMO_REPORT_ANALYSIS': '1', 'PMO_REPORT_MODEL_PROJECTS': project.removeprefix('projects/')}
         with gateway(answer()) as (model_url, calls), serve(engine.url, tmp_path,
-                extra_env={'PMO_REPORT_ANALYSIS':'1'}) as api, vite(api.base_url.port) as (root, url):
+                 extra_env=scope) as api, vite(api.base_url.port) as (root, url):
             process = subprocess.Popen([sys.executable, '-m', 'pmo.report_analysis_worker', '--watch'],
-                env={**env,'PMO_REPORT_ANALYSIS':'1','PMO_REPORT_MODEL_URL':model_url,'PMO_REPORT_MODEL_TOKEN':''})
+                 env={**env, **scope, 'PMO_REPORT_MODEL_URL':model_url,'PMO_REPORT_MODEL_TOKEN':''})
             try:
                 run_browser(root, url, 'analysis', params)
             finally:

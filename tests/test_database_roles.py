@@ -145,7 +145,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM organization_user_invitations', 'SELECT * FROM account_status_changes',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 
-        with serve(urls['api'], tmp_path, extra_env={'PMO_REPORT_ANALYSIS':'1'}) as api:
+        with serve(urls['api'], tmp_path) as api, ExitStack() as analysis_service:
             logged = api.post('auth/login', json=dict(username='fixture-admin', password=password))
             assert logged.status_code == 200, logged.text
             api.headers['X-CSRF-Token'] = logged.json()['csrfToken']
@@ -214,7 +214,12 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             assert data(medium(api, fact))['validationStatus'] == 'verified'
             assert data(api.get(fact_path(fact) + '/history'))['total'] == 2
             assert data(api.get(report_path(report) + '/facts'))['items'][0]['quote'] == '2.50'
-            analysis = data(api.post(report_path(report)+'/analyze', headers=key(report['revision']), json={}))
+            from test_report_analysis import NARRATIVE, answer, gateway, session_at
+
+            scope = {'PMO_REPORT_ANALYSIS': '1', 'PMO_REPORT_MODEL_PROJECTS': pid}
+            scoped_api = analysis_service.enter_context(serve(urls['api'], tmp_path, extra_env=scope))
+            report_author = analysis_service.enter_context(session_at(api, scoped_api.base_url))
+            analysis = data(report_author.post(report_path(report)+'/analyze', headers=key(report['revision']), json={}))
             assert analysis['status']=='queued'
             rerun = subprocess.run([sys.executable,'-m','pmo.report_analysis_worker'], check=True,
                 capture_output=True,text=True,env={**scan_env,'PMO_REPORT_ANALYSIS':'0'})
@@ -224,16 +229,14 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             assert completed['status']=='manual' and completed['fallbackTaskId']
             # The same restricted API role can consume a real queued task in an independent process.
             from test_model_compatible_gateway import completion
-            from test_report_analysis import NARRATIVE, answer, gateway
 
             extract = data(api.post(path + '/reports', headers=key(), json=body(period=week_key(datetime.now(TZ).date()),
                 narrative=NARRATIVE)))
-            queued = data(api.post(report_path(extract)+'/analyze', headers=key(extract['revision']), json={}))
+            queued = data(report_author.post(report_path(extract)+'/analyze', headers=key(extract['revision']), json={}))
             assert queued['status'] == 'queued'
             with gateway(completion(answer())) as (url, seen):
-                worker_env = {**scan_env, 'PMO_REPORT_ANALYSIS':'1', 'PMO_REPORT_MODEL_URL':url,
-                    'PMO_REPORT_MODEL_PROTOCOL':'chat_completions_json', 'PMO_REPORT_MODEL_VERSION':'fixture-worker',
-                    'PMO_REPORT_MODEL_PROJECTS':pid}
+                worker_env = {**scan_env, **scope, 'PMO_REPORT_MODEL_URL':url,
+                    'PMO_REPORT_MODEL_PROTOCOL':'chat_completions_json', 'PMO_REPORT_MODEL_VERSION':'fixture-worker'}
                 process = subprocess.run([sys.executable,'-m','pmo.report_analysis_worker'], check=True,
                     capture_output=True,text=True,env=worker_env,timeout=30)
                 assert 'processed: 1' in process.stdout

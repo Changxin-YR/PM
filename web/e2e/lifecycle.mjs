@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {recoverWrite} from './write-recovery.mjs'
 
 const url = process.env.PMO_BROWSER_URL
 const sessions = JSON.parse(process.env.PMO_TEST_SESSIONS)
@@ -46,45 +47,15 @@ async function write(page, method, pattern, control, versioned=true) {
   return body.data
 }
 
-async function recoverWrite(page,pattern,scope,label,lockedControls,interruption) {
-  const endpoint=new RegExp(pattern+'$')
-  const isWrite=request=>request.method()==='POST'&&endpoint.test(new URL(request.url()).pathname)
-  const envelope=request=>{
-    const headers=request.headers()
-    return {key:headers['idempotency-key'],revision:headers['if-match'],body:request.postData()}
-  }
-  let sent,committed
-  const intercept=async route=>{
-    const request=route.request()
-    if(sent||!isWrite(request))return route.continue()
-    sent=envelope(request)
-    const response=await route.fetch()
-    expect(response.status()).toBe(200)
-    committed=(await response.json()).data
-    if(interruption==='network')await route.abort()
-    else await route.fulfill(interruption)
-  }
-  await page.route(endpoint,intercept)
-  try{
-    await button(scope,label).click()
-    await expect(scope.getByText(/未能确认.*按原请求重试/)).toBeVisible()
-    await expect(button(scope,label)).toBeDisabled()
-    for(const control of lockedControls)await expect(control).toBeDisabled()
-    const retry=page.waitForRequest(isWrite)
-    const repeated=await write(page,'POST',pattern,button(scope,'重试上次提交'))
-    expect(envelope(await retry)).toEqual(sent)
-    expect(repeated).toEqual(committed)
-    return repeated
-  }finally{await page.unroute(endpoint,intercept)}
-}
-
-async function requestStage(page, name, next) {
+async function requestStage(page, name, next, interrupt=false) {
   const panel=await open(page,'阶段流转')
   await button(panel,'申请阶段流转').click()
   const form=dialog(page,'申请阶段流转')
   await form.getByLabel('目标阶段',{exact:true}).selectOption(next)
   await form.getByLabel('申请原因',{exact:true}).fill(name)
-  const state=await write(page,'POST','/transition-requests',button(form,'提交流转申请'))
+  const state=interrupt?await recoverWrite(page,'/transition-requests',form,'提交流转申请',
+    [button(form,'取消'),form.getByLabel('申请原因',{exact:true}),button(panel,'刷新阶段流转')],'network'):
+    await write(page,'POST','/transition-requests',button(form,'提交流转申请'))
   expect(state).toMatchObject({toStage:next,status:'pending'})
   await expect(form).toBeHidden()
   return panel
@@ -406,7 +377,7 @@ try {
     await expect(current).toBeVisible()
     await button(panel,'刷新阶段流转').click()
     await expect(history.getByText('Synthetic history request 01',{exact:true})).toBeVisible()
-    await requestStage(pm,'Synthetic request from the history page.','on_hold')
+    await requestStage(pm,'Synthetic request from the history page.','on_hold',true)
     await expect(history.getByText('Synthetic request from the history page.',{exact:true})).toBeVisible()
     await expect(current).toBeVisible()
   } else if(process.env.PMO_TEST_PHASE==='formal-authority') {
@@ -438,7 +409,9 @@ try {
         const local=new Date(Date.now()+(60-new Date().getTimezoneOffset())*60_000).toISOString().slice(0,16)
         await form.getByLabel('暂停至（本地时间）',{exact:true}).fill(local)
       }
-      const outcome=await write(delegate,'POST','/approvals/[^/]+/decide',button(form,'确认流转裁决'))
+      const outcome=next==='on_hold'?await recoverWrite(delegate,'/approvals/[^/]+/decide',form,'确认流转裁决',
+        [button(form,'取消'),form.getByLabel('裁决理由',{exact:true})],{status:502}):
+        await write(delegate,'POST','/approvals/[^/]+/decide',button(form,'确认流转裁决'))
       expect(outcome).toMatchObject({status:'applied',toStage:next,decisionReason:rationale,
         authorityRef:refs[next],authoritySourceRef:source})
       await delegate.reload()

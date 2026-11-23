@@ -1,5 +1,6 @@
 import {chromium,expect} from '@playwright/test'
 import {mkdir} from 'node:fs/promises'
+import {recoverWrite} from './write-recovery.mjs'
 
 const browser=await chromium.launch({channel:process.env.PMO_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':'chromium')})
 try {
@@ -162,7 +163,15 @@ try {
   await reviewer.getByRole('button',{name:'刷新附件'}).click();await reviewer.getByRole('button',{name:'核验附件',exact:true}).click();await reviewer.getByLabel('核验说明').fill('已核对需求验收文件');await reviewer.getByRole('checkbox').check();await reviewer.getByRole('button',{name:'确认核验附件'}).click();await expect(reviewer.getByRole('cell',{name:'已核验'})).toHaveCount(2)
   for(const [index,button,status] of [[0,'标记交付','已交付'],[0,'内部验收','已验收'],[1,'客户确认','客户已确认']]){
     const signer=signers[index];await signer.getByRole('tab',{name:'需求',exact:true}).click();const panel=signer.getByRole('tabpanel',{name:'需求',exact:true});await panel.getByRole('button',{name:button,exact:true}).click()
-    const dialog=signer.getByRole('dialog',{name:button,exact:true});await expect(dialog.getByRole('button',{name:'确认提交'})).toBeDisabled();await dialog.getByLabel('已核验证据').selectOption({index:1});await dialog.getByRole('button',{name:'确认提交'}).click();await expect(panel.getByRole('cell',{name:status,exact:true})).toBeVisible()
+    const dialog=signer.getByRole('dialog',{name:button,exact:true})
+    const evidence=dialog.getByLabel('已核验证据')
+    const submit=dialog.getByRole('button',{name:'确认提交',exact:true})
+    await expect(submit).toBeDisabled()
+    await evidence.selectOption({index:1})
+    if(index===1)await recoverWrite(signer,'/requirements/[^/]+/customer-confirm',dialog,'确认提交',
+      [dialog.getByRole('button',{name:'取消',exact:true}),evidence],'network')
+    else await submit.click()
+    await expect(panel.getByRole('cell',{name:status,exact:true})).toBeVisible()
   }
   await signers[0].getByRole('tabpanel',{name:'需求',exact:true}).getByRole('button',{name:'查询'}).click();await expect(signers[0].getByRole('cell',{name:'客户已确认',exact:true})).toBeVisible()
   await signers[0].getByRole('button',{name:'需求变更历史'}).click();const history=signers[0].getByRole('dialog',{name:'需求变更历史'});const prior=history.locator('article').filter({hasText:'已撤回 · 验收样例：调整优先级已撤回'});await expect(prior).toBeVisible();await expect(prior.getByText(/基准版本 1 · 记录版本 1/)).toBeVisible();await expect(prior.locator('pre').first()).toContainText('P0');await expect(prior.locator('pre').last()).toContainText('P1')
@@ -188,12 +197,10 @@ try {
   await expect(reviewPanel.getByText('立项预检 · 材料齐备')).toBeVisible()
   await reviewPanel.getByRole('button',{name:'提交立项评审'}).click()
   const submitDialog=sender.getByRole('dialog',{name:'确认送审',exact:true})
-  const submitted=sender.waitForResponse(r=>r.request().method()==='POST'&&/\/api\/v1\/projects\/[\da-f-]+\/reviews$/.test(r.url()))
   const persistedStage=sender.waitForResponse(r=>r.request().method()==='GET' && /\/api\/v1\/projects\/[\da-f-]+$/.test(r.url()))
-  await submitDialog.getByRole('button',{name:'确认送审',exact:true}).click()
-  const submission=await submitted
-  expect(submission.ok(),await submission.text()).toBe(true)
-  const {reviewId}=(await submission.json()).data
+  const {reviewId}=await recoverWrite(sender,'/projects/[^/]+/reviews',submitDialog,'确认送审',
+    [submitDialog.getByRole('button',{name:'取消',exact:true}),reviewPanel.getByRole('button',{name:'重读阶段与材料'})],
+    {status:409,json:{code:'REQUEST_IN_PROGRESS'}})
   expect((await (await persistedStage).json()).data.project).toMatchObject({stage:'charter_review',revision:2})
   await expect(reviewPanel.getByText('当前阶段：立项评审')).toBeVisible()
   await expect(reviewPanel.getByRole('cell',{name:'待评审',exact:true})).toBeVisible()

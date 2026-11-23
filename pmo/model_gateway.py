@@ -35,14 +35,16 @@ def previews_enabled() -> bool:
     return os.getenv('PMO_ASSISTANT_PREVIEWS', '0') == '1'
 
 
-def in_project_scope(channel: Literal['REPORT', 'ASSISTANT'], project_id: UUID) -> bool:
-    scope = os.getenv(f'PMO_{channel}_MODEL_PROJECTS')
-    if scope is None:
-        return True  # Existing deployments manage egress separately.
+def _project_scope(prefix: str) -> frozenset[UUID]:
+    scope = os.getenv(f'{prefix}_PROJECTS', '')
     try:
-        return project_id in {UUID(value) for value in scope.split(',')}
+        return frozenset(UUID(value.strip()) for value in scope.split(','))
     except ValueError:
-        return False  # An empty or invalid explicit scope never enables egress.
+        return frozenset()  # A missing, empty or malformed list does not authorize egress.
+
+
+def in_project_scope(channel: Literal['REPORT', 'ASSISTANT'], project_id: UUID) -> bool:
+    return project_id in _project_scope(f'PMO_{channel}_MODEL')
 
 
 def _fields(pairs):
@@ -99,6 +101,8 @@ class Gateway:
 
     @classmethod
     def _configured(cls, prefix: str):
+        if not _project_scope(prefix):
+            return None
         protocol = os.getenv(f'{prefix}_PROTOCOL', 'pmo_json')
         model = os.getenv(f'{prefix}_VERSION', '')
         try:

@@ -1,0 +1,56 @@
+# Optional HTTPS trial ingress. Requires Compose 2.24.4+ for !override.
+services:
+  api:
+    environment:
+      PMO_LOCAL_HTTP: "0"
+    command:
+      - uvicorn
+      - pmo.api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-access-log
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${PMO_TARGET_PROXY_IP:?set the dedicated Nginx IPv4 address}
+  web:
+    ports: !override
+      - target: 8443
+        published: "${PMO_TARGET_HTTPS_PORT:-18783}"
+        host_ip: ${PMO_TARGET_HTTPS_BIND:-127.0.0.1}
+    volumes:
+      - type: bind
+        source: ./target-https.nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PMO_TARGET_TLS_CERT:?set the TLS certificate chain path}
+        target: /etc/nginx/pilot-tls/fullchain.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PMO_TARGET_TLS_KEY:?set the TLS private key path}
+        target: /etc/nginx/pilot-tls/privkey.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      default:
+        ipv4_address: ${PMO_TARGET_PROXY_IP:?set the dedicated Nginx IPv4 address}
+      ingress: {}
+
+networks:
+  default:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${PMO_TARGET_SUBNET:?set a unique private subnet for the HTTPS stack}
+          ip_range: ${PMO_TARGET_CONTAINER_RANGE:?set a container CIDR inside the subnet that excludes Nginx}
+  ingress:
+    ipam:
+      config:
+        - subnet: ${PMO_TARGET_INGRESS_SUBNET:?set a different private subnet for the HTTPS ingress}

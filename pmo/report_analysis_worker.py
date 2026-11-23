@@ -111,7 +111,7 @@ def process(pool: Engine, work: Claim, model: Model | None, *, disabled_code='MO
         if row is None:
             return
         code: str | None
-        if not in_project_scope('REPORT', p.id):
+        if not in_project_scope('REPORT', p.id) and (model is not None or disabled_code != 'MODEL_DISABLED'):
             code = 'MODEL_SCOPE_BLOCKED'
         else:
             code = 'MODEL_LEASE_EXHAUSTED' if work.exhausted else disabled_code if model is None else None

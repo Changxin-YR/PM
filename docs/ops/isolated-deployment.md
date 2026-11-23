@@ -26,6 +26,31 @@ docker @stack ps -a
 - 演练：运行 `.venv/Scripts/python.exe scripts/deployment_smoke.py $p`。脚本先验证唯一隔离项目、配置归属、空库及回环端口，再创建合成帐号、15 个项目和里程碑，确认 Outbox 消费回执，用 Edge 取样，并实际停启这套数据库。不得指向任何使用中的环境。
 - 手工：在交互终端运行 `docker @stack run --rm --no-deps migrate python -m pmo.bootstrap --organization "演练组织" --username "local-admin" --name "演练管理员"`，按提示输入并确认独立口令。打开 `http://127.0.0.1:18760`，或实际配置的端口。管理员不因此成为项目 Reviewer、Sponsor 或客户代表。
 
+## 真实试点的独立 HTTPS 入口
+
+使用独立的 Compose 项目、数据库和私有附件卷。由运维选择实际的证书域名、访问范围和窗口，先在目标入口用合成账号验收，再按[业务验收单](business-pilot-acceptance.md#真实试点的执行边界)纳入经批准的资料。原本机 HTTP 演示与试点各自运行。
+
+在受保护的环境文件保留前文的四个数据库口令，并增加以下参数。Compose 需支持 `!override`（2.24.4+），以便 HTTPS 端口替换原 HTTP 端口。
+
+| 参数 | 配置 |
+|---|---|
+| `PMO_TARGET_TLS_CERT`、`PMO_TARGET_TLS_KEY` | 证书链和私钥的实际文件路径，主机名须在证书 SAN 中。文件只读挂载，运行 Nginx 的受限账号可读私钥。 |
+| `PMO_TARGET_SUBNET`、`PMO_TARGET_CONTAINER_RANGE`、`PMO_TARGET_PROXY_IP` | 为本栈分配互不冲突的私有网络。Nginx 使用容器动态分配范围之外的专用 IPv4 地址，API 只信任这个地址。 |
+| `PMO_TARGET_INGRESS_SUBNET` | 单独分配只接入 Nginx 的前端子网，避免与后端及现有 Compose 网络重叠。 |
+| `PMO_TARGET_HTTPS_BIND`、`PMO_TARGET_HTTPS_PORT` | 默认绑定 `127.0.0.1:18783`。跨机器试点只绑定获准的接口，并限制接入网络。 |
+
+在仓库根目录，用新项目名和独立环境文件运行：
+
+```powershell
+$stack = @('compose','-p',$p,'--env-file',$cfg,'-f','deploy/compose.yaml','-f','deploy/target-https.compose.yaml')
+docker @stack up --build -d --wait
+docker @stack ps -a
+```
+
+HTTPS 在本栈 Nginx 终止，Nginx 覆盖来访的代理协议及地址头，API 关闭本机 HTTP 例外。只发布 Web。首轮保留模型关闭，并验证证书链、登录和接受邀请、Secure/HttpOnly/SameSite Cookie、CSRF、伪造转发头拒绝、跨组织及跨项目原件拒绝。证书与使用范围按目标环境实际配置验收。Nginx 同时连接前端与后端网，API、调度、数据库及 Outbox 只接后端内网。
+
+在空的合成检查栈上可用[入口复查脚本](../../tests/deployment_ingress_check.py)验证证书信任、登录、邀请和附件边界。证书信任由操作系统或检查客户端校验，先核对脚本的 `--help` 和实际环境，再传入专用合成账号。附件接口允许 20 MiB 文件及 64 KiB multipart 开销，超限拒绝由代理和 API 分别验证。
+
 ## 探针、日志与中断
 
 `GET /health/live` 只检查应用进程可响应；`GET /health/ready` 校验数据库连通、Alembic head 与私有目录的读写权限，不读附件内容或发起业务写入。未就绪返回 503 和固定状态；详细类别在内部日志。就绪不等同于全部附件完整、Outbox 已清空或定时备份通过。
