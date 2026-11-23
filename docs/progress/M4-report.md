@@ -1,5 +1,28 @@
 # M4 四模式、证据与恢复：未整体验收
 
+## 2026-11-23 固定候选与两组合成试点
+
+固定产品提交 `e28da52cf977f89343b274252dffb2b69d9a1345`，树 `cb0a9245a331937119165d4df792a6f6243aa71b`。比对了固定 ZIP 与 Compose 导出目录的 368 个源码文件；后续原生操作脚本和验收文档单列，不混算成产品制品。运行 OpenAPI 实际 **95 基线 + 46 工程操作**，基线主体 **55 人工、40 双入口**。FND-006 的剩余嵌套 DTO 与资源权限、WEB-002 的其余审批及工作台组合仍待验证。
+
+原生试点 `18778/18779`、专用 `55443/pmo_pilot`、PostgreSQL 16.14、独占 schema `0036`。私有原件目录有 52 个文件且仅本机当前账号 ACL 可读。共享 `55439/pmo.public` 原容器保持停止，源卷只读挂载，仅在无网络 tmpfs 副本以只读事务查 `0016`（`.local/pmo-synthetic-pilot-native/e28da52-20261123-shared-readback.log`）。未运行通用 setup/migrate。旧 Docker 试点与固定 Compose 探针均不使用这套持久库。
+
+| 核验入口和关键参数（省略本机日志路径） | 退出码 | 结果与证据 |
+|---|---:|---|
+| `pwsh -NoProfile -File scripts/dev.ps1 check`（仅 check 子命令）、操作脚本 `compileall` | 0、0 | 规格三检、mypy 92 文件、Python 编译 PASS，原生证据目录 `e28da52-20261123-{check,dev-check}.log`。静态计数不代替运行计数，后者见同目录 `e28da52-20261123-openapi.json`。 |
+| 固定导出 `npm.cmd --prefix web ci --prefer-offline --no-audit --no-fund` 和 `npm.cmd --prefix web run build` | 0、0 | Vue 类型与 Vite 构建通过；保留依赖及包体告警。固定制品目录 `e28da52-20261123-{npm,web-build}.log`。 |
+| `python -m scripts.pilot_regression -- -q -p scripts.mcp_test_evidence --pmo-mcp-evidence <JSON> --pmo-mcp-check-replays --junitxml=<XML>`（`PMO_PILOT_RUNTIME=native`，独用 `55444`） | 0 | **334 passed / 517.68 秒**，两条既有弃用警告。原生 `e28da52-20261123-backend.{log,xml}`；[逐工具 SDK 证据](../acceptance/mcp-stdio-0036-e28da52.json)。 |
+| `python -m scripts.reference_vector_evidence <后端 XML> <CSV> --require-complete` | 0 | 冻结 [102/102 产品向量](../acceptance/reference-vectors-0036-e28da52.csv) PASS，零失败/未运行。 |
+| `python -m scripts.pilot_regression -- -q tests/browser_case.py --junitxml=<XML>`（native、Edge） | 0 | **26 passed / 364.08 秒**；原生 `e28da52-20261123-edge.{log,xml}`。 |
+| `python -m scripts.pilot_local init/start`、`python -m scripts.pilot_rehearsal`、`python -m scripts.pilot_seed seed`、`python -m scripts.pilot_rehearsal browser`（native） | 0 | 同一持久实例重启后可续接，种子重复运行只读回；专项 Edge 登录、助理四模式、报告分析、跨项目报告拒绝及令牌入口通过。`e28da52-20261123-pilot.log` 及 ACL 保护回执。 |
+| 固定源码定向 `pytest`、仓库外安装固定 wheel 后的 `pytest tests/test_mcp_configuration.py` | 0、0 | 11 月 22 日在同一候选实测 **7 项**（联合恢复及升级保护、双模型作用域、运行角色），**11 项发行入口**；`targeted-fixed.xml`、`e28da52-wheel.{log,xml}`，不以旧代码或 SDK 替代实际 Host。 |
+| 固定导出 `docker compose -p pmo104-rc-e28da52c --env-file <保护文件> -f deploy/compose.yaml -f deploy/pilot-smoke.compose.yaml build migrate web`；同参数 `up --no-build --pull never -d --wait --wait-timeout 180`；`python scripts/deployment_smoke.py pmo104-rc-e28da52c --pilot-network` | 0、0、0 | 回环 `18777`、独立网段 `10.253.73.0/27`、`0036`、受限角色、模型关闭。15 草稿、15 里程碑、15 唯一 Outbox 投递回执；仅停该栈 DB，`live=200/ready=503`，恢复 `200/200` 并回读原草稿/回执，注销后旧会话失败。Edge `158.0.4370.33`，各 30 次的本机 p95：筛选 **50 ms**、详情 **50 ms**、里程碑 **825 ms**；不外推到目标环境。`e28da52-20261123-{compose,smoke}.log`。11 月 22 日的未完成构建日志另留。 |
+
+制品 SHA-256：源码 ZIP `b55efc154033ffc1cc7803bfaa6d5e92abb663640854938d319f4bfd7b632ebf`；wheel `3456a20967bd6c5e247ec9ee43debfc28b884a946c6a0c816d4641f98d518b91`；Compose 本机镜像 ID：runtime `sha256:d7578fcea2ffbbf09b4e5050256652b9449a89859f2dd5ce6f3588a23cd2e762`，web `sha256:655a9234e50c29b041a169b26cf4c57ae708c16681386b3d8006539c06c47398`。本机原始日志分别在 `.local/pmo-synthetic-pilot-native` 与 `.local/pmo-synthetic-pilot`，不提交账号、密钥或原始回执。
+
+两组合成验收：A `SIM-EXEC-001` 保留 `executing`（12 条需求 4/5/3、118 条回执），B `SIM-NEW-001` 保留 `drafting`（10 条需求 3/4/3、23 条种子回执）；两个独立 `-DRILL` 副本按人工关口流程结束并归档（158 / 146 条回执）。不完整对账原件拒绝 `422`；首次结项因两种成本偏差被阻断。以独立流水核验补齐后，旧对账拒绝 `409`，依据新对账才允许结项；同时留存变更过期、风险接收、四问和 Lesson、归档只读证据。模型未开启，未改业务门槛或把模拟角色当真实签核人。
+
+真实模型配置未保存、未加载、未外发；T09 两个实际 Host 各自待验。八项业务 DEC、两个真实试点、目标环境告警/周期恢复/性能和生产放行仍未验收。见[阻断](blockers.md)与[试点操作手册](../ops/synthetic-pilots.md)。以下为历史证据。
+
 2026-11-20：`tests/test_outbox.py` 在随机 PostgreSQL schema 实测本地事件消费恢复，包括过期租约、重复消费、退避和死信。消费回执不是站内通知送达证明，更不是全库或附件备份恢复演练。
 
 ## 2026-11-20 数据库与私有附件联合演练

@@ -1,5 +1,28 @@
 # M3 工具与目标 Host：部分实测，未整体验收
 
+## 2026-11-23 当前候选与 Host 边界
+
+产品候选 `e28da52cf977f89343b274252dffb2b69d9a1345`，持久试点 API `127.0.0.1:18779/api/v1/`。全量后端回归启用 SDK 插件，实际 stdio **40/40 发现、40/40 成功调用及闭合 Schema、40/40 未授权动作拒绝（`FORBIDDEN`）、18/18 读审计、22/22 同键写重放**；无重复成功审计或 Outbox。见[逐工具输出](../acceptance/mcp-stdio-0036-e28da52.json)及 [M4 命令](M4-report.md#2026-11-23-固定候选与两组合成试点)。仓库外固定 wheel 的 11 项也已通过，见历史制品记录；两者都不是实际 Host 验收。
+
+| Host | 现状 | T09 |
+|---|---|---|
+| Codex Desktop | 今日本机安装 `26.1117.4957.0`；内置 CLI `0.171.0-alpha.13` 回报未登录，这不是 Desktop 会话证据。`codex-mcp.toml` 已按 `native` 生成，未写入 Host 配置；登录及 MCP 批准均留给本人，未观察到 Desktop 实调。 | BLOCKED_EXTERNAL |
+| DSH | 今日重查本机登记仍为 `0.2.2-rc.3`，登记的 Harness 程序缺失；此前官方桥报 `auth_required`，无可操作批准窗，实际运行版本未确认。`dsh-mcp.cordis.yml` 已按 `native` 生成但未加载。 | BLOCKED_EXTERNAL |
+
+两份模板均不含密钥。原生试点之前独立签发给 Codex 和 DSH 的 1 小时委托于 2026-11-22 约 20:18（北京时间）到期；接入时分别轮换，继续最小授权且只针对 B 的草稿。本人批准之后，从各自真实 Host 验证发现、列表/详情、同键草稿写入及 Web 回读、重放、越权和单独撤销后另一 Host 仍可读。见[操作手册](../ops/synthetic-pilots.md#打开和批准-host)。以下为历史批次。
+
+## 2026-11-22 合成 Host 交接（旧 Docker 试点）
+
+固定产品代码 `e28da52cf977f89343b274252dffb2b69d9a1345`，隔离 PMO API `127.0.0.1:18776/api/v1/`。`SIM-NEW-001` 保留 `drafting`；通过 `sim-init` 的正式入口签发两个各自 1 小时的委托，动作仅 `pmo_project_list` / `pmo_project_get` / `pmo_project_draft_update`，项目白名单仅 B，不允许创建。口令、令牌与配置保留在 `.local/pmo-synthetic-pilot`；不进本报告。
+
+| 对象 | 实际准备与状态 |
+|---|---|
+| Codex Desktop | 安装 `26.1117.3838.0`，自带 CLI `0.171.0-alpha.13`。启动真实登录流程；CLI `login status` 仍未登录。生成 `codex-mcp.toml`，未写入全局配置，未观察到 Desktop 连接批准或实际调用。 |
+| DSH | 本机登记 `0.2.2-rc.3`；登记路径无可执行文件，未发现运行中的 Harness。官方桥实测 `auth_required`、版本未知；无批准窗口。依据本机 DSH 源码样例准备独立 overlay，不把网页或 SDK 当作 Host。 |
+| 仓库外安装 | 当前 `pmo_lite-0.1.0-py3-none-any.whl` SHA-256 `3456a20967bd6c5e247ec9ee43debfc28b884a946c6a0c816d4641f98d518b91`。独立 venv 执行 `tests/test_mcp_configuration.py`：11 PASS，以真实安装的 `pmo-mcp.exe` 从仓库外启动，验证 40 项发现、读和配置/鉴权拒绝。 |
+
+T09 两个 Host 均 **BLOCKED_EXTERNAL**。仍须各自在真实 Host 验收发现、列表/详情、同键草稿写入和 Web 回读、重放、越权拒绝、人工撤销原进程并确认另一 Host 不受影响。操作入口见[手册](../ops/synthetic-pilots.md#打开和批准-host)。以下为历史记录。
+
 2026-11-20：`tests/test_runtime.py::test_mcp_stdio` 使用真实 SDK 子进程，发现、调用并校验 13/40 个工具的结构化数据。项目、里程碑、需求、立项卡、角色提名、联系台账复用 REST 的范围与事务；撤销后拒绝。人工成员列表和审计列表不暴露为工具。
 
 上述 13 项为早期记录。2026-11-20 实测从人工签发到 SDK stdio 读、越权拒绝、撤销后原进程即时拒绝，见 `tests/test_agent_tokens.py`。关口批次后运行时共注册 30/40 项；`tests/test_reviews.py` 用实际签发且含显式项目委托的短时令牌调用新增四项，校验成功/错误的封闭 DTO、额外字段拒绝和送审重放。SDK 不等于目标 Host。T09 未通过，不宣传 Codex/DSH/其他客户端兼容。
