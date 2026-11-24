@@ -7,6 +7,7 @@ import sys
 from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
+from conftest import isolated_live_stack
 import httpx
 import psycopg
 import pytest
@@ -21,6 +22,13 @@ from pmo.risk_resolution import acceptances, resolutions
 from test_database_roles import serve, split_roles as split_roles
 from test_evidence import binary
 from test_risk_resolution import SCOPE, headers, ok, rejected, scenario as scenario
+
+
+@pytest.fixture(scope='module')
+def live_stack(tmp_path_factory):
+    # This module exercises a legacy downgrade. Newer tests may have written
+    # onboarding history that 0038 intentionally prevents from being dropped.
+    yield from isolated_live_stack(tmp_path_factory)
 
 
 def rejected_insert(connection, statement, constraint):
@@ -106,6 +114,7 @@ def test_risk_receipt_bindings_and_upgrade_preserve_history(live, scenario):
             acceptances.c.id.in_([asked_id, accepted_id]))).all()
         assert dict(rows) == {asked_id: 1, accepted_id: 1}
         assert c.scalar(sa.select(db.risks.c.revision).where(db.risks.c.id == risk.id)) == 2
+    subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], env=live[3], check=True, timeout=45)
 
 
 def test_risk_handoff_runs_as_restricted_api_without_routine_grants(split_roles, tmp_path):

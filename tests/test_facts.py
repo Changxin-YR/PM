@@ -211,3 +211,31 @@ def test_stdio_candidate_and_human_only_boundaries(live, team):
     assert scoped['quote']==text and scoped['quotePath']=='/narrative'
     assert scoped['validationStatus']=='candidate' and scoped['trust']=='low'
     assert data(pm.get(path))['status']=='submitted'
+
+def test_weekly_comparison_uses_previous_shanghai_week_and_verified_scoped_sources(team):
+    pm, reviewer, outsider = (team.users[key] for key in ('pm', 'reviewer', 'outsider'))
+    older = submit(pm, team.path, amount='2.5')
+    older_fact = data(post(pm, older, proposal(older, '2.5', asOf='2024-12-17T09:00:00+08:00')))
+    older = data(medium(reviewer, older_fact))
+    previous = submit(pm, team.path, amount='2.50')
+    previous_fact = data(post(pm, previous, proposal(previous, '2.50', asOf='2024-12-23T09:00:00+08:00',
+        subject='  synthetic DELIVERY ')))
+    previous = data(medium(reviewer, previous_fact))
+    stable = data(pm.get(fact_path(previous) + '/weekly-comparison'))
+    assert stable['status'] == 'same' and stable['previous']['typedValue'] == '2.5'
+    assert stable['previous']['factRef'] == f"fact:{older['factId']}@{older['revision']}"
+    report = submit(pm, team.path, amount='3.80')
+    fact = data(post(pm, report, proposal(report, '3.80', asOf='2024-12-29T16:00:00Z')))
+    path = fact_path(fact) + '/weekly-comparison'
+    prelim = data(pm.get(path))
+    assert prelim == {'status': 'current_unverified', 'previousStart': '2024-12-23', 'previousEnd': '2024-12-29'}
+    deny(outsider.get(path), 404, 'RESOURCE_NOT_FOUND')
+    certified = data(medium(reviewer, fact))
+    response = pm.get(path)
+    comparable = data(response)
+    assert comparable == {'status': 'changed', 'previousStart': '2024-12-23', 'previousEnd': '2024-12-29',
+        'previous': {'asOf': '2024-12-23T01:00:00Z', 'typedValue': '2.50', 'quote': '2.50',
+                     'factRef': f"fact:{previous['factId']}@{previous['revision']}", 'reportRef': previous['sourceRef']}}
+    assert comparable['previous']['factRef'] in response.json()['meta']['sourceRefs']
+    assert current(pm, report) == certified
+    assert data(pm.get(f'projects/{team.pid}/tasks'))['total'] == 0

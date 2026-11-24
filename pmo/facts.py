@@ -1,6 +1,6 @@
 """The human and delegated Agent entrances share immutable source checks."""
-from datetime import datetime
-from typing import Annotated
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Annotated, Literal
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -11,18 +11,20 @@ from . import fact_store as store
 from .access import Auth, Key, Revision
 from .pagination import pg_offset
 from .contracts import Result, Strict
-from .fact_sources import Candidate, Short, Status, Trust, Value, can_propose, concrete, high_evidence, recheck, submitted
+from .fact_sources import Candidate, Short, Status, Trust, Value, can_propose, concrete, fact_labels, high_evidence, normal_value, recheck, submitted, verified_source
 from .identity import Failure
 from .materials import finish, replay
 from .projects import fingerprint, meta, run
 from .report_analysis import permitted as can_read_analysis
-from .reports import _context, _plain, _ref
+from .reports import TZ, _context, _plain, _ref, readable_reports
 from .requirement_baselines import active_member
 
 router = APIRouter(prefix='/api/v1', tags=['Fact evidence'])
 LIST, PROPOSE = 'human_report_fact_list', 'pmo_fact_propose'
 VERIFY, CLARIFY = 'human_fact_verify', 'human_fact_clarify'
 HISTORY = 'human_fact_history'
+COMPARE = 'human_fact_weekly_comparison'
+COMPARISON_SCAN_LIMIT = 250
 HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 Reason = Annotated[StrictStr, Field(min_length=5, max_length=2000, pattern=r'\S'), AfterValidator(_plain)]
 
@@ -88,6 +90,22 @@ class HistoryPage(Strict):
     pageSize: int
 
 
+class ComparisonValue(Strict):
+    asOf: datetime
+    typedValue: Value
+    quote: str
+    factRef: str
+    reportRef: str
+    evidenceRef: str | None = None
+
+
+class WeeklyComparison(Strict):
+    status: Literal['same', 'changed', 'current_unverified', 'no_previous_fact', 'scan_limited']
+    previousStart: date
+    previousEnd: date
+    previous: ComparisonValue | None = None
+
+
 def view(row, *, human: bool) -> Fact:
     extra = dict(quotePath=row.quote_path, quoteOffset=row.quote_offset, contentHash=row.content_hash,
         verificationEvidenceRef=row.evidence_ref, verificationNote=row.history_reason) if human else {}
@@ -127,6 +145,53 @@ def history(factId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         return Result[HistoryPage](data=HistoryPage(items=items, total=total, page=page, pageSize=pageSize),
                                    meta=meta(HISTORY, [fact.source_ref, *(f'fact:{factId}@{item.revision}' for item in items)]))
     return run(authorization, HISTORY, read)
+
+
+def _comparison_value(row):
+    return ComparisonValue(asOf=row.as_of.astimezone(UTC), typedValue=row.value, quote=row.quote, factRef=store.fact_ref(row),
+                           reportRef=row.source_ref, evidenceRef=row.evidence_ref if row.trust == 'high' else None)
+
+
+@router.get('/facts/{factId}/weekly-comparison', operation_id=COMPARE,
+            response_model_exclude_none=True, openapi_extra=HUMAN)
+def weekly_comparison(factId: UUID, authorization: Auth) -> Result[WeeklyComparison]:
+    def read(c, actor, _):
+        project, report, _pm, fact = _fact_context(c, actor, factId, write=False)
+        local_date = fact.as_of.astimezone(TZ).date()
+        current_monday = local_date - timedelta(days=local_date.weekday())
+        previous_monday = current_monday - timedelta(days=7)
+        previous_end = current_monday - timedelta(days=1)
+        refs = [fact.source_ref, store.fact_ref(fact)]
+
+        def result(status, previous=None):
+            return Result[WeeklyComparison](data=WeeklyComparison(status=status, previousStart=previous_monday,
+                previousEnd=previous_end, previous=previous), meta=meta(COMPARE, refs, project_id=project.id))
+
+        if not verified_source(c, report, fact):
+            return result('current_unverified')
+
+        allowed_select = readable_reports(actor, project.id)
+        allowed = allowed_select.subquery()
+        f = store.f
+        lower, upper = (datetime.combine(day, time.min, TZ) for day in (previous_monday, current_monday))
+        rows = c.execute(store.query().join(allowed, allowed.c.id == f.report_id)
+            .where(f.project_id == project.id, f.as_of >= lower, f.as_of < upper,
+                   f.validation_status == 'verified', f.trust.in_(('high', 'medium')))
+            .order_by(f.as_of.desc(), f.id).limit(COMPARISON_SCAN_LIMIT + 1)).mappings().all()
+        labels = fact_labels(fact.subject, fact.predicate)
+        for row in rows[:COMPARISON_SCAN_LIMIT]:
+            if fact_labels(row.subject, row.predicate) != labels:
+                continue
+            source = c.execute(allowed_select.where(allowed_select.selected_columns.id == row.report_id)).mappings().one_or_none()
+            if source is None or not verified_source(c, source, row):
+                continue
+            prior = _comparison_value(row)
+            refs.extend([prior.factRef, prior.reportRef])
+            if prior.evidenceRef:
+                refs.append(prior.evidenceRef)
+            return result('same' if normal_value(fact.value) == normal_value(row.value) else 'changed', prior)
+        return result('scan_limited' if len(rows) > COMPARISON_SCAN_LIMIT else 'no_previous_fact')
+    return run(authorization, COMPARE, read)
 
 
 @router.get('/reports/{reportId}/facts', operation_id=LIST, response_model_exclude_none=True, openapi_extra=HUMAN)

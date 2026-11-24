@@ -9,6 +9,9 @@ const form=ref(false),edit=ref<Risk|null>(null),statement=ref(''),prob=ref(3),im
 const resolutionId=ref(''),resolutionOpen=ref(false)
 const statuses:Record<string,string>={open:'未关闭',mitigated:'已缓解',closed:'已关闭',transferred:'已移交'}
 let seq=0,key='',signature=''
+function shanghai(value:string){
+  return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})
+}
 async function load(n=page.value){const id=++seq;loading.value=true;error.value='';try{const {data}=await props.api(`${path}?page=${n}`);if(id===seq){items.value=data.items;canCreate.value=data.canCreate;total.value=data.total;page.value=n}}
  catch(e){if(id===seq){error.value=String(e);canCreate.value=false;items.value=[]}}finally{if(id===seq)loading.value=false}}
 function open(row:Risk|null){edit.value=row;statement.value=row?.statement??'';prob.value=row?.prob??3;impact.value=row?.impact??3;response.value=row?.response??'';blocking.value=row?.isBlocking??false;key='';form.value=true;error.value=''}
@@ -28,6 +31,15 @@ onMounted(()=>load())
 <div class="actions"><el-button @click="form=false">取消</el-button><el-button native-type="submit" type="primary" :loading="busy"><Save :size="15"/>保存风险</el-button></div></form>
 <el-table :data="items" v-loading="loading" row-key="riskId" empty-text="暂无已登记风险"><el-table-column label="风险" min-width="170"><template #default="{row}">{{row.statement}} <el-tag size="small" type="danger" v-if="row.isBlocking">阻塞</el-tag></template></el-table-column>
 <el-table-column prop="prob" label="概率" width="62"/><el-table-column prop="impact" label="影响" width="62"/><el-table-column prop="response" label="应对措施" min-width="140"/><el-table-column label="状态" width="74"><template #default="{row}">{{statuses[row.status]??row.status}}</template></el-table-column>
+<el-table-column label="负责人 ID" min-width="156">
+  <template #default="{row}"><code v-if="row.ownerId">{{row.ownerId}}</code><span v-else class="risk-meta">未登记</span></template>
+</el-table-column>
+<el-table-column label="阻塞起始（北京时间）" min-width="155">
+  <template #default="{row}">
+    <time v-if="row.blockedSince" :datetime="row.blockedSince">{{shanghai(row.blockedSince)}}</time>
+    <span v-else class="risk-meta">{{row.isBlocking?'未记录':'—'}}</span>
+  </template>
+</el-table-column>
 <el-table-column label="操作" width="100"><template #default="{row}"><div class="risk-actions">
   <el-button v-if="row.canEdit" text aria-label="编辑风险" title="编辑风险" @click="open(row)"><Pencil :size="15"/></el-button>
   <el-button text aria-label="风险处置" title="风险处置" :disabled="form||busy" @click="showResolution(row)"><ShieldCheck :size="15"/></el-button>
@@ -35,4 +47,4 @@ onMounted(()=>load())
 <el-pagination v-if="total>20" :current-page="page" :total="total" :page-size="20" layout="prev,pager,next" @current-change="load"/>
 <RiskResolution v-if="resolutionId" :key="resolutionId" v-model="resolutionOpen" :risk-id="resolutionId" :api="api" @saved="load()"/>
 </section></template>
-<style scoped>form{display:grid;gap:12px;padding:16px;margin:0 0 16px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}.ratings{display:flex;gap:12px}.ratings label{width:6rem}.flag{display:flex;align-items:center;gap:6px}.flag input{width:auto}.risk-actions{display:flex;align-items:center;gap:2px}.risk-actions :deep(.el-button){padding:7px}</style>
+<style scoped>form{display:grid;gap:12px;padding:16px;margin:0 0 16px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}.ratings{display:flex;gap:12px}.ratings label{width:6rem}.flag{display:flex;align-items:center;gap:6px}.flag input{width:auto}.risk-meta{color:var(--pmo-muted)}.risk-actions{display:flex;align-items:center;gap:2px}.risk-actions :deep(.el-button){padding:7px}</style>

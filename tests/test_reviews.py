@@ -682,3 +682,52 @@ def test_gate_compares_exact_values_before_display_rounding():
     strong = card([5] * 5, FeasibilityDimensions.model_fields)
     weak = card([2, 5, 5, 5, 5], FeasibilityDimensions.model_fields)
     assert assess('feasibility', [strong, weak]).classification == 'shortfall'
+
+def test_review_meeting_reuses_roles_revision_and_keeps_decision_history(live, team):
+    engine, api, _, _ = live
+    pid, people, users, agent_auth = team
+    owner, pm, reviewer, outsider = (users[role] for role in ('initiator', 'pm', 'reviewer', 'outsider'))
+    review = start_charter(pid, users)
+    path = review + '/meeting'
+    initial = data(owner.get(path))
+    assert initial['canSchedule'] and not initial['canRecordMinutes']
+    assert initial['attendeeIds'] == [] and 'minutes' not in initial
+    assert 'scheduledAt' not in initial
+    assert str(people['outsider']) not in {person['personId'] for person in initial['attendeeOptions']}
+    assert outsider.get(path).status_code == 404
+    assert api.get('/api/v1/' + path, headers=agent_auth).status_code == 403
+    schedule = {'action': 'schedule', 'scheduledAt': '2026-11-28T09:30:00+08:00',
+                'attendeeIds': [str(people['pm']), str(people['reviewer'])]}
+    key = headers(initial['revision'])
+    assert reviewer.put(path, headers=key, json=schedule).status_code == 403
+    assert owner.put(path, headers=key, json={**schedule, 'attendeeIds': [str(people['outsider'])]}).json()['code'] == \
+        'REVIEW_ATTENDEE_NOT_IN_PROJECT'
+    assert owner.put(path, headers=key, json={'action': 'minutes', 'minutes': 'Test before decision.'}).json()['code'] == \
+        'REVIEW_MEETING_NOT_EDITABLE'
+    response = owner.put(path, headers=key, json=schedule)
+    scheduled = data(response)
+    assert scheduled['revision'] > initial['revision']
+    assert scheduled['scheduledAt'] == '2026-11-28T01:30:00Z'
+    assert scheduled['attendeeIds'] == schedule['attendeeIds']
+    assert owner.put(path, headers=key, json=schedule).json() == response.json()
+    assert owner.put(path, headers=key, json={**schedule, 'scheduledAt': None}).json()['code'] == 'IDEMPOTENCY_CONFLICT'
+    state = bench(reviewer, review)
+    assert not state['stale'] and state['review']['revision'] == 1
+    assert data(reviewer.get(path))['attendeeIds'] == schedule['attendeeIds']
+    assert score(reviewer, review, [4, 4, 4, 4])['assessment']['classification'] == 'normal'
+    outcome = data(decide(reviewer, review))
+    assert outcome['decision']['stage'] == 'designing'
+    notes = data(pm.get(path))
+    assert notes['canRecordMinutes'] and not notes['canSchedule']
+    assert owner.put(path, headers=headers(initial['revision']),
+                     json={'action': 'minutes', 'minutes': 'Old page.'}).json()['code'] == 'VERSION_CONFLICT'
+    minutes = 'Synthetic attendees independently verified source materials.'
+    note = data(pm.put(path, headers=headers(notes['revision']), json={'action': 'minutes', 'minutes': minutes}))
+    assert data(reviewer.get(path))['minutes'] == minutes == note['minutes']
+    assert bench(reviewer, review)['decision'] == outcome['decision']
+    with engine.begin() as conn:
+        conn.execute(db.projects.update().where(db.projects.c.id == pid).values(stage='archived'))
+    archived = data(pm.get(path))
+    assert not archived['canRecordMinutes'] and archived['minutes'] == minutes
+    blocked = pm.put(path, headers=headers(note['revision']), json={'action': 'minutes', 'minutes': 'After archive.'})
+    assert blocked.json()['code'] == 'ARCHIVED_READ_ONLY'

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import {computed,nextTick,ref,watch} from 'vue'
+import ReviewMeeting from './ReviewMeeting.vue'
 import {ArrowLeft,Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
 import RequirementExceptionReceipt, {type RequirementException} from './RequirementExceptionReceipt.vue'
 
@@ -52,6 +53,7 @@ const path=`reviews/${props.reviewId}`
 const view=ref<Workbench|null>(null),loading=ref(false),saving=ref(false),readFailed=ref(false)
 const error=ref(''),notice=ref(''),retry=ref<Attempt|null>(null)
 const heading=ref<HTMLElement|null>(null)
+const meeting=ref<InstanceType<typeof ReviewMeeting>|null>(null)
 const selected=ref<Action['id']|''>(''),scoreDraft=ref<Record<string,ScoreDraft>>({})
 const reason=ref(''),verdict=ref<keyof typeof verdicts|''>(''),conditions=ref<Condition[]>([])
 let conditionId=0,lastAttempt:Attempt|undefined
@@ -60,8 +62,8 @@ const busy=computed(()=>loading.value||saving.value)
 const available=computed(()=>actions.filter(action=>view.value?.[action.flag]))
 const current=computed(()=>available.value.find(action=>action.id===selected.value))
 const materialRefs=computed(()=>Array.from(new Set(view.value?.materialRefs??[])))
-const workDisabled=computed(()=>busy.value||readFailed.value||!!retry.value)
-const navigationLocked=computed(()=>saving.value||!!retry.value)
+const workDisabled=computed(()=>busy.value||readFailed.value||!!retry.value||!!meeting.value?.navigationLocked)
+const navigationLocked=computed(()=>saving.value||!!retry.value||!!meeting.value?.navigationLocked)
 defineExpose({navigationLocked})
 
 function close(){
@@ -208,6 +210,8 @@ async function submit(previous?:Attempt){
       <el-button v-if="retry" :loading="saving" :disabled="loading" @click="submit(retry)"><RotateCcw :size="14"/> 重试上次提交</el-button>
       <p v-if="notice" role="status" class="result-note">{{notice}}</p>
       <template v-if="view">
+        <ReviewMeeting ref="meeting" :review-id="reviewId" :revision="view.review.revision" :api="api"
+          :disabled="busy||readFailed||!!retry"/>
         <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" :closable="false" show-icon/>
         <el-alert v-if="view.stale" type="warning" title="送审所依据的材料或授权已变化。" :closable="false" show-icon/>
         <el-alert v-if="view.scoreEvidenceStale" type="warning" title="有效评分的证据无法通过复核，暂不可确认或裁决。" :closable="false" show-icon/>

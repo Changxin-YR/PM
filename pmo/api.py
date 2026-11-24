@@ -18,6 +18,7 @@ from .milestone_routes import router as milestone_router
 from .requirement_routes import router as requirement_router
 from .charter_routes import router as charter_router
 from .appointment_routes import router as appointment_router
+from .onboarding import router as onboarding_router
 from .stakeholder_routes import router as stakeholder_router
 from .members import router as members_router
 from .audits import router as audit_router, is_admin
@@ -86,6 +87,7 @@ app.include_router(milestone_router)
 app.include_router(requirement_router)
 app.include_router(charter_router)
 app.include_router(appointment_router)
+app.include_router(onboarding_router)
 app.include_router(stakeholder_router)
 app.include_router(members_router)
 app.include_router(audit_router)

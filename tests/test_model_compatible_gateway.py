@@ -1,5 +1,7 @@
 """Verify the opt-in JSON chat compatibility contract and protected configuration split."""
 import json
+import sys
+from contextlib import contextmanager
 from uuid import uuid4
 
 import httpx
@@ -13,6 +15,142 @@ from test_report_analysis import answer, gateway
 
 def completion(value, **updates):
     return {'choices': [{'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': json.dumps(value), **updates}}]}
+
+
+@pytest.fixture
+def configured_pilot(monkeypatch, tmp_path):
+    monkeypatch.setattr(pilot_local, 'HOME', tmp_path)
+    monkeypatch.setattr(pilot_local, 'private_home', lambda: None)
+    pilot_local.save('pilots.json', {code: {'id': str(uuid4())} for code in pilot_local.PILOT_CODES})
+    return {'url': 'https://provider.example.invalid/v1/chat/completions', 'protocol': 'chat_completions_json',
+            'version': 'fixture-model', 'token': 'fixture-private-key', 'projects': ['SIM-EXEC-001']}
+
+
+@pytest.mark.parametrize('path', ('/', '/v1', '/api/v1/'))
+def test_chat_endpoint_needs_request_path_in_pilot_and_runtime(monkeypatch, configured_pilot, path):
+    url = f'https://provider.example.invalid{path}'
+    pilot_local.save('model-assistant.json', configured_pilot | {'url': url})
+    with pytest.raises(pilot_local.ModelConfigError, match='complete Chat Completions request URL'):
+        pilot_local.model_env(True)
+    monkeypatch.setenv('PMO_ASSISTANT_PREVIEWS', '1')
+    monkeypatch.setenv('PMO_ASSISTANT_MODEL_PROJECTS', str(uuid4()))
+    monkeypatch.setenv('PMO_ASSISTANT_MODEL_PROTOCOL', 'chat_completions_json')
+    monkeypatch.setenv('PMO_ASSISTANT_MODEL_VERSION', 'fixture-model')
+    monkeypatch.setenv('PMO_ASSISTANT_MODEL_URL', url)
+    assert model_gateway.Gateway.for_previews() is None
+    monkeypatch.setenv('PMO_ASSISTANT_MODEL_URL', configured_pilot['url'])
+    assert model_gateway.Gateway.for_previews() is not None
+
+
+def test_model_preflight_distinguishes_saved_loaded_worker_and_provider(monkeypatch, configured_pilot):
+    pilot_local.save('model-assistant.json', configured_pilot | {'protocol': 'pmo_json', 'url': 'https://provider.example.invalid/v1'})
+    pilot_local.save('model-report.json', configured_pilot | {'token': '', 'projects': ['SIM-NEW-001']})
+    _, _, loaded = pilot_local.model_env(True)
+    loaded['assistant']['version'] = 'prior-assistant-version'
+    pids = {'api': 11, 'web': 22, 'outbox': 33, 'reportWorker': 42}
+    pilot_local.save('runtime.json', {'web': pilot_local.WEB, 'api': pilot_local.API, 'models': loaded, 'pids': pids})
+    monkeypatch.setattr(pilot_local, 'ready', lambda: False)
+    monkeypatch.setattr(pilot_local, 'probe_runtime_processes', lambda _: pytest.fail('processes checked for a stale runtime'))
+    stale = pilot_local.model_preflight()
+    assert not stale['running']
+    assert all(not channel['loaded'] for channel in stale['channels'].values())
+    assert stale['channels']['report']['worker'] == 'not_loaded'
+
+    monkeypatch.setattr(pilot_local, 'ready', lambda: True)
+    observed = []
+    monkeypatch.setattr(pilot_local, 'probe_runtime_processes', lambda processes: observed.append(processes) or set(pids))
+    active = pilot_local.model_preflight()
+    assert active['running'] and observed == [pids]
+    assistant, report = (active['channels'][name] for name in ('assistant', 'report'))
+    assert assistant['configuration'] == 'valid' and assistant['loaded'] and assistant['tokenPresent']
+    assert 'exact base-looking URL' in assistant['guidance']
+    assert assistant['version'] == 'fixture-model' and assistant['loadedConfiguration']['version'] == 'prior-assistant-version'
+    assert report['configuration'] == 'valid' and report['loaded'] and not report['tokenPresent']
+    assert report['worker'] == 'running' and report['projects'] == ['SIM-NEW-001']
+    assert assistant['providerResult'] == report['providerResult'] == 'not_checked'
+    rendered = json.dumps(active)
+    assert configured_pilot['token'] not in rendered and 'provider.example.invalid' not in rendered
+
+    monkeypatch.setattr(pilot_local, 'probe_runtime_processes', lambda _: set(pids) - {'reportWorker'})
+    assert pilot_local.model_preflight()['channels']['report']['worker'] == 'unavailable'
+    monkeypatch.setattr(pilot_local, 'probe_runtime_processes', lambda _: None)
+    unverified = pilot_local.model_preflight()
+    assert unverified['servicesReady'] and not unverified['running']
+    assert all(not channel['loaded'] for channel in unverified['channels'].values())
+
+
+@pytest.mark.parametrize(('changes', 'message'), [
+    ({'url': 'https://embedded-secret@provider.example.invalid/v1/chat/completions'}, 'embedded credentials'),
+    ({'protocol': ['pmo_json']}, 'Choose pmo_json'),
+    ({'version': ' '}, 'model ID or version'),
+    ({'projects': ['SIM-EXEC-001', 'SIM-EXEC-001']}, 'unique synthetic'),
+    ({'projects': ['outside']}, 'unique synthetic'),
+    ({'token': 'invalid bearer secret'}, 'valid bearer token'),
+])
+def test_invalid_model_configuration_reports_safe_per_channel_error(configured_pilot, changes, message):
+    pilot_local.save('model-assistant.json', configured_pilot | changes)
+    channels = pilot_local.model_preflight()['channels']
+    assert channels['assistant']['configuration'] == 'invalid' and message in channels['assistant']['error']
+    assert channels['report']['configuration'] == 'missing'
+    rendered = json.dumps(channels)
+    assert all(value not in rendered for value in ('embedded-secret', 'fixture-private-key', 'invalid bearer secret'))
+    with pytest.raises(pilot_local.ModelConfigError, match=message):
+        pilot_local.model_env(True)
+
+
+def test_model_preflight_cli_detects_malformed_config_and_missing_project(monkeypatch, configured_pilot, capsys):
+    pilot_local.save('pilots.json', {'SIM-EXEC-001': {'id': 'malformed-uuid'}})
+    pilot_local.save('model-assistant.json', configured_pilot)
+    pilot_local.local_file('model-report.json').write_text('malformed JSON fixture-secret', encoding='utf-8')
+    monkeypatch.setattr(sys, 'argv', ['pilot_local', 'model-preflight'])
+    with pytest.raises(SystemExit) as stopped:
+        pilot_local.main()
+    assert stopped.value.code == 1
+    output = capsys.readouterr().out
+    diagnostics = json.loads(output)['channels']
+    assert 'Seed the selected' in diagnostics['assistant']['error']
+    assert 'could not be read as JSON' in diagnostics['report']['error']
+    assert 'fixture-secret' not in output
+
+
+@pytest.mark.parametrize('situation', ('stale', 'occupied', 'unknown_processes', 'live_worker', 'marker_changed', 'foreign_instance'))
+def test_stale_runtime_marker_requires_free_ports_and_known_processes(monkeypatch, configured_pilot, situation):
+    pids = {'api': 11, 'web': 22, 'outbox': 33, 'reportWorker': 44}
+    marker = {'web': pilot_local.WEB, 'api': pilot_local.API, 'pids': pids}
+    if situation == 'foreign_instance':
+        marker['web'] = 'http://127.0.0.1:32101'
+    pilot_local.save('runtime.json', marker)
+    pilot_local.local_file('stop.request').touch()
+    bound = []
+
+    @contextmanager
+    def bind(port):
+        if situation == 'occupied' and port == pilot_local.API_PORT:
+            raise OSError('in use')
+        bound.append(port)
+        try:
+            yield
+        finally:
+            bound.remove(port)
+
+    def processes(recorded):
+        assert recorded == pids
+        assert bound == [pilot_local.WEB_PORT, pilot_local.API_PORT]
+        if situation == 'live_worker':
+            return {'reportWorker'}
+        if situation == 'unknown_processes':
+            return None
+        if situation == 'marker_changed':
+            pilot_local.save('runtime.json', marker | {'new': True})
+        return set()
+
+    monkeypatch.setattr(pilot_local, 'bind', bind)
+    monkeypatch.setattr(pilot_local, 'probe_runtime_processes', processes)
+    cleared = situation == 'stale'
+    assert pilot_local.clear_stale_runtime() == cleared
+    assert pilot_local.local_file('runtime.json').is_file() != cleared
+    assert pilot_local.local_file('stop.request').is_file() != cleared
+    assert bound == []
 
 
 def test_saved_configuration_loads_only_into_the_right_process(monkeypatch, tmp_path):

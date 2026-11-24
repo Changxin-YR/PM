@@ -70,7 +70,8 @@ def test_large_pages_are_empty_with_authorized_totals(live, team):
     report_path = f"reports/{report['reportId']}"
     fact = data(propose_fact(pm, report))
     covered = set()
-    for path in ('projects', 'project-overview', 'analytics/weekly-health', 'analytics/health-alerts',
+    for path in ('projects', 'project-overview', 'onboarding/projects', 'onboarding/people',
+                 'analytics/weekly-health', 'analytics/health-alerts',
                  'me/approval-queue', 'me/strengthening-tasks', 'me/agent-tokens', 'admin/agents/tokens',
                  'admin/audits', 'admin/users', 'admin/members', 'admin/users/invitations',
                  'analytics/preapproval-spending', 'lessons/search', report_path + '/facts', report_path + '/analysis-runs',
@@ -79,8 +80,12 @@ def test_large_pages_are_empty_with_authorized_totals(live, team):
                  *(f'{p}/{suffix}' for suffix in ('members', 'evidence', 'health/history', 'cost-postings',
                        'requirements', 'risks', 'stakeholders', 'reports', 'tasks', 'alerts', 'changes'))):
         filters = {'projectId': str(team.pid)} if path == 'approvals' else {}
+        if path == 'onboarding/people':
+            filters = {'keyword': 'reviewer'}
         current = pm.get(path, params={**filters, 'pageSize': 1})
         assert current.status_code == 200, (path, current.text)
+        if path.startswith('onboarding/'):
+            assert current.json()['data']['total'] > 0, path
         far = pm.get(path, params={**filters, 'page': '100000000000000000000', 'pageSize': 1})
         template = re.sub(r'\b[0-9a-f]{8}-[0-9a-f-]{27}\b', r'[^/]+', '/api/v1/' + path)
         shape = next(route['get'] for key, route in spec.items() if 'get' in route and re.fullmatch(template, key))

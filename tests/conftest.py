@@ -24,6 +24,10 @@ def acceptance_api():
 
 @pytest.fixture(scope='session')
 def live_stack(tmp_path_factory):
+    yield from isolated_live_stack(tmp_path_factory)
+
+
+def isolated_live_stack(tmp_path_factory):
     admin=sa.create_engine(os.environ['PMO_TEST_DATABASE_URL'],hide_parameters=True)
     schema='pmo_test_'+uuid4().hex
     with admin.begin() as c: c.exec_driver_sql(f'CREATE SCHEMA {schema}')

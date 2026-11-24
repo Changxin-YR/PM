@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response
 
-from . import review_outcomes as outcomes, reviews
+from . import review_meetings as meetings, review_outcomes as outcomes, reviews
 from .access import Auth, Key, Revision
 from .contracts import Result
 from .gates import Check, Gate
@@ -72,3 +72,16 @@ def decide(reviewId: UUID, command: outcomes.Decide, authorization: Auth, key: K
 @router.post('/reviews/{reviewId}/withdraw', operation_id=outcomes.WITHDRAW, response_model_exclude_none=True)
 def withdraw(reviewId: UUID, command: outcomes.ReasonCommand, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
     return outcomes.write_action(authorization, outcomes.WITHDRAW, reviewId, command, key, int(expected))
+
+
+@router.get('/reviews/{reviewId}/meeting', operation_id=meetings.READ,
+            response_model_exclude_none=True, openapi_extra=meetings.HUMAN)
+def meeting(reviewId: UUID, authorization: Auth) -> Result[meetings.Meeting]:
+    return meetings.read(authorization, reviewId)
+
+
+@router.put('/reviews/{reviewId}/meeting', operation_id=meetings.WRITE,
+            response_model_exclude_none=True, openapi_extra=meetings.HUMAN)
+def save_meeting(reviewId: UUID, command: meetings.MeetingCommand, authorization: Auth,
+                 key: Key, expected: Revision) -> Result[meetings.Meeting]:
+    return meetings.write(authorization, reviewId, command, int(expected), key)

@@ -28,7 +28,7 @@ try {
   }
   await expect(assistant.getByRole('heading',{name:'台账结果',exact:true})).toBeVisible()
   await expect(assistant.getByRole('region',{name:'模型建议预览'})).toHaveCount(0)
-  await page.screenshot({path:join(screenshots,'pilot-assistant.png')})
+  await page.screenshot({path:join(screenshots,'pilot-assistant.png'),animations:'disabled'})
 
   await page.goto(url + initial + `reports&report=${a.reportId}`)
   // A hash-only navigation across workbenches does not reinitialize the current session.
@@ -36,7 +36,7 @@ try {
   const details = page.getByRole('article',{name:'报告详情'})
   const analysis = details.getByRole('region',{name:'报告分析',exact:true})
   await expect(analysis.getByRole('button',{name:'转人工处理'})).toBeVisible()
-  await page.screenshot({path:join(screenshots,'pilot-report-analysis.png')})
+  await page.screenshot({path:join(screenshots,'pilot-report-analysis.png'),animations:'disabled'})
 
   await page.goto(url + initial + `reports&report=${otherReport}`)
   await page.reload()

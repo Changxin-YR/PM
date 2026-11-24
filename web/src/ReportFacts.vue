@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {ref,watch} from 'vue'
-import {Check,ChevronDown,ChevronUp,GitMerge,History,Plus,RefreshCw,X} from 'lucide-vue-next'
+import {CalendarDays,Check,ChevronDown,ChevronUp,GitMerge,History,Plus,RefreshCw,X} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 import ReportAnalysis from './ReportAnalysis.vue'
 
@@ -13,13 +13,22 @@ type Page={items:Fact[];total:number;page:number;pageSize:number;reportRevision:
 type Entry={revision:number;action:string;actorId:string;occurredAt:string;validationStatus:Status;trust:Trust;reason:string;evidenceRef?:string}
 type Log={items:Entry[];total:number;page:number;pageSize:number}
 type Mode='propose'|'verify'|'clarify'
+type ComparisonStatus='same'|'changed'|'current_unverified'|'no_previous_fact'|'scan_limited'
+type WeeklyComparison={status:ComparisonStatus;previousStart:string;previousEnd:string;
+  previous?:{asOf:string;typedValue:string|number|boolean;quote:string;factRef:string;reportRef:string;evidenceRef?:string}}
 
 const props=defineProps<{reportId:string;projectId:string;revision:number;submittedAt:string;initiallyExpanded?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
 const page=ref<Page>(), expanded=ref(props.initiallyExpanded??false), reading=ref(false), working=ref(false)
 const error=ref(''), notice=ref(''), mode=ref<Mode>(), selected=ref<Fact>(), trust=ref<Trust>('medium')
 const subject=ref(''), predicate=ref(''), value=ref(''), kind=ref('text'), quote=ref(''), at=ref(''), reason=ref('')
 const evidence=ref<string[]>([]), historyFor=ref(''), log=ref<Log>(), logLoading=ref(false)
+const compareFor=ref(''),comparison=ref<WeeklyComparison>(),compareLoading=ref(false),compareError=ref('')
 let pickedAt:{local:string;iso:string}|undefined
+let compareSeq=0
+const comparisonLabels:Record<ComparisonStatus,string>={
+  same:'与上周同类事实一致',changed:'与上周同类事实相比有变化',current_unverified:'当前事实的原始来源未通过复核',
+  no_previous_fact:'上周没有可读且可核验的同类事实',scan_limited:'上周记录超过查询上限，本次未确定可对照的同类事实',
+}
 const statusLabels:Record<Status,string>={candidate:'候选',verified:'已核验',disputed:'待澄清',rejected:'已驳回'}
 const trustLabels:Record<Trust,string>={low:'低',medium:'中',high:'高'}
 const actionLabels:Record<string,string>={proposed:'提报',verified:'核验',disputed:'发现冲突',resolved:'完成澄清',superseded:'驳回'}
@@ -41,7 +50,7 @@ function message(e:unknown){
 }
 async function read(n=page.value?.page??1){
   const id=++seq,scope=epoch
-  reading.value=true
+  clearComparison();reading.value=true
   try{
     const {data}:{data:Page}=await props.api(`reports/${props.reportId}/facts?page=${n}`)
     if(id===seq&&scope===epoch)page.value=data
@@ -69,6 +78,21 @@ async function showLog(factId:string,n=1){
   finally{if(id===logSeq&&scope===epoch)logLoading.value=false}
 }
 function toggleLog(factId:string){if(historyFor.value===factId){++logSeq;historyFor.value='';log.value=undefined;logLoading.value=false}else{log.value=undefined;void showLog(factId)}}
+function clearComparison(){
+  ++compareSeq;compareFor.value='';comparison.value=undefined;compareError.value='';compareLoading.value=false
+}
+async function toggleComparison(factId:string){
+  const wasOpen=compareFor.value===factId
+  clearComparison()
+  if(wasOpen)return
+  const id=compareSeq,scope=epoch
+  compareFor.value=factId;compareLoading.value=true
+  try{
+    const {data}:{data:WeeklyComparison}=await props.api(`facts/${factId}/weekly-comparison`)
+    if(id===compareSeq&&scope===epoch)comparison.value=data
+  }catch(e){if(id===compareSeq&&scope===epoch)compareError.value=message(e)}
+  finally{if(id===compareSeq&&scope===epoch)compareLoading.value=false}
+}
 function cancel(){mode.value=undefined;attempt=null}
 async function submit(){
   if(!page.value||working.value||!mode.value)return
@@ -99,7 +123,7 @@ async function submit(){
 }
 watch(()=>[props.reportId,props.revision],()=>{
   ++epoch;page.value=undefined;working.value=false;reading.value=false;historyFor.value='';log.value=undefined;logLoading.value=false
-  error.value='';notice.value='';cancel();if(expanded.value)void read(1)
+  error.value='';notice.value='';cancel();clearComparison();if(expanded.value)void read(1)
 },{immediate:true})
 </script>
 
@@ -153,7 +177,24 @@ watch(()=>[props.reportId,props.revision],()=>{
           <el-button v-if="page?.canVerify&&item.validationStatus!=='rejected'" size="small" :disabled="working||reading" @click="start('verify',item)"><Check :size="15"/>核验</el-button>
           <el-button v-if="page?.canClarify&&item.validationStatus==='disputed'&&item.trust!=='low'" size="small" :disabled="working||reading" @click="start('clarify',item)"><GitMerge :size="15"/>澄清</el-button>
           <el-button size="small" :aria-expanded="historyFor===item.factId" @click="toggleLog(item.factId)"><History :size="15"/>核验历史</el-button>
+          <el-button v-if="item.validationStatus==='verified'&&item.trust!=='low'" size="small"
+            :aria-expanded="compareFor===item.factId" @click="toggleComparison(item.factId)"><CalendarDays :size="15"/>对照上周</el-button>
         </div>
+        <section v-if="compareFor===item.factId" class="fact-comparison" aria-label="上周事实对照" :aria-busy="compareLoading">
+          <p v-if="compareLoading" class="fact-muted" role="status">正在核对上周事实…</p>
+          <el-alert v-if="compareError" :title="compareError" type="error" :closable="false"/>
+          <template v-if="comparison">
+            <strong>{{comparisonLabels[comparison.status]}}</strong>
+            <p class="fact-muted">{{comparison.previousStart}} – {{comparison.previousEnd}} · 北京时间</p>
+            <dl v-if="comparison.previous">
+              <dt>本周</dt><dd>{{item.typedValue}}</dd>
+              <dt>上周</dt><dd>{{comparison.previous.typedValue}} · {{shanghai(comparison.previous.asOf)}}</dd>
+              <dt>原话</dt><dd>{{comparison.previous.quote}}</dd>
+              <dt>来源</dt><dd><code>{{comparison.previous.factRef}}</code> · <code>{{comparison.previous.reportRef}}</code></dd>
+              <template v-if="comparison.previous.evidenceRef"><dt>核验原件</dt><dd><code>{{comparison.previous.evidenceRef}}</code></dd></template>
+            </dl>
+          </template>
+        </section>
         <div v-if="historyFor===item.factId" v-loading="logLoading" class="fact-history">
           <ol><li v-for="entry in log?.items" :key="entry.revision">r{{entry.revision}} · {{actionLabels[entry.action]??entry.action}} · {{shanghai(entry.occurredAt)}}
             <div>{{reasonLabels[entry.reason]??entry.reason}}</div><code v-if="entry.evidenceRef">{{entry.evidenceRef}}</code></li></ol>
@@ -176,4 +217,7 @@ watch(()=>[props.reportId,props.revision],()=>{
 .fact-wide{grid-column:1/-1}.fact-row blockquote{margin:0;border-left:2px solid var(--el-border-color);padding-left:8px;white-space:pre-wrap}
 .fact-row code{overflow-wrap:anywhere}.fact-muted{color:var(--el-text-color-secondary);margin:0}.fact-notice{color:var(--el-color-success-dark-2);margin:0}
 .fact-history ol{padding-left:18px;margin:0}.fact-history li{padding:3px 0}
+.fact-comparison{padding:12px;border:1px solid var(--pmo-line);border-radius:8px;background:var(--pmo-surface)}
+.fact-comparison dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:8px 0 0}
+.fact-comparison dd{margin:0;white-space:pre-wrap}
 </style>

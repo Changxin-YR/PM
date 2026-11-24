@@ -3,6 +3,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import os
+import re
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -60,11 +61,21 @@ def _nonfinite(_):
     raise ValueError('Non-finite JSON number')
 
 
-def endpoint(value: str) -> httpx.URL:
-    uri = httpx.URL(value)
+def base_endpoint(uri: httpx.URL) -> bool:
+    path = uri.path.strip('/').lower()
+    return not path or path == 'api' or re.fullmatch(r'(?:api/)?v[0-9]+', path) is not None
+
+
+def endpoint(value: str, *, protocol: str = 'pmo_json') -> httpx.URL:
+    try:
+        uri = httpx.URL(value)
+    except (ValueError, httpx.InvalidURL):
+        raise ValueError('Invalid model endpoint URL.') from None
     if (uri.scheme != 'https' and not (uri.scheme == 'http' and uri.host in ('127.0.0.1', '::1'))
             or not uri.host or uri.username or uri.password or uri.query or uri.fragment):
         raise ValueError('Expected HTTPS or literal loopback HTTP without embedded credentials or query.')
+    if protocol == 'chat_completions_json' and base_endpoint(uri):
+        raise ValueError('Expected a complete Chat Completions request URL, not an API base URL.')
     return uri
 
 
@@ -106,7 +117,7 @@ class Gateway:
         protocol = os.getenv(f'{prefix}_PROTOCOL', 'pmo_json')
         model = os.getenv(f'{prefix}_VERSION', '')
         try:
-            uri = endpoint(os.getenv(f'{prefix}_URL', ''))
+            uri = endpoint(os.getenv(f'{prefix}_URL', ''), protocol=protocol)
         except (ValueError, httpx.InvalidURL):
             return None
         if protocol not in PROTOCOLS or (protocol == 'chat_completions_json' and not model.strip()):

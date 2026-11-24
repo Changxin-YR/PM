@@ -138,3 +138,17 @@ npm.cmd --prefix web run build
 | 只读和助手 | 归档和冻结有明确提示；概览中的四项不可用保留来源和原因。助理使用合成项目的真实三线和核验人天，模型关闭时仍可阅读周报依据。 |
 
 用户提供的十张设计原型用于视觉对照。运行截图由 Edge 通过预览地址捕获，助理和项目台账显示本轮合成记录的实际状态。
+
+## 对照 PMO Lite 业务方案的补充验收
+
+以下各项使用本机隔离合成数据。开户和任命的实际操作见[项目接入手册](../ops/onboarding.md)。
+
+| 对照项 | 本轮落地 | 核对证据 |
+| --- | --- | --- |
+| 登录、G01 人员任命、G10 组织人员及项目成员 | 组织一次性邀请码、自设密码、按权限选项目和搜索人员、独立签发、本人接受后直接进入项目、撤销和换发失效。运营登记客户绑定与独立财务或审批授权，受控终端可办理人工密码恢复。 | `test_onboarding.py`、`test_onboarding_admin.py`、`test_closeout_scope.py`；Edge `organization` 和 `draft`。 |
+| 三关口评审 | 增加会议时间、出席和纪要，会议记录与正式评分裁决各自留痕。 | `test_reviews.py`；Edge `lifecycle`。 |
+| 成本、风险及报告 Fact | 成本显示和填写类别，冲销沿用原分类；风险记录责任人和阻塞起点；Fact 对照前一周的同类已核验事实，沿用人工澄清。 | `test_postings.py`、`test_facts.py`；Edge `facts` 和 `lifecycle`。 |
+| 台账问答 Q8 与立项教训 Q6 | 助理按当前项目显示需求变更时间、版本和出处。立项按立项卡文本匹配可见的已确认教训。 | `test_assistant.py`、`test_change_history.py`；Edge `assistant.mjs` 的关闭模型场景。 |
+| 项目助理、报告分析 | 两条通道分别核对配置、加载和 worker 状态。模拟网关已覆盖协议与结构化返回，原生试点完成关闭模型的人工路径。 | `test_model_compatible_gateway.py`、`pilot_rehearsal browser`；[真实模型配置与验收方法](../ops/synthetic-pilots.md#配置模型)。 |
+
+正式试点仍需组织签核八项 DEC，核对目标 HTTPS 和通知，完成两组真实业务验收。正式组合周报需确认汇总覆盖项目、周时点及可见范围。评分锚点和阈值校准按书面规则处理。真实模型需由操作者完成配置和授权，再记录限定合成项目的真实响应。[真实试点验收单](../ops/business-pilot-acceptance.md)

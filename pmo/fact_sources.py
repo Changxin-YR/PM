@@ -95,9 +95,15 @@ def recheck(report, fact):
         raise Failure(409, 'FACT_SOURCE_STALE', project_id=fact.project_id)
 
 
+def fact_labels(subject: str, predicate: str) -> tuple[str, str]:
+    def label(text: str) -> str:
+        return ' '.join(normalize('NFKC', text).casefold().split())
+    return label(subject), label(predicate)
+
+
 def group_key(pid: UUID, command: Candidate) -> str:
-    labels = [' '.join(normalize('NFKC', text).casefold().split()) for text in (command.subject, command.predicate)]
-    return fingerprint([str(pid), *labels, command.asOf.astimezone(UTC).isoformat()])
+    return fingerprint([str(pid), *fact_labels(command.subject, command.predicate),
+                        command.asOf.astimezone(UTC).isoformat()])
 
 
 def normal_value(value: str | int | bool):

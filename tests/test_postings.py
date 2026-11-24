@@ -11,6 +11,7 @@ from argon2 import PasswordHasher
 from pmo import schema_v1 as db
 from pmo.audit_store import audit
 from pmo.projects import fingerprint
+from test_reviews import data, headers, team as team
 
 
 @pytest.mark.parametrize('kind', ['money', 'effort'])
@@ -119,3 +120,45 @@ def test_verified_cost_cycle(live,actor,kind):
     with engine.connect() as c:
         rows=c.execute(sa.select(db.cost_postings.c.amount_signed,db.cost_postings.c.verified_by,db.cost_postings.c.created_by).where(db.cost_postings.c.project_id==pid,db.cost_postings.c.status=='verified')).all()
         assert sorted(r.amount_signed for r in rows)==[-100,70,100] and all(r.created_by!=r.verified_by for r in rows)
+
+def test_human_categorized_postings_keep_legacy_contract_and_cost_totals(live, team):
+    engine, api, _, _ = live
+    pid, people, users, agent_auth = team
+    pm, reviewer, sponsor, outsider = (users[role] for role in ('pm', 'reviewer', 'sponsor', 'outsider'))
+    with engine.begin() as conn:
+        for role in ('reviewer', 'sponsor'):
+            account = conn.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people[role]))
+            conn.execute(db.user_roles.insert().values(user_id=account, role='finance_verifier'))
+    path = f'projects/{pid}/cost-postings'
+    body = {'type': 'money', 'amount': '35.00', 'period': '2020-02', 'sourceRef': 'Synthetic travel receipt'}
+    command = {**body, 'category': 'travel'}
+    assert pm.post(path, headers=headers(), json=command).status_code == 422
+    assert pm.post(path + '/categorized', headers=headers(), json={**command, 'category': 'management'}).status_code == 422
+    assert outsider.post(path + '/categorized', headers=headers(), json=command).status_code == 404
+    assert api.post('/api/v1/' + path + '/categorized', headers={**agent_auth, **headers()}, json=command).status_code == 403
+    key = headers()
+    response = pm.post(path + '/categorized', headers=key, json=command)
+    original = data(response)
+    assert pm.post(path + '/categorized', headers=key, json=command).json() == response.json()
+    assert pm.post(path + '/categorized', headers=key, json={**command, 'category': 'cloud'}).json()['code'] == \
+        'IDEMPOTENCY_CONFLICT'
+    uncategorized = data(pm.post(path, headers=headers(), json={**body, 'sourceRef': 'Legacy unclassified receipt'}))
+    page = data(pm.get(path, params={'category': 'travel'}))
+    assert page['total'] == 1 and page['items'][0]['postingId'] == original['postingId']
+    assert page['items'][0]['category'] == 'travel'
+    legacy = data(pm.get(path, params={'category': 'uncategorized'}))
+    assert legacy['total'] == 1 and legacy['items'][0]['postingId'] == uncategorized['postingId']
+    assert 'category' not in legacy['items'][0]
+
+    proof = {'reason': 'Independently checked the synthetic travel receipt', 'occurredAt': '2020-02-10T01:00:00Z'}
+    verify = f"cost-postings/{original['postingId']}/verify"
+    data(reviewer.post(verify, headers=headers(), json=proof))
+    costs = f'projects/{pid}/costs'
+    assert data(pm.get(costs))['money']['actual'] == '35.00'
+    reverse = data(reviewer.post(f"cost-postings/{original['postingId']}/reverse", headers=headers(2),
+        json={'reason': 'Cancel the synthetic travel receipt'}))
+    data(sponsor.post(f"cost-postings/{reverse['postingId']}/verify", headers=headers(),
+        json={'reason': 'Verify the original travel receipt was reversed'}))
+    readback = data(pm.get(path, params={'category': 'travel'}))
+    assert readback['total'] == 2 and all(row['category'] == 'travel' for row in readback['items'])
+    assert data(pm.get(costs))['money']['actual'] == '0.00'

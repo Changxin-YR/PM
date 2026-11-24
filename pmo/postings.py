@@ -7,7 +7,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
@@ -25,11 +25,32 @@ SIGNED = r'^-?(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$'
 OPEN = ('drafting','charter_review','designing','feasibility_review','executing','on_hold','delivering','closing_review')
 
 
+Category = Literal['procurement', 'travel', 'cloud', 'allocation', 'development', 'implementation', 'management']
+PostingFilter = Category | Literal['uncategorized']
+CATEGORY_KIND: dict[str, Kind] = {
+    'procurement': 'money', 'travel': 'money', 'cloud': 'money', 'allocation': 'money',
+    'development': 'effort', 'implementation': 'effort', 'management': 'effort',
+}
+UNCATEGORIZED = 'posting_ledger'
+CATEGORIZED_PROPOSE = 'human_categorized_cost_posting_propose'
+HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
+
+
 class Candidate(Strict):
     type: Kind
     amount: Annotated[str,Field(pattern=SIGNED)]
     period: Annotated[str,Field(pattern=r'^[0-9]{4}-(0[1-9]|1[0-2])$')]
     sourceRef: str = Field(min_length=3,max_length=256,pattern=r'\S')
+
+
+class CategorizedCandidate(Candidate):
+    category: Category
+
+    @model_validator(mode='after')
+    def check_category(self):
+        if CATEGORY_KIND[self.category] != self.type:
+            raise ValueError('Category does not apply to the posting unit')
+        return self
 
 
 class Reason(Strict):
@@ -51,6 +72,7 @@ class Posting(Strict):
 
 class Detail(Posting):
     period: str
+    category: Category | None = None
     revision: int
     occurredAt: datetime | None
     verifiedAt: datetime | None
@@ -91,14 +113,14 @@ def period_start(value):
     except ValueError: raise Failure(422,'INVALID_PERIOD') from None
 
 
-def bucket(c,a,pid,kind,start):
+def bucket(c,a,pid,kind,start,category=UNCATEGORIZED):
     e=db.cost_entries
     end=start.replace(day=monthrange(start.year,start.month)[1])
-    cond=(e.c.project_id==pid,e.c.type==kind,e.c.period_start==start,e.c.period_end==end,e.c.category=='posting_ledger',e.c.is_current_baseline.is_(False))
+    cond=(e.c.project_id==pid,e.c.type==kind,e.c.period_start==start,e.c.period_end==end,e.c.category==category,e.c.is_current_baseline.is_(False))
     existing=c.scalar(sa.select(e.c.id).where(*cond).limit(1))
     if existing: return existing
     # A collection bucket for preapproval costs is not an approved zero budget.
-    return c.scalar(e.insert().values(project_id=pid,type=kind,category='posting_ledger',period_start=start,period_end=end,
+    return c.scalar(e.insert().values(project_id=pid,type=kind,category=category,period_start=start,period_end=end,
         created_by=a.person,is_current_baseline=False,budget=0,actual=0,forecast_remaining=0,baseline_version=1).returning(e.c.id))
 
 
@@ -109,7 +131,16 @@ def receipt(c,a,op,key,rid,pid,sig,row,before=None):
 
 @router.post('/projects/{projectId}/cost-postings',operation_id='pmo_cost_posting_propose')
 def propose(projectId:UUID,command:Candidate,authorization:Auth,key:Key)->Result[Posting]:
-    op='pmo_cost_posting_propose'; sig=fingerprint([str(projectId),command.model_dump()])
+    return _propose(projectId, command, authorization, key, 'pmo_cost_posting_propose', UNCATEGORIZED)
+
+
+@router.post('/projects/{projectId}/cost-postings/categorized', operation_id=CATEGORIZED_PROPOSE, openapi_extra=HUMAN)
+def propose_categorized(projectId: UUID, command: CategorizedCandidate, authorization: Auth, key: Key) -> Result[Posting]:
+    return _propose(projectId, command, authorization, key, CATEGORIZED_PROPOSE, command.category)
+
+
+def _propose(projectId, command, authorization, key, op, category):
+    sig=fingerprint([str(projectId),command.model_dump()])
     def write(c,a,rid):
         p=project(c,a,projectId,lock=True)
         if not can_manage(c,a,p): raise Failure(403,'FORBIDDEN')
@@ -121,7 +152,7 @@ def propose(projectId:UUID,command:Candidate,authorization:Auth,key:Key)->Result
         if len(ref)<3: raise Failure(422,'SOURCE_REQUIRED')
         if start>c.scalar(sa.select(sa.func.clock_timestamp())).astimezone(UTC).date(): raise Failure(422,'FUTURE_PERIOD')
         source=fingerprint(['source',normalize('NFKC',' '.join(ref.split())).casefold()])
-        row=c.execute(t.insert().values(project_id=p.id,cost_entry_id=bucket(c,a,p.id,command.type,start),created_by=a.person,
+        row=c.execute(t.insert().values(project_id=p.id,cost_entry_id=bucket(c,a,p.id,command.type,start,category),created_by=a.person,
             type=command.type,source_type=command.type,amount_signed=amount,period=command.period,source_ref=ref,source_fingerprint=source,
             occurred_at=datetime(start.year,start.month,1,tzinfo=UTC),status='pending',correlation_id=UUID(rid)).returning(t)).mappings().one()
         return receipt(c,a,op,key,rid,p.id,sig,row)
@@ -129,17 +160,26 @@ def propose(projectId:UUID,command:Candidate,authorization:Auth,key:Key)->Result
 
 
 @router.get('/projects/{projectId}/cost-postings',operation_id='human_cost_postings_list',response_model_exclude_none=True)
-def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100))->Result[Page]:
+def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),
+            category: PostingFilter | None = None)->Result[Page]:
     op='human_cost_postings_list'
     def read(c,a,_):
         p=project(c,a,projectId); allowed=finance(c,a) and p.stage in OPEN
         reverse=t.alias(); linked=sa.exists(sa.select(reverse.c.id).where(reverse.c.posting_of_id==t.c.id))
-        stmt=sa.select(t,linked.label('has_reversal')).where(t.c.project_id==p.id)
-        total=c.scalar(sa.select(sa.func.count()).select_from(t).where(t.c.project_id==p.id))
+        e = db.cost_entries
+        source = t.outerjoin(e, sa.and_(e.c.id == t.c.cost_entry_id, e.c.project_id == t.c.project_id))
+        conditions = [t.c.project_id == p.id]
+        if category == 'uncategorized':
+            conditions.append(sa.or_(e.c.category.is_(None), e.c.category.not_in(CATEGORY_KIND)))
+        elif category is not None:
+            conditions.append(e.c.category == category)
+        stmt=sa.select(t,linked.label('has_reversal'),e.c.category).select_from(source).where(*conditions)
+        total=c.scalar(sa.select(sa.func.count()).select_from(source).where(*conditions))
         items=[]
         for row in c.execute(stmt.order_by(t.c.created_at.desc(),t.c.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings():
             verified=row.status=='verified'
             items.append(Detail(**item(row).model_dump(),revision=2 if verified else 1,period=row.period,
+                category=row.category if row.category in CATEGORY_KIND else None,
                 occurredAt=row.occurred_at if verified or row.posting_of_id else None,verifiedAt=row.verified_at,postingOfId=row.posting_of_id,
                 reversalReason=row.reversal_reason,verificationNote=row.verification_note,
                 canVerify=allowed and not verified and row.created_by!=a.person,

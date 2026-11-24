@@ -1,5 +1,6 @@
 """One read-only workspace. Its modes compose existing scoped services, not authorities."""
 from datetime import datetime
+import re
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -31,6 +32,8 @@ Keyword = Annotated[retrospectives.QueryText | None, Query(max_length=160)]
 Category = Annotated[retrospectives.QueryText | None, Query(max_length=80)]
 Topic = Literal['health', 'cost', 'requirements', 'fact', 'lesson']
 HITS = 6
+LESSON_TERMS = re.compile(r'[A-Za-z][A-Za-z0-9_-]{3,}|[\u3400-\u9fff]{2,}')
+IGNORED_LESSON_TERMS = frozenset({'project', 'system', 'with', 'from', 'that', 'this', 'only', '项目', '系统'})
 
 
 Cited = model.Excerpt
@@ -40,6 +43,7 @@ class LessonRef(Cited):
     lessonId: UUID
     projectId: UUID
     category: str
+    matchedTerm: str | None = None
 
 
 class ScoreSummary(Assessment):
@@ -125,17 +129,45 @@ def _read(auth, op, pid, read):
 
 
 def _lesson_references(c, a, p, at, keyword, category, *, history_only=False, for_preview=False):
-    hits, _ = retrospectives.find_lessons(c, a, keyword=keyword, category=category, page=1, page_size=HITS,
-                                          exclude_project=p.id if history_only else None, at=at)
-    needle = keyword.strip().casefold() if keyword else ''
+    charter_ref = None
+    terms = [keyword]
+    if history_only and not (keyword or category):
+        ch = db.charters.c
+        charter = c.execute(sa.select(ch.id, ch.revision, ch.target_client, ch.value_prop, ch.attractiveness)
+                            .where(ch.project_id == p.id)).mappings().one_or_none()
+        if charter is None:
+            return []
+        charter_ref = f'charter:{charter.id}@{charter.revision}'
+        terms = _charter_terms(charter.target_client, charter.value_prop, charter.attractiveness)
     items = []
-    for hit in hits:
-        if for_preview and not model_gateway.in_project_scope('ASSISTANT', hit.projectId):
-            continue
-        text = next((field for field in (hit.what, hit.rootCause, hit.advice) if needle in field.casefold()), hit.what)
-        items.append(LessonRef(lessonId=hit.lessonId, projectId=hit.projectId, category=hit.category,
-                               text=text[:320], observedAt=hit.confirmedAt, sourceRefs=hit.sourceRefs))
+    seen = set()
+    for term in terms:
+        hits, _ = retrospectives.find_lessons(c, a, keyword=term, category=category, page=1, page_size=HITS,
+                                              exclude_project=p.id if history_only else None, at=at)
+        needle = term.strip().casefold() if term else ''
+        for hit in hits:
+            if hit.lessonId in seen or (for_preview and not model_gateway.in_project_scope('ASSISTANT', hit.projectId)):
+                continue
+            text = next((field for field in (hit.what, hit.rootCause, hit.advice) if needle in field.casefold()), hit.what)
+            items.append(LessonRef(lessonId=hit.lessonId, projectId=hit.projectId, category=hit.category,
+                text=text[:320], observedAt=hit.confirmedAt,
+                sourceRefs=[*hit.sourceRefs, *([charter_ref] if charter_ref else [])], matchedTerm=term if charter_ref else None))
+            seen.add(hit.lessonId)
+            if len(items) == HITS:
+                return items
     return items
+
+
+def _charter_terms(*fields):
+    terms = []
+    for field in fields:
+        for word in LESSON_TERMS.findall((field or '')[:160].casefold()):
+            # Longer unspaced CJK text is searched by overlapping short phrases.
+            if len(word) > 6 and '\u3400' <= word[0] <= '\u9fff':
+                terms.extend(word[start:start + 3] for start in range(len(word) - 2))
+            else:
+                terms.append(word)
+    return list(dict.fromkeys(term for term in terms if term not in IGNORED_LESSON_TERMS))[:HITS]
 
 
 def _published_assessment(c, p, at):

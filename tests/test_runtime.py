@@ -235,6 +235,7 @@ def test_postgres_contract_and_downgrade_guard(live,actor):
         assert {column['name'] for column in inspector.get_columns(name)} == set(table.c.keys()) | extras.get(name, set())
     result=subprocess.run([sys.executable,'-m','alembic','downgrade','base'],env=env,capture_output=True,text=True)
     assert result.returncode and any(f'RuntimeError: {reason}' in result.stderr for reason in (
+        'Refusing downgrade of populated project onboarding roles', 'Refusing downgrade of project membership history',
         'Refusing to discard written audit reference history',
         'Refusing destructive downgrade', 'Refusing to discard written acceptance history',
         'Refusing to discard report receipts', 'Refusing to discard review termination history',

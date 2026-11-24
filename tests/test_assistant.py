@@ -101,7 +101,7 @@ def test_process_and_ledger_use_trusted_sources_then_withhold_conflicts(live, te
 
 
 def test_ledger_lesson_never_crosses_project_membership(live, team, tmp_path):
-    from test_assistant_preview import request
+    from test_assistant_preview import request, save_charter
     from test_database_roles import serve
     from test_health import close_for_lr08
     from test_lifecycle import ANSWERS, execute, propose
@@ -130,9 +130,16 @@ def test_ledger_lesson_never_crosses_project_membership(live, team, tmp_path):
 
     next_draft = data(pm.post('projects', headers=headers(), json={'code': 'NEW-' + uuid4().hex[:8], 'name': 'Next charter'}))
     next_path = f"projects/{next_draft['projectId']}/assistant/charter"
+    assert data(pm.get(next_path))['lessonRefs'] == []  # Recent history alone is not a text match.
     selected = data(pm.get(next_path, params={'keyword': 'supplier', 'category': 'delivery'}))['lessonRefs']
     assert [item['lessonId'] for item in selected] == [lesson_id] and selected[0]['projectId'] == pid
     next_project = next_path.removesuffix('/assistant/charter')
+    next_charter = save_charter(pm, next_project, {'targetClient': 'Supplier office'})
+    automatic = data(pm.get(next_path))['lessonRefs']
+    match, = automatic
+    assert match['lessonId'] == lesson_id and match['matchedTerm'] == 'supplier'
+    assert f"lesson:{lesson_id}@{confirmed['revision']}" in match['sourceRefs']
+    assert f"charter:{next_charter['charterId']}@{next_charter['revision']}" in match['sourceRefs']
     with gateway() as (url, calls), serve(live[0].url, tmp_path, extra_env={
         'PMO_ASSISTANT_PREVIEWS': '1', 'PMO_ASSISTANT_MODEL_URL': url,
         'PMO_ASSISTANT_MODEL_PROJECTS': next_draft['projectId'],
@@ -148,3 +155,4 @@ def test_ledger_lesson_never_crosses_project_membership(live, team, tmp_path):
             WHERE person_id=:person AND project_id=:pid'''),
                   {'person': people['client_representative'], 'pid': pid})
     assert data(users['client_representative'].get(next_path, params={'keyword': 'supplier'}))['lessonRefs'] == []
+    assert data(users['client_representative'].get(next_path))['lessonRefs'] == []

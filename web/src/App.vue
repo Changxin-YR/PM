@@ -207,6 +207,11 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
       INVITATION_INVALID:'邀请码无效、已使用、已撤销或过期。',INVITATION_ALREADY_EXISTS:'该邮箱已注册或有尚未到期的邀请。',
       USERNAME_UNAVAILABLE:'该账号不可用，请另选账号。',ADMIN_ACCOUNT_PROTECTED:'不能在此修改管理员账号状态。',
       ACCOUNT_STATUS_UNCHANGED:'账号状态未变化，请刷新目录。',PERSON_INACTIVE:'成员档案已停用，不能启用其账号。',
+      ROLE_OCCUPIED:'该项目角色已有有效任命，请重新选择。',INVITATION_EXISTS:'该人员已有同一项目角色的提名或邀请。',
+      INVITATION_EXPIRED:'该项目任命邀请已过期。',INVITATION_NOT_ACTIONABLE:'该任命邀请的状态或项目阶段已变化。',
+      AUTHORITY_INACTIVE:'发出此邀请的任命授权已失效，请联系该项目的任命负责人。',
+      ROLE_REQUIRES_INDEPENDENT_PERSON:'评审人和客户代表须独立于项目发起人、项目经理和 Sponsor。',
+      MEMBERSHIP_STAGE_LOCKED:'项目当前阶段不接受成员撤销，请重新读取项目状态。',
     }
     const code=typeof body.code==='string'?body.code:''
     throw new PmoHttpError(r.status,code,descriptions[code]||(code?`操作失败（${code}）`:`操作失败（${r.status}）`))
@@ -240,6 +245,20 @@ async function openLinkedWorkbench(){
       materialTab.value=tab
     }
   }catch(e){if(user.value&&session===csrf.value)error.value=message(e)}
+}
+async function openAssignedProject(projectId:string){
+  if(projectLoading.value)return
+  const epoch=materialEpoch
+  const session=csrf.value
+  const stillOnAppointments=()=>epoch===materialEpoch&&session===csrf.value&&entry.value==='appointments'&&!showMaterials.value
+  projectLoading.value=true;error.value=''
+  try{
+    const {data}=await api('project-overview/'+projectId)
+    if(!stillOnAppointments())return
+    if(!data.materialsVisible){error.value='当前账号已无权读取该项目资料。';return}
+    materials(data.project)
+  }catch(e){if(stillOnAppointments())error.value=message(e)}
+  finally{if(epoch===materialEpoch)projectLoading.value=false}
 }
 async function startSession(){
   const account=await api('auth/me')
@@ -283,6 +302,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
       <h1>登录工作台</h1>
       <p class="auth-subtitle">使用你的组织账号继续</p>
       <el-alert v-if="loginNotice" :title="loginNotice" type="success" :closable="false"/>
+      <p v-if="loginNotice" class="account-guidance">请使用刚设置的密码登录。接受项目任命后，可从项目台账打开项目。</p>
       <form @submit.prevent="login">
         <label>账号<input v-model="username" autocomplete="username" maxlength="120" required></label>
         <label>密码<input v-model="password" autocomplete="current-password" type="password" maxlength="256" required></label>
@@ -290,6 +310,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
         <el-button type="primary" native-type="submit" :loading="busy">登录</el-button>
         <el-button text :disabled="busy" @click="enrollment(true)">接受组织邀请 <ArrowRight :size="16" aria-hidden="true"/></el-button>
       </form>
+      <p v-if="!loginNotice" class="account-guidance">首次使用请向组织管理员领取邀请码。遇到账号或密码问题也可联系管理员。</p>
     </template>
   </AuthLayout>
 
@@ -328,6 +349,10 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
           <el-table-column label="创建日期" min-width="98"><template #default="{row}">{{new Date(row.createdAt).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})}}</template></el-table-column>
           <el-table-column label="操作" width="62"><template #default="{row}"><el-button v-if="row.canEditDraft" text title="修改草稿名称" aria-label="修改草稿名称" @click="open(row)"><Pencil :size="16"/></el-button></template></el-table-column>
         </el-table>
+        <div v-if="listReadAt&&!loading&&!error&&!total&&!keyword&&!stageFilter" class="ledger-guidance">
+          <p>收到项目任命后，前往「人员任命」接受邀请。已获授权的项目会显示在这里。</p>
+          <el-button text @click="selectDestination('appointments')">查看项目任命邀请 <ArrowRight :size="16" aria-hidden="true"/></el-button>
+        </div>
         <el-pagination background v-model:current-page="page" :page-size="20" :total="total" :disabled="loading" layout="total, prev, pager, next" @current-change="load"/>
       </section>
     </div>
@@ -343,7 +368,8 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
       <AgentTokens v-if="admin && entry==='org-tokens'" key="organization" :api="api" :projects="rows" organization/>
     </template>
     <Appointments v-if="retainedEntries.has('appointments')" v-show="!showMaterials && entry==='appointments'"
-      :active="!showMaterials && entry==='appointments'" :projects="rows" :api="api" @changed="load"/>
+      :active="!showMaterials && entry==='appointments'" :api="api" :opening-project="projectLoading"
+      @changed="load" @open-project="openAssignedProject"/>
     <Alerts v-if="retainedEntries.has('alerts')" v-show="!showMaterials && entry==='alerts'"
       :active="!showMaterials && entry==='alerts'" :api="api"/>
     <IncomingRisk v-if="retainedEntries.has('incoming-risk')" v-show="!showMaterials && entry==='incoming-risk'"
@@ -400,7 +426,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
         <Stakeholders :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/>
       </ProjectPane>
       <ProjectPane name="members" :active="materialTab==='members'">
-        <Members :project-id="materialProject.projectId" :api="api"/>
+        <Members :project-id="materialProject.projectId" :api="api" @changed="refreshProject"/>
       </ProjectPane>
       <ProjectPane name="risks" :active="materialTab==='risks'">
         <Risks :project-id="materialProject.projectId" :api="api"/>
@@ -454,3 +480,10 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
   </AppShell>
   <main v-else class="initial-session" aria-busy="true"><span role="status">正在读取会话…</span></main>
 </template>
+
+<style scoped>
+.account-guidance{margin:12px 0;color:var(--pmo-muted);font-size:13px}
+.ledger-guidance{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+  margin-top:16px;padding:8px 12px;border-radius:var(--pmo-radius-control);background:var(--pmo-soft);color:var(--pmo-secondary)}
+.ledger-guidance p{margin:0}
+</style>

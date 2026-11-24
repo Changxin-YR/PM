@@ -80,6 +80,21 @@ async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) 
   await expect(gate.getByText(`${label}预检 · 材料齐备`,{exact:true})).toBeVisible()
   await button(gate,`提交${label}评审`).click()
   const receipt = await write(sender,'POST','/projects/[^/]+/reviews',button(dialog(sender,'确认送审'),'确认送审'))
+  if(kind==='charter'){
+    const row=gate.getByRole('row').filter({has:sender.getByRole('cell',exact(receipt.reviewId))})
+    await button(row,'打开评审工作台').click()
+    const ownerWorkbench=sender.getByRole('region',exact('关口人工工作台'))
+    const meeting=ownerWorkbench.getByRole('region',exact('评审会议资料'))
+    await button(meeting,'安排评审会议').click()
+    await meeting.getByLabel('会议时间（北京时间）',{exact:true}).fill('2026-11-28T09:30')
+    const attendees=meeting.getByLabel('参会人',{exact:true})
+    const attendeeId=await attendees.locator('option').filter({hasText:/^reviewer · /}).getAttribute('value')
+    await attendees.selectOption(attendeeId)
+    const scheduled=await write(sender,'PUT','/reviews/[^/]+/meeting',button(meeting,'保存会议资料'))
+    expect(Date.parse(scheduled.scheduledAt)).toBe(Date.parse('2026-11-28T01:30:00Z'))
+    expect(scheduled.attendeeIds).toEqual([attendeeId])
+    await closeWorkbench(ownerWorkbench)
+  }
   await reviewer.reload()
   const panel = await open(reviewer,'关口送审')
   const row = panel.getByRole('row').filter({has:reviewer.getByRole('cell',exact(receipt.reviewId))})
@@ -87,6 +102,11 @@ async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) 
   await button(row,'打开评审工作台').click()
   const state = (await (await loaded).json()).data
   const workbench = reviewer.getByRole('region',exact('关口人工工作台'))
+  if(kind==='charter'){
+    const meeting=workbench.getByRole('region',exact('评审会议资料'))
+    await expect(meeting.locator('time')).toHaveAttribute('datetime','2026-11-28T01:30:00Z')
+    await expect(button(meeting,'安排评审会议')).toHaveCount(0)
+  }
   await button(workbench,'填写评分').click()
   for (const dimension of state.dimensions) {
     const fields = workbench.getByRole('group',exact(dimension.label))
@@ -465,7 +485,12 @@ try {
     const gatePanel=await open(pm,'关口送审')
     await expect(gatePanel.getByText('结项预检 · 存在缺口',{exact:true})).toBeVisible()
 
+    const riskRead=reviewer.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/risks')&&r.request().method()==='GET')
     const risks=await open(reviewer,'风险')
+    const riskView=(await (await riskRead).json()).data.items[0]
+    const riskTable=risks.getByRole('tabpanel',exact('风险'))
+    await expect(riskTable.getByRole('cell',exact(riskView.ownerId))).toBeVisible()
+    await expect(riskTable.locator(`time[datetime="${riskView.blockedSince}"]`)).toBeVisible()
     await button(risks,'风险处置').click()
     const resolution=dialog(reviewer,'风险处置')
     await button(resolution,'复核关闭').click()

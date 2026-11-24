@@ -7,10 +7,12 @@ from sqlalchemy.engine import Connection
 
 from . import schema_v1 as db
 from .access import Auth
+from .appointments import MEMBER_ROLES, authority, authority_scope
 from .pagination import pg_offset
 from .contracts import Result, Strict
 from .identity import Actor, Failure
 from .materials import project_access
+from .onboarding import can_revoke_in_stage
 from .projects import meta, run
 
 router = APIRouter(prefix='/api/v1/projects/{projectId}',tags=['Members'])
@@ -21,6 +23,7 @@ class Member(Strict):
     name: str
     role: str
     acceptedAt: datetime
+    canRevoke: bool = False
 
 
 class Members(Strict):
@@ -28,6 +31,7 @@ class Members(Strict):
     page: int
     pageSize: int
     total: int
+    projectRevision: int
 
 
 @router.get('/members', operation_id='human_members_list')
@@ -46,7 +50,10 @@ def listing(projectId: UUID, authorization: Auth, page: int=Query(1,ge=1), pageS
             sa.or_(m.c.role!='initiator',sa.and_(m.c.person_id==project.initiator_id,project.stage=='drafting')))
         total = c.execute(sa.select(sa.func.count()).select_from(rows.subquery())).scalar_one()
         selected = c.execute(rows.order_by(m.c.role,p.c.name,m.c.id).offset(pg_offset(page,pageSize)).limit(pageSize)).mappings().all()
-        return Result[Members](data=Members(items=[Member(personId=r.person_id,name=r.name,role=r.role,acceptedAt=r.accepted_at) for r in selected],
-            page=page,pageSize=pageSize,total=total),meta=meta(op,[f'member:{r.id}' for r in selected]))
+        revocable = set(c.scalars(sa.select(authority.c.role).where(*authority_scope(a, authority.c.role),
+            authority.c.role.in_(MEMBER_ROLES)))) if can_revoke_in_stage(project.stage) else set()
+        return Result[Members](data=Members(items=[Member(personId=r.person_id,name=r.name,role=r.role,
+            acceptedAt=r.accepted_at, canRevoke=r.person_id != a.person and r.role in revocable) for r in selected],
+            page=page,pageSize=pageSize,total=total,projectRevision=project.revision),meta=meta(op,[f'member:{r.id}' for r in selected]))
 
     return run(authorization,op,query)

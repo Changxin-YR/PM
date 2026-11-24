@@ -164,9 +164,17 @@ def test_browser_and_stdio_same_snapshot_and_private_resources(live, team):
 
 
 def test_browser_read_only_project_assistant_without_model(live, team):
-    execution_fixture(live, team)
+    _, requirement, _ = execution_fixture(live, team)
+    project_id, people, users, _ = team
+    with live[0].begin() as c:
+        change_id = c.scalar(db.change_entries.insert().values(project_id=project_id, target_type='requirement',
+            target_id=requirement, created_by=people['pm'], requested_by=people['pm'], status='withdrawn',
+            base_revision=1, before={'priority':'P0'}, after={'priority':'P1'},
+            reason='Synthetic requirement priority history').returning(db.change_entries.c.id))
     with vite(live[2]) as (root, url):
-        run_browser(root, url, 'assistant', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(team[2], 'pm'))})
+        run_browser(root, url, 'assistant', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm')),
+            'PMO_TEST_ASSISTANT_HISTORY': json.dumps({'projectId': project_id, 'requirementId': requirement,
+                'changeId': str(change_id)})})
 
 
 def test_browser_separates_model_previews_from_official_results(live, team, tmp_path):

@@ -80,6 +80,8 @@ try{
   const restored=await facts(await reports(pm),'2025-W02')
   await expect(restored.getByText('已核验 · 中可信',{exact:true})).toBeVisible()
   await expect(restored.getByText(reason,{exact:true})).toBeVisible()
+  await button(restored,'对照上周').click()
+  await expect(restored.getByRole('region',{name:'上周事实对照'}).getByText('上周没有可读且可核验的同类事实')).toBeVisible()
   await button(restored,'核验历史').click()
   await expect(restored.getByText(/r3 · 完成澄清/)).toBeVisible()
 }finally{await browser.close()}

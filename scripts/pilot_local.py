@@ -1,5 +1,6 @@
 """Standalone Windows operator entry for the synthetic PMO pilot. Never uses dev.env."""
 import argparse
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from getpass import getpass
 import json
@@ -11,12 +12,14 @@ import socket
 import subprocess
 import sys
 from time import monotonic, sleep
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import psycopg
 from psycopg import sql
 from sqlalchemy import URL
+
+from pmo.model_gateway import PROTOCOLS, base_endpoint, endpoint
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'PMO_PILOT_RUNTIME'
@@ -28,10 +31,14 @@ DB_PORT, WEB_PORT, API_PORT = (55443, 18778, 18779) if NATIVE else (55441, 18775
 API = f'http://127.0.0.1:{API_PORT}/api/v1/'
 WEB = f'http://127.0.0.1:{WEB_PORT}'
 DB_NAME = 'pmo_pilot'
-HEAD = '0037'
+HEAD = '0038'
+UPGRADABLE_HEADS = {('0036',), ('0037',)}
 STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
+RUNTIME_PROCESSES = {'api': r'pmo\.api:app(?:\s|"|$)', 'web': r'vite(?:\.js)?(?:\s|"|$)',
+                     'outbox': r'pmo\.outbox(?:\s|"|$)', 'reportWorker': r'pmo\.report_analysis_worker(?:\s|"|$)'}
+CORE_RUNTIME_PROCESSES = {'api', 'web', 'outbox'}
 
 
 def env_base():
@@ -138,8 +145,11 @@ def verify_database(cfg):
 def init(*, upgrade_existing=False):
     from pmo.database_roles import apply_roles
 
-    if upgrade_existing and read('runtime.json'):
-        raise ValueError('Stop the dedicated pilot before upgrading its database.')
+    if upgrade_existing:
+        if local_file('runtime.json').is_file() and not clear_stale_runtime():
+            raise ValueError('Stop the dedicated pilot before upgrading its database.')
+        with bind(WEB_PORT), bind(API_PORT):
+            pass
     cfg = read('instance.json')
     if not cfg:
         cfg = {'id': uuid4().hex, 'passwords': {r: secrets.token_hex(32) for r in ('bootstrap', 'migrate', 'api', 'outbox')}}
@@ -176,7 +186,7 @@ def init(*, upgrade_existing=False):
         if current is None or current[0] != schema(cfg):
             raise ValueError('Pilot search path mismatch.')
         version = conn.execute('SELECT version_num FROM alembic_version').fetchone() if current[1] else None
-    if version is None or (upgrade_existing and version == ('0036',)):
+    if version is None or (upgrade_existing and version in UPGRADABLE_HEADS):
         subprocess.run([str(PYTHON), '-m', 'alembic', 'upgrade', HEAD], cwd=ROOT, check=True,
                        env=env_base() | {'DATABASE_URL': database(cfg, 'migrate')})
     elif version != (HEAD,):
@@ -198,6 +208,53 @@ def bind(port):
         raise
 
 
+def probe_runtime_processes(pids):
+    if not isinstance(pids, dict) or not pids or any(
+            role not in RUNTIME_PROCESSES or type(pid) is not int or pid < 1 for role, pid in pids.items()):
+        return None
+    expected = {role: {'pid': pid, 'pattern': RUNTIME_PROCESSES[role]} for role, pid in pids.items()}
+    command = '''$expected = $env:PMO_PROCESS_PROBE | ConvertFrom-Json -AsHashtable
+$active = @()
+foreach ($role in $expected.Keys) {
+    $item = $expected[$role]
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($item.pid)" -ErrorAction Stop
+    if (!$process) { continue }
+    if (!$process.CommandLine) { exit 3 }
+    if ($process.CommandLine -match $item.pattern) { $active += $role }
+}
+ConvertTo-Json -InputObject $active -Compress'''
+    try:
+        result = subprocess.run(['pwsh.exe', '-NoProfile', '-NonInteractive', '-Command', command],
+            env=env_base() | {'PMO_PROCESS_PROBE': json.dumps(expected)}, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, timeout=8, check=False)
+        if result.returncode == 0:
+            active = json.loads(result.stdout)
+            if isinstance(active, list) and all(role in expected for role in active):
+                return set(active)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def clear_stale_runtime():
+    runtime = read('runtime.json')
+    if not isinstance(runtime, dict) or (runtime.get('web'), runtime.get('api')) != (WEB, API):
+        return False
+    pids = runtime.get('pids')
+    if not isinstance(pids, dict) or not CORE_RUNTIME_PROCESSES <= pids.keys():
+        return False
+    try:
+        with bind(WEB_PORT), bind(API_PORT):
+            if probe_runtime_processes(pids) != set() or read('runtime.json') != runtime:
+                return False
+            local_file('stop.request').unlink(missing_ok=True)
+            local_file('runtime.json').unlink(missing_ok=True)
+    except OSError:
+        return False
+    print('Cleared stale pilot runtime marker after checking the loopback ports and recorded processes.')
+    return True
+
+
 def wait_for(check, seconds=45):
     until = monotonic() + seconds
     while monotonic() < until:
@@ -216,10 +273,118 @@ def ready():
         return False
 
 
-def configure_models():
-    from pmo.model_gateway import PROTOCOLS, endpoint
+class ModelConfigError(ValueError):
+    """A model setup error whose text never contains operator input."""
 
-    pilots = read('pilots.json', {})
+
+@dataclass(frozen=True)
+class PilotModel:
+    url: httpx.URL = field(repr=False)
+    token: str = field(repr=False)
+    protocol: str
+    version: str
+    codes: list[str]
+    projects: list[str]
+
+    def summary(self):
+        return {'version': self.version, 'protocol': self.protocol, 'projects': self.codes}
+
+
+def model_url(value, protocol):
+    if not isinstance(protocol, str) or protocol not in PROTOCOLS:
+        raise ModelConfigError('Choose pmo_json or chat_completions_json.')
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ModelConfigError('Enter a complete HTTPS endpoint or a literal loopback HTTP endpoint.')
+    try:
+        return endpoint(value, protocol=protocol)
+    except ValueError as error:
+        # endpoint() uses fixed diagnostics and never echoes the URL.
+        raise ModelConfigError(str(error)) from None
+
+
+def inspect_model(config, pilots):
+    if not isinstance(config, dict):
+        raise ModelConfigError('Saved configuration must be a JSON object.')
+    protocol = config.get('protocol', 'pmo_json')
+    url = model_url(config.get('url'), protocol)
+    version, token, codes = (config.get(key) for key in ('version', 'token', 'projects'))
+    if not isinstance(version, str) or not version.strip() or len(version) > 160 or not version.isprintable():
+        raise ModelConfigError('Enter the gateway model ID or version, up to 160 printable characters.')
+    if not isinstance(token, str) or not token.isascii() or any(c.isspace() or not c.isprintable() for c in token):
+        raise ModelConfigError('Enter a valid bearer token, or leave it blank when the gateway requires none.')
+    if (not isinstance(codes, list) or not codes or any(not isinstance(code, str) or code not in PILOT_CODES for code in codes)
+            or len(set(codes)) != len(codes)):
+        raise ModelConfigError('Select one or both unique synthetic pilot project codes.')
+    try:
+        projects = [str(UUID(pilots[code]['id'])) for code in codes]
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise ModelConfigError('Seed the selected synthetic pilot projects before loading the configuration.') from None
+    if len(set(projects)) != len(projects):
+        raise ModelConfigError('Selected synthetic projects must have distinct project IDs.')
+    return PilotModel(url, token, protocol, version.strip(), codes, projects)
+
+
+def load_model(name, pilots):
+    try:
+        path = local_file(f'model-{name}.json')
+        if not path.is_file():
+            return None
+        config = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        raise ModelConfigError('Saved configuration could not be read as JSON.') from None
+    return inspect_model(config, pilots)
+
+
+def pilot_manifest():
+    try:
+        value = read('pilots.json', {})
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def model_guidance(config):
+    if config.protocol == 'pmo_json' and base_endpoint(config.url):
+        return ('Verify that the provider serves the PMO JSON contract at this exact base-looking URL. '
+                'No path is appended and the gateway selects the model.')
+    return None
+
+
+def model_preflight():
+    pilots = pilot_manifest()
+    try:
+        runtime = read('runtime.json', {})
+    except (ValueError, OSError):
+        runtime = {}
+    services_ready = isinstance(runtime, dict) and (runtime.get('web'), runtime.get('api')) == (WEB, API) and ready()
+    active_processes = (probe_runtime_processes(runtime.get('pids')) or set()) if services_ready else set()
+    running = CORE_RUNTIME_PROCESSES <= active_processes
+    loaded = runtime.get('models', {}) if running else {}
+    channels = {}
+    for name in CHANNELS:
+        active = loaded.get(name) if isinstance(loaded, dict) else None
+        entry = {'configuration': 'missing', 'loaded': isinstance(active, dict), 'providerResult': 'not_checked'}
+        if entry['loaded']:
+            entry['loadedConfiguration'] = {key: active[key] for key in ('version', 'protocol', 'projects') if key in active}
+        try:
+            config = load_model(name, pilots)
+        except ModelConfigError as error:
+            entry.update(configuration='invalid', error=str(error))
+        else:
+            if config:
+                entry.update(config.summary(), configuration='valid', tokenPresent=bool(config.token))
+                if guidance := model_guidance(config):
+                    entry['guidance'] = guidance
+        if name == 'report':
+            entry['worker'] = 'not_loaded'
+            if entry['loaded']:
+                entry['worker'] = 'running' if 'reportWorker' in active_processes else 'unavailable'
+        channels[name] = entry
+    return {'servicesReady': services_ready, 'running': running, 'channels': channels}
+
+
+def configure_models():
+    pilots = pilot_manifest()
     if not PILOT_CODES <= pilots.keys():
         raise ValueError('Create both pilot projects before setting the model scope.')
     print(f'{WEB} | {DB_NAME} | synthetic projects only. No network request or service change on save.')
@@ -228,54 +393,43 @@ def configure_models():
         if input(f'Configure {name} gateway? [y/N] ').strip().lower() != 'y':
             continue
         protocol = input('Protocol [pmo_json]: ').strip() or 'pmo_json'
-        if protocol not in PROTOCOLS:
-            raise ValueError('Unsupported model protocol.')
-        uri = endpoint(input('Complete endpoint URL (no path will be appended): ').strip())
+        uri = model_url(input('Complete endpoint URL (no path will be appended): ').strip(), protocol)
         version = input('Actual model ID/version (for pmo_json select it at the gateway): ').strip()
-        if not version or len(version) > 160 or not version.isprintable():
-            raise ValueError('Model version label is required.')
         raw = input('Project codes [SIM-EXEC-001,SIM-NEW-001]: ').strip()
         codes = [code.strip() for code in raw.split(',')] if raw else sorted(PILOT_CODES)
-        if not set(codes) <= PILOT_CODES or len(set(codes)) != len(codes):
-            raise ValueError('Only the two synthetic pilot projects can be selected.')
         token = getpass('Gateway bearer token (blank if none): ')
-        if token and (not token.isascii() or any(c.isspace() or not c.isprintable() for c in token)):
-            raise ValueError('Invalid bearer token format.')
-        save(f'model-{name}.json', dict(url=str(uri), version=version, protocol=protocol, projects=codes, token=token))
+        config = dict(url=str(uri), version=version, protocol=protocol, projects=codes, token=token)
+        checked = inspect_model(config, pilots)
+        save(f'model-{name}.json', config)
         print(f'{name}: saved locally; not loaded or called.')
+        if guidance := model_guidance(checked):
+            print(guidance)
 
 
 def model_env(active):
-    from pmo.model_gateway import PROTOCOLS, endpoint
-
-    pilots = read('pilots.json', {})
     api = {flag: '0' for flag in CHANNELS.values()}
     worker = {'PMO_REPORT_ANALYSIS': '0'}
     loaded = {}
     if active:
+        pilots = pilot_manifest()
         for name, flag in CHANNELS.items():
-            config = read(f'model-{name}.json')
+            try:
+                config = load_model(name, pilots)
+            except ModelConfigError as error:
+                raise ModelConfigError(f'{name}: {error}') from None
             if not config:
                 continue
-            codes = config['projects']
-            protocol = config.get('protocol', 'pmo_json')
-            version = config['version']
-            token = config['token']
-            if (not codes or len(set(codes)) != len(codes) or not set(codes) <= PILOT_CODES or not set(codes) <= pilots.keys()
-                    or protocol not in PROTOCOLS or not version.strip() or len(version) > 160 or not version.isprintable()
-                    or not token.isascii() or any(c.isspace() or not c.isprintable() for c in token)):
-                raise ValueError('Invalid synthetic gateway scope.')
             dest = api if name == 'assistant' else worker
             prefix = 'PMO_' + name.upper() + '_MODEL'
-            dest[prefix + '_URL'] = str(endpoint(config['url']))
-            dest[prefix + '_TOKEN'] = token
-            dest[prefix + '_PROTOCOL'] = protocol
-            dest[prefix + '_VERSION'] = version
-            dest[prefix + '_PROJECTS'] = api[prefix + '_PROJECTS'] = ','.join(pilots[code]['id'] for code in codes)
+            dest[prefix + '_URL'] = str(config.url)
+            dest[prefix + '_TOKEN'] = config.token
+            dest[prefix + '_PROTOCOL'] = config.protocol
+            dest[prefix + '_VERSION'] = config.version
+            dest[prefix + '_PROJECTS'] = api[prefix + '_PROJECTS'] = ','.join(config.projects)
             dest[flag] = api[flag] = '1'
-            loaded[name] = {'version': version, 'protocol': protocol, 'projects': codes}
+            loaded[name] = config.summary()
         if not loaded:
-            raise ValueError('No gateway has been configured.')
+            raise ModelConfigError('No gateway configuration is saved. Run configure-models first.')
     return api, worker, loaded
 
 
@@ -331,7 +485,7 @@ def serve(active):
 
 
 def stop():
-    if not read('runtime.json'):
+    if not local_file('runtime.json').is_file() or clear_stale_runtime():
         return
     local_file('stop.request').touch()
     if not wait_for(lambda: not local_file('runtime.json').exists(), seconds=20):
@@ -339,7 +493,7 @@ def stop():
 
 
 def launch(active=False):
-    if read('runtime.json'):
+    if local_file('runtime.json').is_file() and not clear_stale_runtime():
         raise RuntimeError('Pilot already owns the runtime; stop it before restarting.')
     if not (ROOT / 'web/dist/index.html').is_file():
         raise RuntimeError('Run npm.cmd --prefix web run build before starting the pilot.')
@@ -357,9 +511,9 @@ def launch(active=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('init', 'start', 'stop', 'status', 'configure-models', 'activate-models',
-                                          'serve', 'serve-models'))
+                                          'model-preflight', 'serve', 'serve-models'))
     parser.add_argument('--upgrade-existing', action='store_true',
-                        help='Allow a stopped, dedicated pilot schema at 0036 to upgrade to 0037.')
+                        help='Allow a stopped, backed-up pilot schema at 0036 or 0037 to upgrade to 0038.')
     args = parser.parse_args()
     if args.upgrade_existing and args.action != 'init':
         parser.error('--upgrade-existing is only valid with init')
@@ -375,8 +529,17 @@ def main():
             'saved': {name: local_file(f'model-{name}.json').is_file() for name in CHANNELS}}, ensure_ascii=False))
     elif args.action == 'configure-models':
         configure_models()
+    elif args.action == 'model-preflight':
+        result = model_preflight()
+        print(json.dumps(result, ensure_ascii=False))
+        if any(channel['configuration'] == 'invalid' for channel in result['channels'].values()):
+            raise SystemExit(1)
     elif args.action == 'activate-models':
-        model_env(True)
+        _, _, configured = model_env(True)
+        print(json.dumps(configured, ensure_ascii=False))
+        for name, channel in model_preflight()['channels'].items():
+            if channel.get('guidance'):
+                print(f"{name}: {channel['guidance']}")
         if input('Type SEND SYNTHETIC ONLY to enable the configured synthetic gateway tests: ') != 'SEND SYNTHETIC ONLY':
             print('Not activated.')
             return
@@ -389,6 +552,9 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except ModelConfigError as error:
+        print(f'Pilot model configuration: {error}', file=sys.stderr)
+        raise SystemExit(1) from None
     except (OSError, ValueError, RuntimeError, psycopg.Error, subprocess.SubprocessError) as error:
         # Subprocess errors can include commands; user inputs and database DSNs must not be echoed.
         print(f'Pilot operation failed ({type(error).__name__}).', file=sys.stderr)

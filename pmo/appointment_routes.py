@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from . import appointments as service
 from .access import Auth, Key, Revision
-from .appointments import InboxItem, Invitation, Proposal
+from .appointments import InboxItem, Invitation, MemberProposal, Proposal
 from .contracts import Result, Strict
 
 router=APIRouter(prefix='/api/v1')
@@ -13,6 +13,12 @@ router=APIRouter(prefix='/api/v1')
 @router.post('/projects/{projectId}/role-invitations',operation_id='pmo_role_assignment_propose',response_model_exclude_none=True)
 def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:Revision)->Result[Invitation]:
     return service.propose(authorization,projectId,int(expected),key,command)
+
+
+@router.post('/projects/{projectId}/member-invitations', operation_id='human_member_assignment_propose',
+             openapi_extra={'x-actorTypes': ['human']}, response_model_exclude_none=True)
+def propose_member(projectId: UUID, command: MemberProposal, authorization: Auth, key: Key, expected: Revision) -> Result[Invitation]:
+    return service.propose(authorization, projectId, int(expected), key, command, extended=True)
 
 
 @router.get('/me/role-invitations',operation_id='human_my_role_invitations')

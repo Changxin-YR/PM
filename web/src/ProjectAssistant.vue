@@ -2,13 +2,14 @@
 import {computed,onBeforeUnmount,shallowRef,ref,watch} from 'vue'
 import {ArrowRight,Bell,ChartNoAxesColumnIncreasing,CircleHelp,ClipboardList,Database,Flag,Layers3,ListChecks,RefreshCw,Search,TriangleAlert} from 'lucide-vue-next'
 import AssistantLines from './AssistantLines.vue'
+import AssistantRequirementHistory from './AssistantRequirementHistory.vue'
 
 type Mode='charter'|'process'|'closing'|'ledger'
-type Topic='health'|'cost'|'requirements'|'fact'|'lesson'
+type Topic='health'|'cost'|'requirements'|'fact'|'lesson'|'requirement_history'
 type Cited={text:string;sourceRefs:string[];observedAt?:string|null}
 type Preview={status:'ready'|'manual'|'empty';items:(Cited & {prompt?:string})[];errorCode?:string}
 type Gap={code:string;message:string;sourceRefs:string[]}
-type LessonRef=Cited & {lessonId:string;projectId:string;category:string}
+type LessonRef=Cited & {lessonId:string;projectId:string;category:string;matchedTerm?:string|null}
 type Charter={completeness:{eligible:boolean;missing:Gap[]};scoreSummary:null|{total:string|null;means:Record<string,string>;sourceRefs:string[];decidedAt:string};
   weaknesses:Cited[];lessonRefs:LessonRef[];reviewDraft:Cited[];previewEnabled:boolean}
 type Process={reportId:string|null;modelEnabled:boolean;analysis:null|{status:string;errorCode:string|null};
@@ -28,7 +29,8 @@ const emit=defineEmits<{navigate:[destination:Destination]}>()
 const modes:{label:string;value:Mode}[]=[{value:'charter',label:'立项评审'},{value:'process',label:'过程管家'},
   {value:'closing',label:'结项回顾'},{value:'ledger',label:'台账问答'}]
 const topics:{value:Topic;label:string}[]=[{value:'health',label:'当前三线'},{value:'cost',label:'成本台账'},
-  {value:'requirements',label:'需求满足率'},{value:'fact',label:'核验事实'},{value:'lesson',label:'已确认教训'}]
+  {value:'requirements',label:'需求满足率'},{value:'requirement_history',label:'需求变更历史'},
+  {value:'fact',label:'核验事实'},{value:'lesson',label:'已确认教训'}]
 const healthNames:Record<string,string>={green:'绿',yellow:'黄',red:'红',untrusted:'不可信',unavailable:'不可用'}
 const analysisNames:Record<string,string>={queued:'正在排队',running:'分析中',ready:'候选已生成',manual:'待人工处理',stale:'来源已变更'}
 const previewReasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MODEL_UNAVAILABLE:'模型网关不可用',MODEL_TIMEOUT:'模型响应超时',
@@ -43,6 +45,7 @@ const charter=computed(()=>packet.value?.mode==='charter'?packet.value.data:null
 const process=computed(()=>packet.value?.mode==='process'?packet.value.data:null)
 const closing=computed(()=>packet.value?.mode==='closing'?packet.value.data:null)
 const ledger=computed(()=>packet.value?.mode==='ledger'?packet.value.data:null)
+const historyTopic=computed(()=>mode.value==='ledger'&&topic.value==='requirement_history')
 const useKeyword=computed(()=>mode.value==='charter'||(mode.value==='ledger'&&['fact','lesson'].includes(topic.value)))
 const useCategory=computed(()=>mode.value==='charter'||(mode.value==='ledger'&&topic.value==='lesson'))
 const enabled=computed(()=>charter.value?.previewEnabled||closing.value?.previewEnabled||ledger.value?.previewEnabled)
@@ -63,6 +66,7 @@ function clearSuggestion(){
 
 async function load(){
   request?.abort();clearSuggestion()
+  if(historyTopic.value){request=undefined;loading.value=false;error.value='';packet.value=null;return}
   const next=new AbortController(),current=mode.value
   request=next;loading.value=true;error.value='';packet.value=null
   const params=query.value
@@ -112,11 +116,12 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
         <input v-model="keyword" maxlength="160" autocomplete="off"></label>
       <label v-if="useCategory">教训分类<input v-model="category" maxlength="80" autocomplete="off"></label>
       <el-button v-if="useKeyword" native-type="submit" :loading="loading"><Search :size="15"/>查询</el-button>
-      <el-tooltip v-else content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
+      <el-tooltip v-else-if="!historyTopic" content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
       </form>
     </div>
     <p v-if="loading" class="meta" role="status">正在读取…</p>
     <el-alert v-if="error" type="error" :title="error" :closable="false"/>
+    <AssistantRequirementHistory v-if="historyTopic" :key="projectId" :project-id="projectId" :api="api"/>
 
     <section v-if="charter" class="panel assistant-panel">
       <div class="assistant-row"><h3>立项材料与评分</h3><el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button></div>
@@ -131,7 +136,8 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       <h3>评审建议草稿</h3>
       <AssistantLines :items="charter.reviewDraft"/>
       <h3>历史教训</h3>
-      <AssistantLines v-if="charter.lessonRefs.length" :items="charter.lessonRefs"/>
+      <AssistantLines v-if="charter.lessonRefs.length" :items="charter.lessonRefs.map(item=>({...item,
+        prompt:item.matchedTerm?`立项卡文字匹配 · ${item.matchedTerm}`:undefined}))"/>
       <p v-else class="meta">没有匹配的已确认教训。</p>
     </section>
 

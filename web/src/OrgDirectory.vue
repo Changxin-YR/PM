@@ -92,11 +92,13 @@ async function copy(){try{await navigator.clipboard.writeText(secret.value);noti
     <div v-if="secret" class="org-secret">
       <label>一次性邀请码<input :value="secret" readonly autocomplete="off"></label>
       <el-button aria-label="复制邀请码" title="复制邀请码" @click="copy"><Copy :size="15"/></el-button>
+      <p class="invite-guide">请复制并通过获准渠道交给收件人。邀请码有效期为 24 小时，收件人可从登录页「接受组织邀请」开通账号。</p>
     </div>
     <el-dialog :model-value="issueForm" title="邀请人员" width="min(560px,94vw)" :close-on-click-modal="false" :show-close="!busy" :close-on-press-escape="!busy" @update:model-value="(value:boolean)=>{if(!value&&issueForm)clear()}">
     <form aria-label="邀请人员" class="org-form" @submit.prevent="invite">
       <label>受邀邮箱<input v-model.trim="email" type="email" maxlength="254" required :disabled="busy"></label>
       <label>职务提示<select v-model="role" :disabled="busy"><option v-for="(label,k) in roles" :key="k" :value="k">{{label}}</option></select></label>
+      <p class="invite-guide">该邀请开通组织账号。项目访问与审批权限由项目任命单独授予。</p>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
       <div class="actions"><el-button :disabled="busy" @click="clear"><X :size="15"/>取消</el-button>
         <el-button native-type="submit" type="primary" :loading="busy"><Check :size="15"/>签发邀请</el-button></div>
@@ -146,4 +148,5 @@ async function copy(){try{await navigator.clipboard.writeText(secret.value);noti
 .org-secret label{flex:1 1 260px;min-width:0}
 .org-form{display:grid;gap:16px}
 .org-id{overflow-wrap:anywhere}
+.invite-guide{flex-basis:100%;margin:0;color:var(--pmo-muted);font-size:13px}
 </style>
