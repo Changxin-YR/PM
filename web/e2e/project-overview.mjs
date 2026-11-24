@@ -73,6 +73,9 @@ try{
   await button(limited,'查看 Synthetic review 的项目资料').click()
   const minimal=applicant.getByRole('region',exact('项目概览'))
   await expect(minimal.getByText('当前账号仅可查看项目基本信息。',{exact:true})).toBeVisible()
+  const reminders=minimal.getByRole('region',exact('我的项目提醒'))
+  await expect(reminders.getByText('项目成本超过规则阈值 · LR-04',{exact:true})).toBeVisible()
+  await expect(reminders.getByText('待处理',{exact:true})).toBeVisible()
   await expect(minimal.getByRole('region',exact('当前四指标'))).toHaveCount(0)
   await expect(minimal.getByRole('region',exact('最近台账活动'))).toHaveCount(0)
 }finally{await browser.close()}

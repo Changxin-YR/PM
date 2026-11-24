@@ -176,14 +176,14 @@ def test_incremental_scan_lr04_lr03_dedupe_and_transaction(live, team):
     assert stats() == (0, 0, 1, 0)
     forecast('120.00')
     assert scan_batch(eng, 200) > 0
-    assert stats() == (1, 0, 2, 1)
+    assert stats() == (1, 0, 2, 2)
     forecast('120.01')
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TRIGGER health_test_abort BEFORE INSERT ON outbox_events FOR EACH STATEMENT EXECUTE FUNCTION pmo_append_only()")
     try:
         res = pm.post(project + '/health/refresh',headers=headers(stage(pm, project)['revision']))
         code(res, 500, 'DATABASE_FAILURE')
-        assert stats() == (1,0,2,1)
+        assert stats() == (1,0,2,2)
         with eng.connect() as c:
             assert c.scalar(sa.text('SELECT dirty FROM project_rule_scan_state WHERE project_id=:p'),{'p':pid})
             assert not c.scalar(sa.text("SELECT count(*) FROM audit_logs WHERE project_id=:p AND action='human_health_refresh' AND result='success'"),{'p':pid})
@@ -192,11 +192,11 @@ def test_incremental_scan_lr04_lr03_dedupe_and_transaction(live, team):
             c.exec_driver_sql('DROP TRIGGER health_test_abort ON outbox_events')
     with ThreadPoolExecutor(2) as pool:
         assert sum(pool.map(lambda _: scan_batch(eng, 200), range(2))) >= 1
-    assert stats() == (1,1,3,2)
+    assert stats() == (1,1,3,4)
     first = sample(pm, project)
     assert first['moneyVarianceRate'] == '0.2001'
     assert sample(pm, project)['snapshotId'] == first['snapshotId']
-    assert stats() == (1,1,3,2)
+    assert stats() == (1,1,3,4)
     forecast('12.01','effort')
     assert scan_batch(eng, 200) > 0
     open_ids = [r['alertId'] for r in data(pm.get(project + '/alerts'))['items'] if r['ruleId'] == 'LR-04' and r['status']=='open']
@@ -206,7 +206,7 @@ def test_incremental_scan_lr04_lr03_dedupe_and_transaction(live, team):
     with eng.connect() as c:
         notifications = c.execute(sa.select(db.notifications.c.recipient_person_id).where(
             db.notifications.c.rule_event_id.in_(open_ids))).scalars().all()
-        assert notifications == [people['sponsor']] * 2
+        assert sorted(notifications) == sorted([people['sponsor'], people['initiator']] * 2)
         assert c.execute(sa.select(db.tasks.c.assignee_id).where(db.tasks.c.source_id.in_(open_ids))).scalars().all() == [people['sponsor']] * 2
 
     # Catch up a legacy late forecast without fabricating a versioned forecast receipt.
@@ -400,8 +400,9 @@ def test_lr08_needs_both_review_and_lesson_and_uses_calendar_day(live, team):
     assert [r['status'] for r in data(pm.get(project+'/alerts'))['items'] if r['ruleId']=='LR-08']==['resolved']
     dispatch(eng,500)
     with eng.connect() as c:
-        assert c.execute(sa.text('''SELECT n.recipient_person_id FROM notifications n JOIN rule_events e ON e.id=n.rule_event_id
-            WHERE e.project_id=:p AND e.rule_id='LR-08' '''),{'p':pid}).scalars().all()==[people['sponsor']]
+        recipients = c.execute(sa.text('''SELECT n.recipient_person_id FROM notifications n JOIN rule_events e ON e.id=n.rule_event_id
+            WHERE e.project_id=:p AND e.rule_id='LR-08' '''),{'p':pid}).scalars().all()
+        assert sorted(recipients) == sorted([people['sponsor'], people['initiator']])
 
 
 @pytest.mark.parametrize('late_archive', [False, True])
@@ -441,10 +442,19 @@ def test_lr08_cross_month_backfill_keeps_deadline_and_dedupes(live, team, late_a
     # The reconciler is a member; the original initiator can read the project summary but not its alerts.
     code(users['initiator'].get(project + '/alerts'), 404, 'RESOURCE_NOT_FOUND')
     assert data(users['initiator'].get('analytics/health-alerts', params=query))['total'] == 0
+    summary = data(users['initiator'].get(f'project-overview/{pid}'))
+    assert not summary['materialsVisible'] and 'indicators' not in summary and 'recentActivity' not in summary
+    if late_archive:
+        assert 'ruleNotifications' not in summary
+    else:
+        receipt, = summary['ruleNotifications']
+        assert receipt == {'alertId': alert['alertId'], 'ruleId': 'LR-08', 'status': 'open',
+                           'deliveredAt': receipt['deliveredAt']}
+        assert receipt['deliveredAt'] and 'ruleNotifications' not in data(pm.get(f'project-overview/{pid}'))
     with eng.connect() as c:
         row = c.execute(sa.text('''SELECT id,created_at,input_snapshot FROM rule_events
             WHERE project_id=:p AND rule_id='LR-08' '''), {'p': pid}).one()
         assert row.created_at == resumed and row.input_snapshot['deadline'] == cutoff.date().isoformat()
         notifications = c.execute(sa.text('SELECT recipient_person_id FROM notifications WHERE rule_event_id=:e'),
                                   {'e': row.id}).scalars().all()
-        assert notifications == ([] if late_archive else [people['sponsor']])
+        assert sorted(notifications) == ([] if late_archive else sorted([people['sponsor'], people['initiator']]))

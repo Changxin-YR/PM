@@ -1,7 +1,8 @@
 """Verify the opt-in JSON chat compatibility contract and protected configuration split."""
 import json
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -53,6 +54,7 @@ def test_model_preflight_distinguishes_saved_loaded_worker_and_provider(monkeypa
     monkeypatch.setattr(pilot_local, 'probe_runtime_processes', lambda _: pytest.fail('processes checked for a stale runtime'))
     stale = pilot_local.model_preflight()
     assert not stale['running']
+    assert stale['scheduler'] == 'not_recorded'
     assert all(not channel['loaded'] for channel in stale['channels'].values())
     assert stale['channels']['report']['worker'] == 'not_loaded'
 
@@ -77,6 +79,88 @@ def test_model_preflight_distinguishes_saved_loaded_worker_and_provider(monkeypa
     unverified = pilot_local.model_preflight()
     assert unverified['servicesReady'] and not unverified['running']
     assert all(not channel['loaded'] for channel in unverified['channels'].values())
+
+
+@pytest.mark.parametrize('active', (False, True))
+def test_pilot_supervises_scheduler_under_scoped_api_environment(monkeypatch, configured_pilot, active):
+    cfg = {'id': uuid4().hex, 'passwords': {'api': 'fixture-api', 'outbox': 'fixture-outbox'}}
+    pilot_local.save('model-assistant.json', configured_pilot)
+    pilot_local.save('model-report.json', configured_pilot)
+    connection = SimpleNamespace(execute=lambda *args: SimpleNamespace(
+        fetchone=lambda: (pilot_local.DB_NAME, pilot_local.schema(cfg), 'pmo_api')))
+    monkeypatch.setenv('PMO_REPORT_MODEL_TOKEN', 'untrusted-inherited-secret')
+    monkeypatch.setattr(pilot_local, 'settings', lambda: cfg)
+    monkeypatch.setattr(pilot_local, 'verify_database', lambda value: None)
+    monkeypatch.setattr(pilot_local, 'db_connect', lambda cfg, role: nullcontext(connection))
+    monkeypatch.setattr(pilot_local, 'bind', lambda port: nullcontext())
+    monkeypatch.setattr(pilot_local, 'ready', lambda: True)
+    monkeypatch.setattr(pilot_local.subprocess, 'CREATE_NO_WINDOW', 0, raising=False)
+    monkeypatch.setattr(pilot_local.subprocess, 'check_output', lambda *args, **kwargs: 'synthetic-head\n')
+    processes = {}
+    snapshots = {}
+
+    class Child:
+        def __init__(self, pid, command, env):
+            self.pid, self.command, self.env = pid, command, env
+            self.terminated = False
+            self.waited = False
+
+        def poll(self):
+            return 0 if self.terminated else None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout):
+            assert self.terminated and timeout == 12
+            self.waited = True
+
+    def start(command, *, env, **kwargs):
+        child = Child(len(processes) + 100, command, env)
+        processes[child.pid] = child
+        return child
+
+    save = pilot_local.save
+
+    def publish(name, runtime):
+        save(name, runtime)
+        snapshots.update(runtime)
+        pilot_local.local_file('stop.request').touch()
+
+    monkeypatch.setattr(pilot_local.subprocess, 'Popen', start)
+    monkeypatch.setattr(pilot_local, 'save', publish)
+    pilot_local.serve(active)
+    pids = snapshots['pids']
+    scanner = processes[pids['scheduler']]
+    assert scanner.command == [str(pilot_local.PYTHON), '-m', 'pmo.rule_scan', '--watch']
+    assert scanner.env == pilot_local.env_base() | {
+        'DATABASE_URL': pilot_local.database(cfg, 'api'),
+        'PMO_SYNTHETIC_POLICY_SCHEMA': pilot_local.schema(cfg),
+        'PMO_EVIDENCE_DIR': str(pilot_local.local_file('private-evidence')),
+    }
+    assert processes[pids['outbox']].env['DATABASE_URL'] == pilot_local.database(cfg, 'outbox')
+    assert ('reportWorker' in pids) == active
+    assert set(snapshots['models']) == (set(pilot_local.CHANNELS) if active else set())
+    assert all(child.terminated and child.waited for child in processes.values())
+    assert not pilot_local.local_file('runtime.json').exists()
+
+
+@pytest.mark.parametrize(('scheduler', 'expected'), ((True, 'running'), (False, 'unavailable'), (None, 'not_recorded')))
+def test_status_scheduler_is_additive_for_legacy_and_current_runtime(monkeypatch, configured_pilot, capsys, scheduler, expected):
+    pids = {'api': 11, 'web': 22, 'outbox': 33}
+    if scheduler is not None:
+        pids.update(scheduler=44, supervisor=55)
+    pilot_local.save('runtime.json', {'web': pilot_local.WEB, 'api': pilot_local.API, 'pids': pids})
+    active = set(pids) - ({'scheduler'} if not scheduler else set())
+    monkeypatch.setattr(pilot_local, 'ready', lambda: True)
+    monkeypatch.setattr(pilot_local, 'probe_runtime_processes', lambda processes: active)
+    monkeypatch.setattr(sys, 'argv', ['pilot_local', 'status'])
+    pilot_local.main()
+    status = json.loads(capsys.readouterr().out)
+    assert status['running'] and status['scheduler'] == expected
+    assert status['matchedProcesses'] == sorted(active)
+    preflight = pilot_local.model_preflight()
+    assert preflight['running'] and preflight['scheduler'] == expected
 
 
 @pytest.mark.parametrize(('changes', 'message'), [
@@ -113,9 +197,12 @@ def test_model_preflight_cli_detects_malformed_config_and_missing_project(monkey
     assert 'fixture-secret' not in output
 
 
-@pytest.mark.parametrize('situation', ('stale', 'occupied', 'unknown_processes', 'live_worker', 'marker_changed', 'foreign_instance'))
+@pytest.mark.parametrize('situation', ('legacy_stale', 'stale', 'occupied', 'unknown_processes', 'live_worker', 'live_scheduler',
+                                      'live_supervisor', 'marker_changed', 'foreign_instance'))
 def test_stale_runtime_marker_requires_free_ports_and_known_processes(monkeypatch, configured_pilot, situation):
     pids = {'api': 11, 'web': 22, 'outbox': 33, 'reportWorker': 44}
+    if situation != 'legacy_stale':
+        pids.update(scheduler=55, supervisor=66)
     marker = {'web': pilot_local.WEB, 'api': pilot_local.API, 'pids': pids}
     if situation == 'foreign_instance':
         marker['web'] = 'http://127.0.0.1:32101'
@@ -138,6 +225,10 @@ def test_stale_runtime_marker_requires_free_ports_and_known_processes(monkeypatc
         assert bound == [pilot_local.WEB_PORT, pilot_local.API_PORT]
         if situation == 'live_worker':
             return {'reportWorker'}
+        if situation == 'live_scheduler':
+            return {'scheduler'}
+        if situation == 'live_supervisor':
+            return {'supervisor'}
         if situation == 'unknown_processes':
             return None
         if situation == 'marker_changed':
@@ -146,11 +237,24 @@ def test_stale_runtime_marker_requires_free_ports_and_known_processes(monkeypatc
 
     monkeypatch.setattr(pilot_local, 'bind', bind)
     monkeypatch.setattr(pilot_local, 'probe_runtime_processes', processes)
-    cleared = situation == 'stale'
+    cleared = situation in ('legacy_stale', 'stale')
     assert pilot_local.clear_stale_runtime() == cleared
     assert pilot_local.local_file('runtime.json').is_file() != cleared
     assert pilot_local.local_file('stop.request').is_file() != cleared
     assert bound == []
+
+
+def test_unresponsive_supervisor_retains_marker_without_pid_stop(monkeypatch, configured_pilot):
+    pids = {'api': 11, 'web': 22, 'outbox': 33, 'scheduler': 44, 'supervisor': 55}
+    runtime = {'web': pilot_local.WEB, 'api': pilot_local.API, 'pids': pids}
+    pilot_local.save('runtime.json', runtime)
+    monkeypatch.setattr(pilot_local, 'clear_stale_runtime', lambda: False)
+    monkeypatch.setattr(pilot_local, 'wait_for', lambda check, seconds: check())
+    monkeypatch.setattr(pilot_local.subprocess, 'run', lambda *args, **kwargs: pytest.fail('unexpected process operation'))
+    with pytest.raises(pilot_local.PilotStopTimeout, match='Runtime marker retained'):
+        pilot_local.stop()
+    assert pilot_local.read('runtime.json') == runtime
+    assert pilot_local.local_file('stop.request').is_file()
 
 
 def test_saved_configuration_loads_only_into_the_right_process(monkeypatch, tmp_path):

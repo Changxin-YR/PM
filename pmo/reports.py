@@ -190,6 +190,19 @@ def _content(row):
     return fields
 
 
+def publication_fields(row, as_of: datetime) -> StoredSubmitFields | None:
+    """Verify one selected human confirmation receipt at the supplied cutoff."""
+    if (row.status != 'confirmed' or row.submitted_by is None
+            or row.confirmed_by is None or row.submitted_at is None or row.confirmed_at is None
+            or not row.submitted_at <= row.confirmed_at <= as_of or row.revision < 2):
+        return None
+    return _content(row)
+
+
+def current_publication_fields(row, now: datetime) -> StoredSubmitFields | None:
+    return publication_fields(row, now) if row.is_current_confirmed else None
+
+
 def _submissions(c, project_id: UUID, as_of: datetime, *period_filters) -> list[ReportSubmission]:
     """Read verifiable receipts for an already scoped project; a claim is not proof."""
     if as_of.utcoffset() is None:

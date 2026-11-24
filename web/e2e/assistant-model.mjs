@@ -33,11 +33,12 @@ try {
 
   await mode.getByText('台账问答',{exact:true}).first().click()
   await mode.getByLabel('查询主题').selectOption('cost')
-  const ledger=mode.getByText(/金额（CNY）：已核验净额/)
+  const ledger=mode.getByRole('region',{name:'台账原始结果'}).getByText(/金额（CNY）：已核验净额/)
   await expect(ledger).toBeVisible()
   await expect(section.getByText(/如何验收/)).toHaveCount(0)
   await preview.click()
   await expect(section.getByRole('status')).toHaveText(/无法追溯到本次来源/)
+  await expect(section.getByText(/金额（CNY）：已核验净额/)).toBeVisible()
   await expect(ledger).toBeVisible()
   expect(posts).toEqual([{mode:'charter'},{mode:'ledger',topic:'cost'}])
 } finally {

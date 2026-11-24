@@ -20,7 +20,13 @@ npm.cmd --prefix web run build
 & $py -m scripts.pilot_rehearsal browser
 ```
 
-`status` 区分服务就绪、配置已保存和模型已加载。`stop` 通知本套应用监督进程退出，保留数据库、附件及回执。主机重启后若留下旧标记，启动、停止和显式升级会在两个回环端口均可独占绑定、记录进程均已退出或已由不匹配命令的进程复用时清理旧标记。核对无法完成时保留标记供排查。`start` 始终关闭模型。只有专用 schema 能按保守合成政策演练。用 `python -m scripts.pilot_regression -- ...` 在独立回归库测试。固定制品的 Compose 探针是另一套环境，已验证的基线栈 `pmo104-rc-15fde057`（回环 `18780`）。新 smoke 项目选择未用的 `PMO_SMOKE_SUBNET`，用 `deploy/pilot-smoke.compose.yaml` 和 `deployment_smoke.py <project> --pilot-network` 验证，该 override 不启用模型。
+`start` 始终关闭模型，同时启动 Web、API、Outbox 和规则调度进程 `pmo.rule_scan --watch`。原生与本机 Docker 数据库模式使用同一启动器。调度器使用受限的 `pmo_api` 权限和专用合成 schema，读取本套私有原件目录。调度与模型授权无关。
+
+`status` 显示 HTTP 就绪、模型配置和已匹配的进程角色。调度器状态 `running` 表示记录的调度进程存在且命令匹配，`not_recorded` 表示沿用旧标记，可在一次受控停止和启动后复核，`unavailable` 表示没有可核验的调度进程。在受保护的 `services.log` 内可查看 `rules.batch` 或 `rules.failed`。`model-preflight` 也显示调度器状态，模型载入状态仍独立核验。
+
+`stop` 通知本套应用监督进程退出，保留数据库、附件及回执。主机重启后若留下旧标记，启动、停止和显式升级会在两个回环端口均可独占绑定、记录进程均已退出或已由不匹配命令的进程复用时清理旧标记。如果停止等待超时，会保留运行标记和停止请求。此时查看 `status`、受保护的 `supervisor.log` 和 `services.log`。进程角色匹配只用于诊断，标记没有足够的信息证明孤儿进程和监听端口的归属，禁止按记录 PID 强停。
+
+只有专用 schema 能按保守合成政策演练。用 `python -m scripts.pilot_regression -- ...` 在独立回归库测试。固定制品的 Compose 探针是另一套环境，已验证的基线栈 `pmo104-rc-15fde057`（回环 `18780`）。新 smoke 项目选择未用的 `PMO_SMOKE_SUBNET`，用 `deploy/pilot-smoke.compose.yaml` 和 `deployment_smoke.py <project> --pilot-network` 验证，该 override 不启用模型。
 
 `seed` 已完成时只读回，不覆盖用户手工操作。`pilot_rehearsal` 通过服务记录 A 的变更、锁定对账和待接收风险，并把两个 `-DRILL` 项目走到归档；A 保留实施现场，B 保留 Host 委托草稿。模拟身份：发起 `sim-init`；PM `sim-pm-a` / `sim-pm-b`；Sponsor `sim-sponsor`；评审 `sim-review-01` / `sim-review-02`；客户 `sim-customer`；流水核验 `sim-finance`；对账 `sim-reconcile`；风险接收 `sim-risk-receiver`；任命 `sim-appoint`。`sim-admin` 不代办业务。在私有终端运行 `python -m scripts.pilot_seed login <role>`（不加 `sim-`）读取合成口令，不截图或发到聊天。
 

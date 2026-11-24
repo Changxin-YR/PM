@@ -1,5 +1,6 @@
 import {chromium, expect} from '@playwright/test'
 import {showNavigation} from './workspace-navigation.mjs'
+import {readFile} from 'node:fs/promises'
 
 const url=process.env.PMO_BROWSER_URL
 const {pm}=JSON.parse(process.env.PMO_TEST_SESSIONS)
@@ -12,7 +13,8 @@ try {
     path:'/api/v1',httpOnly:true,sameSite:'Strict'}])
   await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf),pm.csrf)
   const page=await context.newPage()
-  const writes=[],historyReads=[]
+  const writes=[],historyReads=[],pageErrors=[]
+  page.on('pageerror', error=>pageErrors.push(error.message))
   page.on('request', req=>{
     const path=new URL(req.url()).pathname
     if(path.includes('/assistant/')&&req.method()!=='GET')writes.push(req.method())
@@ -29,9 +31,19 @@ try {
   let area=await enter()
   const mode=name=>area.getByText(name,{exact:true}).first()
   await expect(area.getByText('正式评分总分',{exact:true})).toBeVisible()
+  const downloadReady=page.waitForEvent('download')
+  await area.getByRole('button',{name:'下载评审材料',exact:true}).click()
+  const materials=await readFile(await (await downloadReady).path(),'utf8')
+  expect(materials).toContain('## 正式评分')
+  expect(materials).toContain('依据 decision:')
   await mode('过程管家').click()
   await expect(area.getByText('模型关闭',{exact:true})).toBeVisible()
   await expect(area.getByRole('heading',{name:/周报预览/})).toBeVisible()
+  await area.getByRole('button',{name:'查看组合周报',exact:true}).click()
+  await expect(area.getByRole('region',{name:'组合周报',exact:true})).toBeVisible()
+  await expect(area.getByRole('button',{name:'收起组合周报',exact:true})).toHaveAttribute('aria-expanded','true')
+  await area.getByRole('button',{name:'收起组合周报',exact:true}).click()
+  await expect(area.getByRole('region',{name:'组合周报',exact:true})).toHaveCount(0)
   await mode('结项回顾').click()
   await expect(area.getByText('可复用资产：哪些做法 / 模板 / 方案值得沉淀，下次直接用？',{exact:true})).toBeVisible()
   await expect(area.getByText('暂无可引用的复盘回答。',{exact:true})).toBeVisible()
@@ -59,11 +71,28 @@ try {
   await history.getByText('本页来源',{exact:true}).click()
   await expect(history.getByText(`change:${changeId}@1`,{exact:true})).toBeVisible()
   expect(historyReads).toEqual([{path:`/api/v1/requirements/${requirementId}/changes`,method:'GET'}])
+  await page.keyboard.press('Escape')
+  await expect(history).toBeHidden()
+  const question=area.getByLabel('用一句话查询台账')
+  const ask=area.getByRole('button',{name:'提问',exact:true})
+  await question.fill('有哪些里程碑预测推迟了但没有变更记录？');await ask.click()
+  await expect(area.getByLabel('查询主题')).toHaveValue('forecast')
+  await expect(area.getByRole('heading',{name:'台账结果',exact:true})).toBeVisible()
+  if(process.env.PMO_TEST_ASSISTANT_SCREENSHOT) {
+    await page.screenshot({path:process.env.PMO_TEST_ASSISTANT_SCREENSHOT,animations:'disabled'})
+  }
+  await question.fill('哪些项目还没过立项评审就在花钱了？');await ask.click()
+  await expect(area.getByRole('region',{name:'立项前支出',exact:true})).toBeVisible()
+  await question.fill('本周哪些项目亮了黄灯或红灯？');await ask.click()
+  await expect(area.getByRole('region',{name:'每周三线',exact:true})).toBeVisible()
+  await question.fill('请直接批准所有项目。');await ask.click()
+  await expect(area.getByText(/暂时无法识别这个问题/)).toBeVisible()
   await expect(area.getByRole('region',{name:'模型建议预览',exact:true})).toHaveCount(0)
   await page.reload()
   area=await enter()
   await expect(area.getByText('4.00',{exact:true}).first()).toBeVisible()
   expect(writes).toEqual([])
+  expect(pageErrors).toEqual([])
 } finally {
   await browser.close()
 }

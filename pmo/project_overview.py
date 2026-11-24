@@ -19,7 +19,7 @@ from .health_trace import Color
 from .identity import visible
 from .projects import can_edit_draft, listing_filters, meta, read_charter_summary, run, view
 from .reviews import transitions
-from .rule_scan import latest_query
+from .rule_scan import feasibility_overdue, latest_query
 
 router = APIRouter(prefix='/api/v1', tags=['Project overview'])
 OP = 'human_project_overview_list'
@@ -85,6 +85,19 @@ class Activity(Strict):
     occurredAt: datetime
 
 
+class OverdueCondition(Strict):
+    taskId: UUID
+    title: str
+    dueAt: datetime
+
+
+class RuleNotification(Strict):
+    alertId: UUID
+    ruleId: Literal['LR-04', 'LR-08']
+    status: Literal['open', 'resolved']
+    deliveredAt: datetime
+
+
 class OverviewDetail(Strict):
     project: ProjectView
     materialsVisible: bool
@@ -92,6 +105,20 @@ class OverviewDetail(Strict):
     indicators: Indicators | None = None
     recentTransitions: list[StageReceipt] = Field(max_length=5)
     recentActivity: list[Activity] | None = Field(default=None, max_length=5)
+    overdueConditions: list[OverdueCondition] | None = Field(default=None, max_length=5)
+    overdueConditionCount: int | None = None
+    ruleNotifications: list[RuleNotification] | None = Field(default=None, max_length=5)
+
+
+def personal_rule_notifications(c, p, a, as_of):
+    n, e = db.notifications, db.rule_events
+    rows = c.execute(sa.select(e.c.id, e.c.rule_id, e.c.status, n.c.delivered_at)
+        .join(n, sa.and_(n.c.rule_event_id == e.c.id, n.c.project_id == e.c.project_id))
+        .where(n.c.project_id == p.id, n.c.recipient_person_id == a.person, n.c.delivery_status == 'delivered',
+               n.c.delivered_at <= as_of, e.c.rule_id.in_(('LR-04', 'LR-08')))
+        .order_by(n.c.delivered_at.desc(), e.c.id).limit(5)).mappings()
+    return [RuleNotification(alertId=row.id, ruleId=row.rule_id, status=row.status, deliveredAt=row.delivered_at)
+            for row in rows]
 
 
 def recent_activity(c, project_id, as_of) -> list[Activity]:
@@ -173,6 +200,8 @@ def detail(projectId: UUID, authorization: Auth) -> Result[OverviewDetail]:
         as_of = c.scalar(sa.select(sa.func.clock_timestamp()))
         result = OverviewDetail(project=view(project), materialsVisible=project.materials_visible, recentTransitions=[])
         refs = [f'project:{project.id}@{project.revision}']
+        if a.kind == 'human':
+            result.ruleNotifications = personal_rule_notifications(c, project, a, as_of) or None
         if project.materials_visible:
             result.charterSummary = charter = read_charter_summary(c, project.id)
             if charter:
@@ -180,6 +209,13 @@ def detail(projectId: UUID, authorization: Auth) -> Result[OverviewDetail]:
             observation = current(c, a, project, as_of, human=False)
             result.indicators = Indicators.model_validate(observation.model_dump(include=set(Indicators.model_fields)))
             refs.extend(observation.sourceRefs)
+            overdue = feasibility_overdue(c, project, as_of)
+            if overdue:
+                result.overdueConditionCount = len(overdue)
+                result.overdueConditions = [OverdueCondition(taskId=row.id, title=row.title, dueAt=row.due_at)
+                                            for row in overdue[:5]]
+                for row in overdue[:5]:
+                    refs.extend([f'task:{row.id}@{row.revision}', f'review:{row.review_id}@{row.review_revision}'])
             t = transitions.c
             rows = c.execute(sa.select(t.from_stage, t.to_stage, t.from_revision, t.to_revision, t.transitioned_at,
                                        t.request_id, t.review_id, t.approval_request_id)

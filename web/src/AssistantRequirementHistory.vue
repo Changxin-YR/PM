@@ -4,12 +4,12 @@ import {Search} from 'lucide-vue-next'
 import RequirementHistory from './RequirementHistory.vue'
 
 type Requirement={requirementId:string;desc:string}
-const props=defineProps<{projectId:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const choices=ref<Requirement[]>([]),selectedId=ref(''),query=ref(''),page=ref(1),total=ref(0)
+const props=defineProps<{projectId:string;initialQuery?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const choices=ref<Requirement[]>([]),selectedId=ref(''),query=ref(props.initialQuery??''),page=ref(1),total=ref(0)
 const busy=ref(false),error=ref('')
 const selected=computed(()=>choices.value.find(item=>item.requirementId===selectedId.value))
 const pageSize=10
-let keyword='',request:AbortController|undefined
+let keyword=query.value,request:AbortController|undefined
 
 async function read(n=1){
   request?.abort()

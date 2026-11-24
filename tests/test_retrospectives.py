@@ -128,7 +128,7 @@ def test_retrospective_and_independent_lesson_then_archived_replay(live, team):
     lessons = f'projects/{pid}/lessons'
     assert data(pm.get(retro)) == {'projectId': str(pid), 'stage': 'retrospective', 'kind': 'normal',
         'fromStage': 'closed', 'retrospectiveId': None, 'revision': 1, 'answers': [], 'completedAt': None, 'canSave': True,
-        'questions': SPEC_QUESTIONS}
+        'questions': SPEC_QUESTIONS, 'costDiscussion': []}
     assert not data(reviewer.get(retro))['canSave']
     error(other.get(retro), 404)
     error(other.get(lessons), 404)

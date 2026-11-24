@@ -25,13 +25,18 @@ def test_forecast_alert_episode_delivery_and_recovery(live,actor):
         c.execute(db.projects.update().where(db.projects.c.id==pid).values(stage='executing',pm_id=pm))
     assert api.get(alert_path,headers=headers(token=other)).status_code==404 and change(17,h=headers(token=other)).status_code==404
     assert api.get('/api/v1/analytics/health-alerts',headers=headers()).status_code==403
-    assert change(20,mid=ordinary).status_code==200 and api.get(alert_path,headers=headers()).json()['data']['total']==0
+    assert change(20,mid=ordinary).status_code==200
+    first_ordinary, = api.get(alert_path,headers=headers()).json()['data']['items']
+    assert first_ordinary['status']=='open' and first_ordinary['sourceRefs']==[f'milestone:{ordinary}@2']
     key=headers(); raised=change(16,h=key)
     assert raised.status_code==200 and raised.json()==change(16,h=key).json() and raised.json()['data']['plannedDate']=='2027-01-15'
     assert change(17,1).status_code==409 and change(16,2).status_code==422
     assert change(17,2).status_code==200
-    first=api.get(alert_path,headers=headers()).json()['data']; assert first['total']==1
-    event=first['items'][0]; assert event['severity']=='yellow' and event['status']=='open' and event['sourceRefs']==[f'milestone:{mid}@2']
+    def key_alerts():
+        return [row for row in api.get(alert_path,headers=headers()).json()['data']['items']
+                if any(source.startswith(f'milestone:{mid}@') for source in row['sourceRefs'])]
+    assert api.get(alert_path,headers=headers()).json()['data']['total']==2
+    event,=key_alerts(); assert event['severity']=='yellow' and event['status']=='open' and event['sourceRefs']==[f'milestone:{mid}@2']
     # Process only this rule event, including a committed delivery with no acknowledgement yet.
     with engine.begin() as c:
         eid=c.scalar(sa.select(db.outbox_events.c.id).where(db.outbox_events.c.event_type=='rule.notify',db.outbox_events.c.payload['eventId'].astext==event['alertId']))
@@ -44,9 +49,13 @@ def test_forecast_alert_episode_delivery_and_recovery(live,actor):
         assert delivered.recipient_person_id==pm and str(delivered.rule_event_id)==event['alertId'] and delivered.delivery_status=='delivered'
         assert c.execute(sa.text('SELECT planned_date,prior_date,new_date,reason FROM milestone_forecasts WHERE milestone_id=:mid ORDER BY revision'),{'mid':mid}).all()==[
             (date(2027,1,15),None,date(2027,1,16),'Supplier changed slot'),(date(2027,1,15),date(2027,1,16),date(2027,1,17),'Supplier changed slot')]
-    assert change(15,3).status_code==200 and api.get(alert_path,headers=headers()).json()['data']['items'][0]['status']=='resolved'
+    assert change(15,3).status_code==200 and key_alerts()[0]['status']=='resolved'
     assert change(18,4).status_code==200
-    alerts=api.get(alert_path,headers=headers()).json()['data']['items']; assert [i['status'] for i in alerts]==['open','resolved']
+    assert [i['status'] for i in key_alerts()]==['open','resolved']
+    assert change(15,2,mid=ordinary).status_code==200
+    ordinary_alert = next(row for row in api.get(alert_path,headers=headers()).json()['data']['items']
+                          if row['alertId']==first_ordinary['alertId'])
+    assert ordinary_alert['status']=='resolved'
     with engine.begin() as c:
         c.execute(db.milestones.update().where(db.milestones.c.id==mid).values(actual_date=date(2027,1,17)))
     assert change(19,5).json()['code']=='MILESTONE_LOCKED'

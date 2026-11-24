@@ -163,7 +163,7 @@ def test_browser_and_stdio_same_snapshot_and_private_resources(live, team):
                 'restricted': report['narrative']})})
 
 
-def test_browser_read_only_project_assistant_without_model(live, team):
+def test_browser_read_only_project_assistant_without_model(live, team, tmp_path):
     _, requirement, _ = execution_fixture(live, team)
     project_id, people, users, _ = team
     with live[0].begin() as c:
@@ -174,7 +174,7 @@ def test_browser_read_only_project_assistant_without_model(live, team):
     with vite(live[2]) as (root, url):
         run_browser(root, url, 'assistant', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm')),
             'PMO_TEST_ASSISTANT_HISTORY': json.dumps({'projectId': project_id, 'requirementId': requirement,
-                'changeId': str(change_id)})})
+                'changeId': str(change_id)}), 'PMO_TEST_ASSISTANT_SCREENSHOT': str(tmp_path / 'assistant-question.png')})
 
 
 def test_browser_separates_model_previews_from_official_results(live, team, tmp_path):
@@ -564,14 +564,29 @@ def test_browser_project_overview_filters_and_dated_samples(live, team):
     from datetime import datetime
 
     from pmo.health_calculation import TZ
+    from pmo.outbox import dispatch
     from test_health import prepare, sample
     from test_reports import body, sections
     from test_reviews import data, headers
 
-    _, _, users, _ = team
+    pid, people, users, _ = team
     pm, outsider = users['pm'], users['outsider']
     project, _ = prepare(live, team)
+    plan = data(pm.get(project + '/costs'))['plan']
+    data(pm.put(project + '/cost-forecasts', headers=headers(plan['revision']), json={
+        'type':'money', 'forecastRemaining':'116.00', 'reason':'Synthetic personal cost reminder.'}))
     first = sample(pm, project)
+    with live[0].connect() as c:
+        queued = c.scalar(sa.select(sa.func.count()).select_from(db.outbox_events).where(
+            db.outbox_events.c.status.in_(('pending', 'processing'))))
+    # Full Edge runs share a test outbox. Drain the fixture's queue through the normal worker.
+    dispatch(live[0], queued)
+    with live[0].connect() as c:
+        assert c.scalar(sa.text('''SELECT EXISTS (SELECT 1 FROM notifications n
+            JOIN rule_events e ON n.rule_event_id = e.id AND e.project_id = n.project_id
+            WHERE n.project_id = :pid AND n.recipient_person_id = :person
+            AND e.rule_id = 'LR-04' AND n.delivery_status = 'delivered')'''),
+            {'pid': pid, 'person': people['initiator']})
     milestone = data(pm.get(project + '/milestones'))['items'][0]['milestoneId']
     data(pm.post(project + '/reports', headers=headers(), json=body(reportType='daily', period=datetime.now(TZ).date().isoformat(),
         structuredFields=sections(milestone_progress=[{'milestoneId': milestone, 'claim': 'progress'}]))))
@@ -595,3 +610,71 @@ def test_browser_local_workbench_latency(live, team):
     session = browser_sessions(users, 'outsider')['outsider']
     with vite(live[2]) as (root, url):
         run_browser(root, url, 'deployment-performance', {'PMO_SYNTHETIC_SESSION': json.dumps(session)})
+
+
+def test_browser_formal_baseline_changes(live, team):
+    from datetime import timedelta
+
+    from test_health import code, prepare
+    from test_reviews import data, headers, issue
+
+    pid, people, users, _ = team
+    pm, reviewer, outsider = (users[role] for role in ('pm', 'reviewer', 'outsider'))
+    project, first = prepare(live, team)
+    targets = {}
+    for kind in ('milestone', 'budget', 'charter'):
+        endpoint = project + '/changes/targets'
+        targets[kind] = data(pm.get(endpoint, params={'kind': kind}))['items'][0]
+        code(reviewer.get(endpoint, params={'kind': kind}), 403, 'FORBIDDEN')
+        code(outsider.get(endpoint, params={'kind': kind}), 404, 'RESOURCE_NOT_FOUND')
+    token = issue(pm, pid, ['pmo_change_propose'])
+    refused = live[1].get('/api/v1/' + project + '/changes/targets?kind=budget', headers={'Authorization': 'Bearer ' + token})
+    code(refused, 403, 'FORBIDDEN')
+
+    with live[0].begin() as c:
+        for kind in targets:
+            c.execute(sa.text('''INSERT INTO change_approval_grants
+                VALUES (:p,:reviewer,:kind,'synthetic Web change',now()+interval '1 hour',NULL)'''),
+                {'p': pid, 'reviewer': people['reviewer'], 'kind': kind})
+    dates = [(first + timedelta(days=days)).isoformat() for days in (2, 4)]
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'formal-changes', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'reviewer')),
+            'PMO_TEST_FORMAL_CHANGES': json.dumps({'project': stage(pm, project), 'targets': targets,
+                'forecastDate': dates[0], 'plannedDate': dates[1]})})
+
+    records = {item['targetType']: item for item in data(pm.get(project + '/changes'))['items']}
+    assert len(records) == len(data(pm.get(project + '/changes'))['items']) == 3
+    assert all(item['status'] == 'pending' for item in records.values())
+    assert records['milestone']['before'] == {'plannedDate': targets['milestone']['plannedDate']}
+    assert records['milestone']['after'] == {'plannedDate': dates[1]}
+    assert records['budget']['before'] == {'budget': targets['budget']['budget']}
+    assert records['budget']['after'] == {'budget': '137.50'}
+    assert records['charter']['after'] == {'roughDuration': targets['charter']['charter']['roughDurationDays'] + 1}
+    assert data(pm.get(project + '/changes/targets?kind=budget'))['items'][0] == targets['budget']
+    for item in records.values():
+        approved = data(reviewer.post(f"changes/{item['changeId']}/approve", headers=headers(item['revision']),
+            json={'rationale': 'Reviewed the existing baseline and proposed difference separately.'}))
+        assert approved['status'] == 'applied'
+    approved_milestone = next(item for item in data(pm.get(project + '/milestones'))['items']
+        if item['milestoneId'] == targets['milestone']['targetId'])
+    assert approved_milestone['plannedDate'] == dates[1] and approved_milestone['forecastDate'] == dates[0]
+
+
+def test_browser_weekly_portfolio_and_manual_fact_handoff(live, team, tmp_path):
+    from test_facts import medium, post, proposal
+    from test_reports import data
+    from test_weekly_report_workflow import publish, submitted
+
+    _, _, users, _ = team
+    project, _, _ = execution_fixture(live, team)
+    pm, reviewer = users['pm'], users['reviewer']
+    for period, amount, instant in [('2024-W52', '3.00', '2024-12-23T08:00:00+08:00'),
+                                      ('2025-W01', '4.00', '2024-12-30T08:00:00+08:00')]:
+        report = publish(pm, submitted(pm, f'{project}/reports', amount=amount, period=period))
+        proposed = data(post(pm, report, proposal(report, amount, asOf=instant)))
+        assert data(medium(reviewer, proposed))['validationStatus'] == 'verified'
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'weekly-portfolio', {
+            'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'reviewer', 'outsider', 'initiator')),
+            'PMO_TEST_SCREENSHOTS': str(tmp_path),
+        })

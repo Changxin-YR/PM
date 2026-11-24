@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import {computed,onBeforeUnmount,shallowRef,ref,watch} from 'vue'
-import {ArrowRight,Bell,ChartNoAxesColumnIncreasing,CircleHelp,ClipboardList,Database,Flag,Layers3,ListChecks,RefreshCw,Search,TriangleAlert} from 'lucide-vue-next'
+import {ArrowRight,Bell,ChartNoAxesColumnIncreasing,CircleHelp,ClipboardList,Database,Download,Flag,Layers3,ListChecks,RefreshCw,Search,TriangleAlert} from 'lucide-vue-next'
 import AssistantLines from './AssistantLines.vue'
 import AssistantRequirementHistory from './AssistantRequirementHistory.vue'
+import PreapprovalSpending from './PreapprovalSpending.vue'
+import WeeklyHealthOverview from './WeeklyHealthOverview.vue'
+import WeeklyPortfolioReports from './WeeklyPortfolioReports.vue'
+import {interpretQuestion,type AssistantTopic} from './assistantQuestions'
 
 type Mode='charter'|'process'|'closing'|'ledger'
-type Topic='health'|'cost'|'requirements'|'fact'|'lesson'|'requirement_history'
+type Topic=AssistantTopic
 type Cited={text:string;sourceRefs:string[];observedAt?:string|null}
 type Preview={status:'ready'|'manual'|'empty';items:(Cited & {prompt?:string})[];errorCode?:string}
 type Gap={code:string;message:string;sourceRefs:string[]}
 type LessonRef=Cited & {lessonId:string;projectId:string;category:string;matchedTerm?:string|null}
-type Charter={completeness:{eligible:boolean;missing:Gap[]};scoreSummary:null|{total:string|null;means:Record<string,string>;sourceRefs:string[];decidedAt:string};
+type Score={total:string|null;means:Record<string,string>;sourceRefs:string[]}
+type Charter={completeness:{eligible:boolean;missing:Gap[]};scoreSummary:null|Score & {decidedAt:string};
+  pendingScore:null|Score & {observedAt:string};pendingWeaknesses:Cited[];charterFacts:Cited[];
   weaknesses:Cited[];lessonRefs:LessonRef[];reviewDraft:Cited[];previewEnabled:boolean}
 type Process={reportId:string|null;modelEnabled:boolean;analysis:null|{status:string;errorCode:string|null};
   factCandidates:{subject:string;quote:string;sourceRef:string;asOf:string}[];conflicts:Cited[];
@@ -18,27 +24,30 @@ type Process={reportId:string|null;modelEnabled:boolean;analysis:null|{status:st
   weeklyDraft:{period:string;verifiedPersonDays:string|null;structuredFields:{milestone_progress:{summary:string}[];
     requirement_progress:{summary:string}[];risks_and_blockers:{summary:string}[]}}}
 type Closing={gateEligible:boolean|null;gateGaps:Gap[];retrospectiveKind:'normal'|'terminated'|null;
-  retrospectiveQuestions:string[];lessonDrafts:Cited[];previewEnabled:boolean}
+  retrospectiveQuestions:string[];lessonDrafts:Cited[];canStartLessonDraft:boolean;previewEnabled:boolean}
 type Ledger={answer:Cited[];asOf:string;sourceRefs:string[];unknowns:string[];previewEnabled:boolean}
 type Data={charter:Charter;process:Process;closing:Closing;ledger:Ledger}
 type Packet={ [K in Mode]:{mode:K;data:Data[K];meta:{asOf:string;sourceRefs:string[];ruleVersion:string}} }[Mode]
 type Destination='reviews'|'reports'|'retrospective'|'health'
 
-const props=defineProps<{projectId:string;revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const emit=defineEmits<{navigate:[destination:Destination]}>()
+const props=defineProps<{projectId:string;projectLabel?:string;revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{navigate:[destination:Destination];draftLesson:[];openReport:[projectId:string,reportId:string]}>()
 const modes:{label:string;value:Mode}[]=[{value:'charter',label:'立项评审'},{value:'process',label:'过程管家'},
   {value:'closing',label:'结项回顾'},{value:'ledger',label:'台账问答'}]
 const topics:{value:Topic;label:string}[]=[{value:'health',label:'当前三线'},{value:'cost',label:'成本台账'},
   {value:'requirements',label:'需求满足率'},{value:'requirement_history',label:'需求变更历史'},
+  {value:'forecast',label:'里程碑延期'},{value:'spending',label:'立项前支出'},{value:'weekly_health',label:'本周黄红灯'},
   {value:'fact',label:'核验事实'},{value:'lesson',label:'已确认教训'}]
 const healthNames:Record<string,string>={green:'绿',yellow:'黄',red:'红',untrusted:'不可信',unavailable:'不可用'}
 const analysisNames:Record<string,string>={queued:'正在排队',running:'分析中',ready:'候选已生成',manual:'待人工处理',stale:'来源已变更'}
 const previewReasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MODEL_UNAVAILABLE:'模型网关不可用',MODEL_TIMEOUT:'模型响应超时',
   MODEL_SCHEMA_INVALID:'模型输出格式不合规',MODEL_SOURCE_INVALID:'模型输出无法追溯到本次来源',MODEL_INTERRUPTED:'预览请求已中断',
-  MODEL_SCOPE_BLOCKED:'当前项目不在模型外发范围内'}
+  MODEL_SCOPE_BLOCKED:'当前项目不在模型外发范围内',MODEL_NO_SELECTION:'模型未选出可用条目'}
 const scores:Record<string,string>={strategicAlignment:'战略对齐',customerAttractiveness:'客户／市场吸引力',
   financialResourceReturn:'财务／资源回报',riskControllability:'风险可控度'}
 const mode=ref<Mode>('charter'),topic=ref<Topic>('health'),keyword=ref(''),category=ref('')
+const question=ref(''),questionError=ref(''),historyKeyword=ref('')
+const showPortfolio=ref(false)
 const packet=shallowRef<Packet|null>(null),loading=ref(false),error=ref('')
 const suggestion=shallowRef<Preview|null>(null),suggesting=ref(false),suggestionError=ref(''),loadedQuery=ref('')
 const charter=computed(()=>packet.value?.mode==='charter'?packet.value.data:null)
@@ -46,6 +55,8 @@ const process=computed(()=>packet.value?.mode==='process'?packet.value.data:null
 const closing=computed(()=>packet.value?.mode==='closing'?packet.value.data:null)
 const ledger=computed(()=>packet.value?.mode==='ledger'?packet.value.data:null)
 const historyTopic=computed(()=>mode.value==='ledger'&&topic.value==='requirement_history')
+const globalTopic=computed(()=>mode.value==='ledger'&&(topic.value==='spending'||topic.value==='weekly_health'))
+const visibleScore=computed(()=>charter.value?.pendingScore??charter.value?.scoreSummary)
 const useKeyword=computed(()=>mode.value==='charter'||(mode.value==='ledger'&&['fact','lesson'].includes(topic.value)))
 const useCategory=computed(()=>mode.value==='charter'||(mode.value==='ledger'&&topic.value==='lesson'))
 const enabled=computed(()=>charter.value?.previewEnabled||closing.value?.previewEnabled||ledger.value?.previewEnabled)
@@ -58,6 +69,7 @@ const query=computed(()=>{
 })
 let request:AbortController|undefined,previewRequest:AbortController|undefined
 let attempt:{body:string;key:string}|undefined
+let nextKeyword:string|undefined
 
 function clearSuggestion(){
   previewRequest?.abort();previewRequest=undefined;attempt=undefined
@@ -66,7 +78,7 @@ function clearSuggestion(){
 
 async function load(){
   request?.abort();clearSuggestion()
-  if(historyTopic.value){request=undefined;loading.value=false;error.value='';packet.value=null;return}
+  if(historyTopic.value||globalTopic.value){request=undefined;loading.value=false;error.value='';packet.value=null;return}
   const next=new AbortController(),current=mode.value
   request=next;loading.value=true;error.value='';packet.value=null
   const params=query.value
@@ -96,12 +108,47 @@ async function suggest(){
     if(previewRequest===next&&!next.signal.aborted)suggestionError.value=e instanceof Error?e.message:'暂时无法生成建议。'
   }finally{if(previewRequest===next)suggesting.value=false}
 }
-function changeContext(){keyword.value='';category.value='';void load()}
+function changeContext(){keyword.value=nextKeyword??'';nextKeyword=undefined;category.value='';showPortfolio.value=false;void load()}
 watch([mode,topic,()=>props.projectId],changeContext,{immediate:true})
+watch(()=>props.projectId,()=>{question.value='';questionError.value='';historyKeyword.value=''})
 watch([keyword,category],clearSuggestion)
 watch(()=>props.revision,()=>void load())
 onBeforeUnmount(()=>{request?.abort();previewRequest?.abort()})
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
+
+function ask(){
+  if(!question.value.trim())return
+  const target=interpretQuestion(question.value)
+  if(!target){questionError.value='暂时无法识别这个问题，请选择查询主题。核验事实可在问题中用引号标出关键词。';return}
+  questionError.value=''
+  const nextTopic=target.mode==='ledger'?target.topic:topic.value
+  historyKeyword.value=nextTopic==='requirement_history'?(target.keyword??''):''
+  nextKeyword=target.keyword
+  if(target.mode===mode.value&&nextTopic===topic.value){changeContext();return}
+  mode.value=target.mode
+  topic.value=nextTopic
+}
+
+function downloadReview(){
+  const data=charter.value,meta=packet.value?.meta
+  if(!data||!meta)return
+  const score=visibleScore.value
+  const lines=(items:Cited[])=>items.length
+    ?items.map(item=>`- ${item.text}\n  依据 ${item.sourceRefs.join('、')}`).join('\n'):'暂无可见记录'
+  const sections=[`# 立项评审材料\n\n项目 ${props.projectLabel??props.projectId}\n数据时点 ${time(meta.asOf)}（北京时间）\n规则版本 ${meta.ruleVersion}`,
+    `## 立项卡\n${lines(data.charterFacts)}`,
+    `## 材料预检\n${data.completeness.eligible?'材料齐备，待有权人员处理。':'存在待补材料。'}\n${lines(data.reviewDraft)}`,
+    `## ${data.pendingScore?'当前评审评分汇总（待裁决）':'正式评分'}\n${score?[
+      `总分 ${score.total??'不可用'}`,...Object.entries(score.means).map(([key,value])=>`${scores[key]??key} ${value}`),
+      `依据 ${score.sourceRefs.join('、')}`].join('\n'):'暂无可见评分'}`,
+    `## 补强建议\n${lines(data.pendingScore?data.pendingWeaknesses:data.weaknesses)}`,
+    `## 历史教训\n${lines(data.lessonRefs)}`]
+  const href=URL.createObjectURL(new Blob([sections.join('\n\n')+'\n'],{type:'text/markdown;charset=utf-8'}))
+  const link=document.createElement('a')
+  link.href=href;link.download=`PMO-立项评审材料-${props.projectId.slice(0,8)}.md`
+  link.click()
+  window.setTimeout(()=>URL.revokeObjectURL(href),1000)
+}
 </script>
 
 <template>
@@ -116,23 +163,35 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
         <input v-model="keyword" maxlength="160" autocomplete="off"></label>
       <label v-if="useCategory">教训分类<input v-model="category" maxlength="80" autocomplete="off"></label>
       <el-button v-if="useKeyword" native-type="submit" :loading="loading"><Search :size="15"/>查询</el-button>
-      <el-tooltip v-else-if="!historyTopic" content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
+      <el-tooltip v-else-if="!historyTopic&&!globalTopic" content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
       </form>
     </div>
+    <form v-if="mode==='ledger'" class="question-form" aria-label="台账自然语言查询" @submit.prevent="ask">
+      <label>用一句话查询台账<input v-model="question" maxlength="180" placeholder="例如 本周哪些项目亮了黄灯？" @input="questionError=''"/></label>
+      <el-button native-type="submit" :disabled="!question.trim()"><Search :size="15"/>提问</el-button>
+      <p v-if="questionError" class="meta" role="status">{{questionError}}</p>
+      <p v-else class="meta">{{globalTopic?'查询范围为你有权查看的项目。':`当前项目 ${projectLabel??''}`}}</p>
+    </form>
     <p v-if="loading" class="meta" role="status">正在读取…</p>
     <el-alert v-if="error" type="error" :title="error" :closable="false"/>
-    <AssistantRequirementHistory v-if="historyTopic" :key="projectId" :project-id="projectId" :api="api"/>
+    <AssistantRequirementHistory v-if="historyTopic" :key="`${projectId}:${historyKeyword}`" :project-id="projectId" :initial-query="historyKeyword" :api="api"/>
+    <PreapprovalSpending v-if="mode==='ledger'&&topic==='spending'" :api="api"/>
+    <section v-if="mode==='ledger'&&topic==='weekly_health'" class="panel assistant-panel"><WeeklyHealthOverview :api="api"/></section>
 
     <section v-if="charter" class="panel assistant-panel">
-      <div class="assistant-row"><h3>立项材料与评分</h3><el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button></div>
+      <div class="assistant-row"><h3>立项材料与评分</h3><div class="assistant-actions">
+        <el-button :icon="Download" @click="downloadReview">下载评审材料</el-button>
+        <el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button>
+      </div></div>
       <p v-if="charter.completeness.eligible" class="meta">材料预检通过 · 未代替人工裁决</p>
-      <dl v-if="charter.scoreSummary" class="summary-grid">
-        <div><dt>正式评分总分</dt><dd>{{charter.scoreSummary.total??'不可用'}}</dd></div>
-        <div v-for="(mean,key) in charter.scoreSummary.means" :key="key"><dt>{{scores[key]??key}}</dt><dd>{{mean}}</dd></div>
+      <dl v-if="visibleScore" class="summary-grid">
+        <div><dt>{{charter.pendingScore?'已录评分总分 · 待裁决':'正式评分总分'}}</dt><dd>{{visibleScore.total??'不可用'}}</dd></div>
+        <div v-for="(mean,key) in visibleScore.means" :key="key"><dt>{{scores[key]??key}}</dt><dd>{{mean}}</dd></div>
       </dl>
       <p v-else class="meta">暂无正式评分摘要。</p>
-      <p v-if="charter.scoreSummary" class="meta">最近一次正式裁决 · {{time(charter.scoreSummary.decidedAt)}}</p>
-      <AssistantLines v-if="charter.weaknesses.length" :items="charter.weaknesses"/>
+      <p v-if="charter.pendingScore" class="meta">已录评分读取时点 · {{time(charter.pendingScore.observedAt)}}</p>
+      <p v-else-if="charter.scoreSummary" class="meta">最近一次正式裁决 · {{time(charter.scoreSummary.decidedAt)}}</p>
+      <AssistantLines v-if="visibleScore" :items="charter.pendingScore?charter.pendingWeaknesses:charter.weaknesses"/>
       <h3>评审建议草稿</h3>
       <AssistantLines :items="charter.reviewDraft"/>
       <h3>历史教训</h3>
@@ -163,7 +222,11 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       </template>
       </section>
       <section class="panel assistant-panel">
-      <h3>周报预览 · {{process.weeklyDraft.period}}</h3>
+      <div class="assistant-row"><h3>周报预览 · {{process.weeklyDraft.period}}</h3>
+        <el-button :aria-expanded="showPortfolio" @click="showPortfolio=!showPortfolio">{{showPortfolio?'收起组合周报':'查看组合周报'}}</el-button></div>
+      <div v-if="showPortfolio" class="portfolio-preview">
+        <WeeklyPortfolioReports :api="api" @open-report="(projectId,reportId)=>emit('openReport',projectId,reportId)"/>
+      </div>
       <dl class="sections">
         <div><dt><Flag :size="17" aria-hidden="true"/>里程碑</dt><dd v-for="(row,index) in process.weeklyDraft.structuredFields.milestone_progress" :key="index">{{row.summary}}</dd>
           <dd v-if="!process.weeklyDraft.structuredFields.milestone_progress.length">暂无记录</dd></div>
@@ -187,9 +250,10 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       <h3>待确认教训摘录</h3>
       <AssistantLines v-if="closing.lessonDrafts.length" :items="closing.lessonDrafts"/>
       <p v-else class="meta">暂无可引用的复盘回答。</p>
+      <el-button v-if="closing.canStartLessonDraft" @click="emit('draftLesson')">从复盘起草教训<ArrowRight :size="14"/></el-button>
     </section>
 
-    <section v-if="ledger" class="panel assistant-panel">
+    <section v-if="ledger" class="panel assistant-panel" aria-label="台账原始结果">
       <div class="assistant-row"><h3>台账结果</h3><el-button v-if="topic==='health'" text @click="emit('navigate','health')">三线明细<ArrowRight :size="14"/></el-button></div>
       <AssistantLines :items="ledger.answer"/>
       <p v-for="unknown in ledger.unknowns" :key="unknown" class="meta">{{unknown}}</p>
@@ -204,9 +268,10 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
       </div>
       <el-alert v-if="suggestionError" type="warning" :title="suggestionError" :closable="false"/>
       <template v-if="suggestion">
-        <p v-if="suggestion.status==='manual'" role="status" class="meta">
-          {{previewReasons[suggestion.errorCode??'']??'模型建议不可用'}}，仍可使用以上台账和人工流程。
-        </p>
+        <template v-if="suggestion.status==='manual'">
+          <p role="status" class="meta">{{previewReasons[suggestion.errorCode??'']??'模型建议不可用'}}。{{suggestion.items.length?'以下为台账原文。':'仍可使用以上台账和人工流程。'}}</p>
+          <AssistantLines v-if="suggestion.items.length" :items="suggestion.items"/>
+        </template>
         <p v-else-if="suggestion.status==='empty'" role="status" class="meta">没有可引用的建议。</p>
         <AssistantLines v-else :items="suggestion.items"/>
       </template>
@@ -223,7 +288,11 @@ function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZ
 <style scoped>
 .assistant {display:grid;gap:16px;min-width:0;overflow-wrap:anywhere}
 .assistant > .panel + .panel {margin-top:0}
-.assistant-toolbar,.filters {display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.assistant-toolbar,.filters,.question-form,.assistant-actions {display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.question-form label {flex:1 1 240px;min-width:0;margin:0}
+.question-form input {width:100%;min-width:0}
+.question-form p {flex:1 1 100%;margin:0}
+.portfolio-preview {margin:16px 0;padding-bottom:16px;border-bottom:1px solid var(--pmo-line)}
 .assistant-toolbar :deep(.el-segmented) {max-width:100%;background:var(--pmo-surface);border:1px solid var(--pmo-line)}
 .assistant-toolbar :deep(.el-segmented__item-label) {line-height:24px}
 .filters label {flex:1 1 140px;min-width:0;margin:0}

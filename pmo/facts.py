@@ -5,7 +5,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import AfterValidator, Field, StrictStr
+from pydantic import AfterValidator, Field, StrictBool, StrictStr
 
 from . import fact_store as store
 from .access import Auth, Key, Revision
@@ -16,7 +16,7 @@ from .identity import Failure
 from .materials import finish, replay
 from .projects import fingerprint, meta, run
 from .report_analysis import permitted as can_read_analysis
-from .reports import TZ, _context, _plain, _ref, readable_reports
+from .reports import TZ, _context, _plain, _ref, current_publication_fields, readable_reports
 from .requirement_baselines import active_member
 
 router = APIRouter(prefix='/api/v1', tags=['Fact evidence'])
@@ -24,6 +24,8 @@ LIST, PROPOSE = 'human_report_fact_list', 'pmo_fact_propose'
 VERIFY, CLARIFY = 'human_fact_verify', 'human_fact_clarify'
 HISTORY = 'human_fact_history'
 COMPARE = 'human_fact_weekly_comparison'
+COMPARE_REPORT = 'human_report_facts_weekly_comparison'
+REQUEST_CLARIFICATION = 'human_fact_weekly_clarification_request'
 COMPARISON_SCAN_LIMIT = 250
 HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 Reason = Annotated[StrictStr, Field(min_length=5, max_length=2000, pattern=r'\S'), AfterValidator(_plain)]
@@ -100,10 +102,29 @@ class ComparisonValue(Strict):
 
 
 class WeeklyComparison(Strict):
-    status: Literal['same', 'changed', 'current_unverified', 'no_previous_fact', 'scan_limited']
+    status: Literal['same', 'changed', 'current_unverified', 'no_previous_fact', 'scan_limited', 'outside_reporting_week']
     previousStart: date
     previousEnd: date
     previous: ComparisonValue | None = None
+
+
+class ReportComparisonEntry(Strict):
+    fact: Fact
+    comparison: WeeklyComparison
+    canRequestClarification: bool
+
+
+class ReportComparisonPage(Strict):
+    items: list[ReportComparisonEntry]
+    page: int
+    pageSize: int
+    total: int
+
+
+class WeeklyClarification(Strict):
+    previousFactRef: Annotated[Short, Field(pattern=r'^fact:[0-9a-f-]{36}@[1-9][0-9]{0,18}\z')]
+    reason: Reason
+    confirmed: StrictBool
 
 
 def view(row, *, human: bool) -> Fact:
@@ -152,6 +173,51 @@ def _comparison_value(row):
                            reportRef=row.source_ref, evidenceRef=row.evidence_ref if row.trust == 'high' else None)
 
 
+def _previous_rows(c, actor, project, previous_monday, current_monday, *, excluded_report=None):
+    allowed = readable_reports(actor, project.id).subquery()
+    f = store.f
+    lower, upper = (datetime.combine(day, time.min, TZ) for day in (previous_monday, current_monday))
+    q = store.query().join(allowed, allowed.c.id == f.report_id).where(
+        f.project_id == project.id, f.as_of >= lower, f.as_of < upper,
+        f.validation_status == 'verified', f.trust.in_(('high', 'medium')))
+    if excluded_report is not None:
+        q = q.where(f.report_id != excluded_report)
+    return c.execute(q.order_by(f.as_of.desc(), f.id).limit(COMPARISON_SCAN_LIMIT + 1)).mappings().all()
+
+
+def _compare(c, report, fact, monday, rows, load_report, *, fixed_week=False) -> WeeklyComparison:
+    args = {'previousStart': monday - timedelta(days=7), 'previousEnd': monday - timedelta(days=1)}
+    if fixed_week and not monday <= fact.as_of.astimezone(TZ).date() < report.period_end:
+        return WeeklyComparison(status='outside_reporting_week', **args)
+    if not verified_source(c, report, fact):
+        return WeeklyComparison(status='current_unverified', **args)
+    labels = fact_labels(fact.subject, fact.predicate)
+    for row in rows[:COMPARISON_SCAN_LIMIT]:
+        if fact_labels(row.subject, row.predicate) != labels:
+            continue
+        source = load_report(row.report_id)
+        if source is not None and verified_source(c, source, row):
+            status: Literal['same', 'changed'] = 'same' if normal_value(fact.value) == normal_value(row.value) else 'changed'
+            return WeeklyComparison(status=status, previous=_comparison_value(row), **args)
+    return WeeklyComparison(status='scan_limited' if len(rows) > COMPARISON_SCAN_LIMIT else 'no_previous_fact', **args)
+
+
+def _report_lookup(c, actor, project):
+    q = readable_reports(actor, project.id)
+    cache = {}
+
+    def lookup(report_id):
+        if report_id not in cache:
+            cache[report_id] = c.execute(q.where(q.selected_columns.id == report_id)).mappings().one_or_none()
+        return cache[report_id]
+    return lookup
+
+
+def _comparison_refs(comparison: WeeklyComparison) -> list[str]:
+    prior = comparison.previous
+    return [prior.factRef, prior.reportRef, *([prior.evidenceRef] if prior.evidenceRef else [])] if prior else []
+
+
 @router.get('/facts/{factId}/weekly-comparison', operation_id=COMPARE,
             response_model_exclude_none=True, openapi_extra=HUMAN)
 def weekly_comparison(factId: UUID, authorization: Auth) -> Result[WeeklyComparison]:
@@ -159,39 +225,84 @@ def weekly_comparison(factId: UUID, authorization: Auth) -> Result[WeeklyCompari
         project, report, _pm, fact = _fact_context(c, actor, factId, write=False)
         local_date = fact.as_of.astimezone(TZ).date()
         current_monday = local_date - timedelta(days=local_date.weekday())
-        previous_monday = current_monday - timedelta(days=7)
-        previous_end = current_monday - timedelta(days=1)
-        refs = [fact.source_ref, store.fact_ref(fact)]
-
-        def result(status, previous=None):
-            return Result[WeeklyComparison](data=WeeklyComparison(status=status, previousStart=previous_monday,
-                previousEnd=previous_end, previous=previous), meta=meta(COMPARE, refs, project_id=project.id))
-
-        if not verified_source(c, report, fact):
-            return result('current_unverified')
-
-        allowed_select = readable_reports(actor, project.id)
-        allowed = allowed_select.subquery()
-        f = store.f
-        lower, upper = (datetime.combine(day, time.min, TZ) for day in (previous_monday, current_monday))
-        rows = c.execute(store.query().join(allowed, allowed.c.id == f.report_id)
-            .where(f.project_id == project.id, f.as_of >= lower, f.as_of < upper,
-                   f.validation_status == 'verified', f.trust.in_(('high', 'medium')))
-            .order_by(f.as_of.desc(), f.id).limit(COMPARISON_SCAN_LIMIT + 1)).mappings().all()
-        labels = fact_labels(fact.subject, fact.predicate)
-        for row in rows[:COMPARISON_SCAN_LIMIT]:
-            if fact_labels(row.subject, row.predicate) != labels:
-                continue
-            source = c.execute(allowed_select.where(allowed_select.selected_columns.id == row.report_id)).mappings().one_or_none()
-            if source is None or not verified_source(c, source, row):
-                continue
-            prior = _comparison_value(row)
-            refs.extend([prior.factRef, prior.reportRef])
-            if prior.evidenceRef:
-                refs.append(prior.evidenceRef)
-            return result('same' if normal_value(fact.value) == normal_value(row.value) else 'changed', prior)
-        return result('scan_limited' if len(rows) > COMPARISON_SCAN_LIMIT else 'no_previous_fact')
+        rows = _previous_rows(c, actor, project, current_monday - timedelta(days=7), current_monday)
+        data = _compare(c, report, fact, current_monday, rows, _report_lookup(c, actor, project))
+        return Result[WeeklyComparison](data=data,
+            meta=meta(COMPARE, [fact.source_ref, store.fact_ref(fact), *_comparison_refs(data)], project_id=project.id))
     return run(authorization, COMPARE, read)
+
+
+def _comparison_report(c, report):
+    now = c.scalar(sa.select(sa.func.clock_timestamp()))
+    if report.type != 'weekly' or current_publication_fields(report, now) is None:
+        raise Failure(422, 'WEEKLY_FACT_REQUIRES_CURRENT_PUBLICATION', project_id=report.project_id)
+
+
+def _can_request(c, project, fact):
+    # This path is a human challenge to one observation. Existing same-time contradictions
+    # remain under their original verification and canonical resolution workflow.
+    return (bool(fact.evidence_ref) and store.open_case(c, fact.group_key) is None
+            and len(store.members(c, project, fact.group_key)) == 1)
+
+
+@router.get('/reports/{reportId}/facts/weekly-comparison', operation_id=COMPARE_REPORT,
+            response_model_exclude_none=True, openapi_extra=HUMAN)
+def report_weekly_comparison(reportId: UUID, authorization: Auth, page: int = Query(1, ge=1),
+                             pageSize: int = Query(10, ge=1, le=20)) -> Result[ReportComparisonPage]:
+    def read(c, actor, _):
+        project, report, pm = _context(c, actor, report_id=reportId)
+        _comparison_report(c, report)
+        f = store.f
+        q = store.query().where(f.project_id == project.id, f.report_id == report.id)
+        total = c.scalar(sa.select(sa.func.count()).select_from(q.subquery()))
+        facts = c.execute(q.order_by(f.as_of.desc(), f.id).offset(pg_offset(page, pageSize)).limit(pageSize)).mappings().all()
+        monday = report.period_start
+        rows = _previous_rows(c, actor, project, monday - timedelta(days=7), monday, excluded_report=report.id) if facts else []
+        lookup = _report_lookup(c, actor, project)
+        items = []
+        refs = [_ref(report)]
+        for fact in facts:
+            current = _compare(c, report, fact, monday, rows, lookup, fixed_week=True)
+            items.append(ReportComparisonEntry(fact=view(fact, human=True), comparison=current,
+                canRequestClarification=bool(pm and project.stage != 'archived' and current.status == 'changed'
+                                             and _can_request(c, project, fact))))
+            refs.extend([store.fact_ref(fact), *_comparison_refs(current)])
+        return Result[ReportComparisonPage](data=ReportComparisonPage(items=items, page=page, pageSize=pageSize,
+            total=total), meta=meta(COMPARE_REPORT, list(dict.fromkeys(refs)), project_id=project.id))
+    return run(authorization, COMPARE_REPORT, read)
+
+
+@router.post('/facts/{factId}/weekly-clarification', operation_id=REQUEST_CLARIFICATION,
+             response_model_exclude_none=True, openapi_extra=HUMAN)
+def request_weekly_clarification(factId: UUID, command: WeeklyClarification, authorization: Auth,
+                                 key: Key, expected: Revision) -> Result[Fact]:
+    signature = fingerprint([str(factId), int(expected), command.model_dump()])
+
+    def write(c, actor, rid):
+        project, report, pm, fact = _fact_context(c, actor, factId)
+        if not pm:
+            raise Failure(403, 'FORBIDDEN', project_id=project.id)
+        if saved := replay(c, actor, REQUEST_CLARIFICATION, key, signature, Result[Fact]):
+            return saved
+        _editable(project, report, fact, expected)
+        _comparison_report(c, report)
+        if not command.confirmed or len(command.reason.strip()) < 5:
+            raise Failure(422, 'WEEKLY_FACT_CONFIRMATION_REQUIRED', project_id=project.id)
+        monday = report.period_start
+        rows = _previous_rows(c, actor, project, monday - timedelta(days=7), monday, excluded_report=report.id)
+        result = _compare(c, report, fact, monday, rows, _report_lookup(c, actor, project), fixed_week=True)
+        if result.status != 'changed' or result.previous is None or result.previous.factRef != command.previousFactRef:
+            raise Failure(409, 'WEEKLY_FACT_COMPARISON_CHANGED', project_id=project.id)
+        if not _can_request(c, project, fact):
+            raise Failure(422, 'WEEKLY_FACT_CLARIFICATION_UNAVAILABLE', project_id=project.id)
+        reason = f'{command.reason.strip()} (对照 {result.previous.factRef})'
+        updated = store.revise(c, fact, actor.person, rid, status='disputed', trust=fact.trust,
+            action='disputed', reason=reason, evidence_ref=fact.evidence_ref, evidence_hash=fact.evidence_hash)
+        store.escalate(c, project, updated, actor.person, reason)
+        out = _result(updated, REQUEST_CLARIFICATION, True)
+        out.meta.sourceRefs = list(dict.fromkeys([*out.meta.sourceRefs, *_comparison_refs(result)]))
+        return finish(c, actor, REQUEST_CLARIFICATION, key, rid, project.id, signature, out, fingerprint(store.fact_ref(fact)))
+    return run(authorization, REQUEST_CLARIFICATION, write)
 
 
 @router.get('/reports/{reportId}/facts', operation_id=LIST, response_model_exclude_none=True, openapi_extra=HUMAN)

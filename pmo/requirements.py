@@ -48,6 +48,7 @@ class View(Strict):
     status: Literal['baseline','delivered','accepted','customer_confirmed','cancelled']
     baselineVersion: int
     revision: int
+    acceptedBy: UUID | None = None
     acceptedAt: datetime | None = None
     acceptanceCriteria: str
     plannedConfirmAt: date | None = None
@@ -62,10 +63,11 @@ class Page(Strict):
     pageSize: int
 
 
-def view(row):
+def view(row, *, show_acceptor=False):
     return View(requirementId=row.id,projectId=row.project_id,desc=row['desc'],priority=row.priority,
                 status=row.status,baselineVersion=row.baseline_version,revision=row.revision,
-                acceptedAt=row.accepted_at,acceptanceCriteria=row.acceptance_criteria,plannedConfirmAt=row.planned_confirm_at,
+                acceptedBy=row.accepted_by if show_acceptor else None,acceptedAt=row.accepted_at,
+                acceptanceCriteria=row.acceptance_criteria,plannedConfirmAt=row.planned_confirm_at,
                 sourceRefs=[f'requirement:{row.id}@{row.revision}'])
 
 
@@ -80,7 +82,7 @@ def listing(auth,pid,page,size,status,keyword):
         if keyword: predicates.append(r.c['desc'].icontains(keyword,autoescape=True))
         total=c.scalar(sa.select(sa.func.count()).select_from(r).where(*predicates))
         rows=c.execute(sa.select(r).where(*predicates).order_by(r.c.priority,r.c.created_at,r.c.id).limit(size).offset(pg_offset(page,size))).mappings()
-        items=[view(row) for row in rows]
+        items=[view(row,show_acceptor=a.kind=='human') for row in rows]
         return Result[Page](data=Page(items=items,page=page,pageSize=size,total=total,deliveryActions=capabilities(c,a,project)),meta=meta(op,[i.sourceRefs[0] for i in items],project_id=project.id))
     return run(auth,op,query)
 

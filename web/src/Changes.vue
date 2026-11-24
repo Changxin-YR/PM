@@ -2,6 +2,7 @@
 import {watch,ref,computed,reactive} from 'vue'
 import {FilePlus,Plus,RefreshCw,Send,X} from 'lucide-vue-next'
 import ChangeDecision from './ChangeDecision.vue'
+import FormalChangeProposal from './FormalChangeProposal.vue'
 const decidable=ref<string[]>([]),approvable=ref<string[]>([]),policyPending=ref(true)
 const props=defineProps<{projectId:string;focusChangeId?:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
 const emit=defineEmits<{clearFocus:[]}>()
@@ -9,6 +10,7 @@ type Req={requirementId:string;desc:string;priority:string;revision:number;basel
 type Item={changeId:string;targetType:string;targetId:string;baseRevision:number;revision:number;status:string;reason:string;before:unknown;after:unknown;legacySnapshot?:true}
 const items=ref<Item[]>([]),reqs=ref<Req[]>([]),can=ref(false),busy=ref(false),form=ref(false),error=ref(''),notice=ref(''),page=ref(1),total=ref(0),reqPage=ref(1),reqTotal=ref(0),rid=ref(''),priority=ref(''),reason=ref('')
 const additionRevision=ref<number|null>(null),additionOpen=ref(false)
+const formalOpen=ref(false)
 const addition=reactive({desc:'',priority:'',acceptanceCriteria:'',plannedConfirmAt:'',reason:''})
 const path=`projects/${props.projectId}/changes`,selected=computed(()=>reqs.value.find(i=>i.requirementId===rid.value)),labels:Record<string,string>={pending:'待审批',applied:'已生效',approved:'已批准',rejected:'已拒绝',withdrawn:'已撤回',draft:'草稿'},kinds:Record<string,string>={requirement:'需求',milestone:'里程碑',budget:'预算',charter:'立项卡'}
 let key='',last='',readId=0
@@ -32,9 +34,13 @@ async function saveAddition(){
     additionOpen.value=false;notice.value='新增需求已送审';await load(1)
   }catch(e){error.value=String(e)}finally{busy.value=false}
 }
+function formalSaved(){
+  formalOpen.value=false;notice.value='正式变更申请已提交';void refresh(1)
+}
 watch(()=>props.focusChangeId,()=>{items.value=[];form.value=additionOpen.value=false;void refresh(1)},{immediate:true})
 </script>
-<template><section class="panel change-panel"><div class="toolbar"><span>{{focusChangeId?'定位变更':'变更记录'}} · {{total}}</span><el-button v-if="focusChangeId" :disabled="busy" @click="emit('clearFocus')">全部变更</el-button><el-button v-if="!focusChangeId&&additionRevision!==null" :disabled="busy||form||additionOpen" @click="beginAddition"><FilePlus :size="15"/>申请新增需求</el-button><el-button v-if="!focusChangeId&&can" :disabled="busy||form||additionOpen" @click="begin"><Plus :size="15"/>调整需求优先级</el-button><el-button aria-label="刷新变更" title="刷新变更" :disabled="busy||form||additionOpen" @click="refresh()"><RefreshCw :size="15"/></el-button></div><span role="status">{{notice}}</span><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-alert v-else-if="policyPending&&items.some(item=>item.status==='pending')" title="变更裁决策略待签核" type="warning" :closable="false"/>
+<template><section class="panel change-panel"><div class="toolbar"><span>{{focusChangeId?'定位变更':'变更记录'}} · {{total}}</span><el-button v-if="focusChangeId" :disabled="busy" @click="emit('clearFocus')">全部变更</el-button><el-button v-if="!focusChangeId&&additionRevision!==null" :disabled="busy||form||additionOpen||formalOpen" @click="beginAddition"><FilePlus :size="15"/>申请新增需求</el-button><el-button v-if="!focusChangeId&&can" :disabled="busy||form||additionOpen||formalOpen" @click="begin"><Plus :size="15"/>调整需求优先级</el-button><el-button v-if="!focusChangeId&&can" :disabled="busy||form||additionOpen||formalOpen" @click="formalOpen=true"><FilePlus :size="15"/>申请正式变更</el-button><el-button aria-label="刷新变更" title="刷新变更" :disabled="busy||form||additionOpen||formalOpen" @click="refresh()"><RefreshCw :size="15"/></el-button></div><span role="status">{{notice}}</span><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-alert v-else-if="policyPending&&items.some(item=>item.status==='pending')" title="变更裁决策略待签核" type="warning" :closable="false"/>
+<FormalChangeProposal v-if="formalOpen" :project-id="projectId" :api="api" @close="formalOpen=false" @saved="formalSaved"/>
 <form v-if="additionOpen" aria-label="新增需求申请" @submit.prevent="saveAddition">
   <label>需求说明<textarea v-model="addition.desc" minlength="5" maxlength="4000" required :disabled="busy"/></label>
   <div class="addition-fields">

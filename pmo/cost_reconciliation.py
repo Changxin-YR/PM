@@ -332,9 +332,10 @@ def _lines(c, a, p, signer, refs, reasons, basis, now):
     return cutoff, lines
 
 
-def _receipt_hash(project_id, revision, signed_by, grant_id, signed_at, cutoff, cost_hash, lines, request_id):
+def _receipt_hash(project_id, revision, signed_by, grant_id, signed_at, cutoff, cost_hash, lines, request_id,
+                  *, rule_version=RULE_VERSION):
     return fingerprint(dict(projectId=str(project_id), revision=revision, signedBy=str(signed_by), grantId=str(grant_id),
-        signedAt=_utc(signed_at), coveredThrough=_utc(cutoff), ruleVersion=RULE_VERSION, costHash=cost_hash,
+        signedAt=_utc(signed_at), coveredThrough=_utc(cutoff), ruleVersion=rule_version, costHash=cost_hash,
         lines=lines, requestId=str(request_id)))
 
 

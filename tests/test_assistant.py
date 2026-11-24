@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 
+from pmo import schema_v1 as db
 from pmo.health_calculation import TZ, week_key
 from test_facts import medium, post, proposal, report_path, submit
 from test_health import code, prepare, sample
@@ -18,6 +19,7 @@ def test_charter_only_reuses_published_assessment_and_existing_visibility(live, 
     path = base + '/assistant/'
     initial = data(pm.get(path + 'charter'))
     assert initial['scoreSummary'] is None and initial['lessonRefs'] == []
+    assert initial['pendingScore'] is None and not initial['pendingWeaknesses']
     assert initial['completeness'] == data(pm.get(base + '/gates/check', params={'gate': 'charter'}))
     assert any(item['code'] == 'CHARTER_MISSING' for item in initial['completeness']['missing'])
     api = live[1]
@@ -36,10 +38,15 @@ def test_charter_only_reuses_published_assessment_and_existing_visibility(live, 
         queued = data(person.get(path + 'charter'))
         assert queued['completeness']['eligible'] and queued['scoreSummary'] is None
         assert not queued['weaknesses'] and 'scores' not in queued
+        assert queued['pendingScore']['total'] == '3.55'
+        assert queued['pendingScore']['sourceRefs'][0].startswith(f"review:{review.rsplit('/', 1)[1]}@")
+        assert len(queued['pendingWeaknesses']) == 2
+        assert 'classification' not in queued['pendingScore']
     decision = data(decide(reviewer, review))
     answer = data(pm.get(path + 'charter'))
     received = answer['scoreSummary']
     assert received['total'] == '3.55'
+    assert answer['pendingScore'] is None
     assert {key: received[key] for key in decision['assessment']} == decision['assessment']
     assert received['sourceRefs'][0].startswith(f"decision:{decision['decision']['decisionId']}@")
     assert len(answer['weaknesses']) == 2
@@ -47,7 +54,7 @@ def test_charter_only_reuses_published_assessment_and_existing_visibility(live, 
 
 
 def test_process_and_ledger_use_trusted_sources_then_withhold_conflicts(live, team):
-    pid, _, users, _ = team
+    pid, people, users, _ = team
     pm, reviewer = users['pm'], users['reviewer']
     project, _ = prepare(live, team)
     path = project + '/assistant/'
@@ -68,6 +75,11 @@ def test_process_and_ledger_use_trusted_sources_then_withhold_conflicts(live, te
     quote, = data(pm.get(path + 'ledger', params=search))['answer']
     assert quote['text'] == '2.50' and quote['sourceRefs'] == [
         f"fact:{trusted['factId']}@{trusted['revision']}", trusted['sourceRef']]
+    with live[0].begin() as c:
+        c.execute(db.project_members.insert().values(project_id=pid, person_id=people['outsider'], role='member',
+            assigned_by=people['pm'], assignment_status='accepted', accepted_at=sa.func.now()))
+    member_result = data(users['outsider'].get(path + 'ledger', params=search))
+    assert member_result['answer'] == [] and member_result['unknowns']
     # Matching the key is not enough to overwrite a previously verified fact.
     conflict = submit(pm, project + '/reports', amount='3.80', period='2025-W02')
     data(post(pm, conflict, proposal(conflict, '3.80')))

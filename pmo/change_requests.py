@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -25,6 +26,8 @@ from .requirement_additions import Addition, Fields as AdditionFields, OP as ADD
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
 OPEN=('designing','executing','on_hold','delivering')
 TARGETS={'requirement':db.requirements,'milestone':db.milestones,'budget':db.cost_entries,'charter':db.charters}
+TARGET_LIST='human_change_targets_list'
+ProposalKind=Literal['milestone','budget','charter']
 
 
 class Proposal(Strict):
@@ -46,6 +49,74 @@ class Ledger(Page):
     approvableIds: list[UUID]
     policyPending: bool
     additionProjectRevision: int | None = None
+
+
+class ProposalTarget(Strict):
+    targetId: UUID
+    revision: int
+
+
+class MilestoneTarget(ProposalTarget):
+    kind: Literal['milestone'] = 'milestone'
+    name: str
+    plannedDate: date
+    isKey: bool
+
+
+class BudgetTarget(ProposalTarget):
+    kind: Literal['budget'] = 'budget'
+    type: Literal['money', 'effort']
+    category: str
+    periodStart: date
+    periodEnd: date
+    budget: str
+
+
+class CharterTarget(ProposalTarget):
+    kind: Literal['charter'] = 'charter'
+    charter: charter_models.Full
+
+
+class TargetPage(Strict):
+    items: list[MilestoneTarget | BudgetTarget | CharterTarget]
+    total: int
+    page: int
+    pageSize: int
+
+
+@router.get('/projects/{projectId}/changes/targets', operation_id=TARGET_LIST, response_model_exclude_none=True,
+    openapi_extra={'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True})
+def proposal_targets(projectId: UUID, kind: ProposalKind, authorization: Auth,
+                     page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le=100)) -> Result[TargetPage]:
+    def read(c, a, _):
+        project = project_access(c, a, projectId)
+        if a.kind != 'human' or not can_deliver(c, a, project):
+            raise Failure(403, 'FORBIDDEN', project_id=projectId)
+        items: list[MilestoneTarget | BudgetTarget | CharterTarget] = []
+        total = 0
+        if project.stage in OPEN and (kind != 'milestone' or project.stage != 'designing'):
+            target = TARGETS[kind]
+            query = sa.select(target).where(target.c.project_id == projectId)
+            if kind == 'milestone':
+                query = query.where(~target.c.is_cancelled, target.c.actual_date.is_(None)).order_by(target.c.ordinal, target.c.id)
+            elif kind == 'budget':
+                query = query.where(target.c.is_current_baseline).order_by(target.c.type, target.c.period_start, target.c.category, target.c.id)
+            else:
+                query = query.where(target.c.is_frozen).order_by(target.c.id)
+            total = c.scalar(sa.select(sa.func.count()).select_from(query.order_by(None).subquery()))
+            records = c.execute(query.offset(pg_offset(page, pageSize)).limit(pageSize)).mappings()
+            for row in records:
+                if kind == 'milestone':
+                    items.append(MilestoneTarget(targetId=row.id, revision=row.revision, name=row.name,
+                        plannedDate=row.planned_date, isKey=row.is_key))
+                elif kind == 'budget':
+                    items.append(BudgetTarget(targetId=row.id, revision=row.revision, type=row.type, category=row.category,
+                        periodStart=row.period_start, periodEnd=row.period_end, budget=format(row.budget, '.2f')))
+                else:
+                    items.append(CharterTarget(targetId=row.id, revision=row.revision, charter=charter_models.full(row)))
+        return Result(data=TargetPage(items=items, total=total, page=page, pageSize=pageSize),
+            meta=meta(TARGET_LIST, [f'{kind}:{item.targetId}@{item.revision}' for item in items], project_id=projectId))
+    return run(authorization, TARGET_LIST, read)
 
 
 def ledger_scope(project_id):

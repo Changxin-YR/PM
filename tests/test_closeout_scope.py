@@ -69,12 +69,14 @@ def test_large_pages_are_empty_with_authorized_totals(live, team):
     report = submit_report(pm, team.path)
     report_path = f"reports/{report['reportId']}"
     fact = data(propose_fact(pm, report))
+    data(pm.post(report_path + '/confirm', headers=headers(report['revision']), json={}))
     covered = set()
     for path in ('projects', 'project-overview', 'onboarding/projects', 'onboarding/people',
-                 'analytics/weekly-health', 'analytics/health-alerts',
+                 'analytics/weekly-health', 'analytics/weekly-reports', 'analytics/health-alerts',
                  'me/approval-queue', 'me/strengthening-tasks', 'me/agent-tokens', 'admin/agents/tokens',
                  'admin/audits', 'admin/users', 'admin/members', 'admin/users/invitations',
                  'analytics/preapproval-spending', 'lessons/search', report_path + '/facts', report_path + '/analysis-runs',
+                 report_path + '/facts/weekly-comparison', f'{p}/changes/targets',
                  'approvals', f'requirements/{requirement}/disputes', f'requirements/{requirement}/changes',
                  f"facts/{fact['factId']}/history",
                  *(f'{p}/{suffix}' for suffix in ('members', 'evidence', 'health/history', 'cost-postings',
@@ -82,6 +84,8 @@ def test_large_pages_are_empty_with_authorized_totals(live, team):
         filters = {'projectId': str(team.pid)} if path == 'approvals' else {}
         if path == 'onboarding/people':
             filters = {'keyword': 'reviewer'}
+        if path == f'{p}/changes/targets':
+            filters = {'kind': 'milestone'}
         current = pm.get(path, params={**filters, 'pageSize': 1})
         assert current.status_code == 200, (path, current.text)
         if path.startswith('onboarding/'):

@@ -643,8 +643,10 @@ def test_feasibility_shortfall_and_conditional_pass_real_previous_gate(live, tea
     pid, people, users, _ = team
     pm, reviewer = users['pm'], users['reviewer']
     path = start_charter(pid, users)
-    score(reviewer, path, [4, 4, 4, 4])
-    data(decide(reviewer, path))
+    approved_score = score(reviewer, path, [3, 4, 4, 4])
+    assert approved_score['assessment']['classification'] == 'normal'
+    approved = data(decide(reviewer, path))
+    strengthening, = approved['tasks']
     project, _, _ = planning_setup(engine, pid, people, users, seed_stage=False)
     conditions = [{'title': 'Validate independent backup design', 'assigneeId': str(people['pm']),
                    'dueAt': (datetime.now(UTC) + timedelta(days=7)).isoformat()}]
@@ -652,6 +654,22 @@ def test_feasibility_shortfall_and_conditional_pass_real_previous_gate(live, tea
     def submit():
         stage = data(pm.get(project))['project']
         return 'reviews/' + data(pm.post(project + '/reviews', headers=headers(stage['revision']), json={'reviewType': 'feasibility'}))['reviewId']
+
+    preflight = project + '/reviews/prepare?gate=feasibility'
+    blocked = data(pm.get(preflight))['gateCheck']
+    gap, = blocked['missing']
+    assert not blocked['eligible'] and gap['code'] == 'CHARTER_STRENGTHENING_RESPONSE_REQUIRED'
+    assert any(ref.startswith(f"task:{strengthening['taskId']}@") for ref in gap['sourceRefs'])
+    stage = data(pm.get(project))['project']
+    denied = pm.post(project + '/reviews', headers=headers(stage['revision']), json={'reviewType': 'feasibility'})
+    assert denied.status_code == 422 and denied.json()['code'] == 'GATE_REQUIREMENTS_NOT_MET'
+    task = f"tasks/{strengthening['taskId']}"
+    cancelled = data(pm.patch(task, headers=headers(strengthening['revision']), json={'fieldsTask': {'status': 'cancelled'}}))
+    assert not data(pm.get(preflight))['gateCheck']['eligible']
+    completed = data(pm.patch(task, headers=headers(cancelled['revision']), json={'fieldsTask': {'status': 'done'}}))
+    ready_check = data(pm.get(preflight))
+    assert ready_check['gateCheck']['eligible'] and ready_check['gateCheck']['snapshotHash'] == blocked['snapshotHash']
+    assert completed['completedAt'] and f"task:{completed['taskId']}@{completed['revision']}" in ready_check['draftMaterials']
 
     shortfall = submit()
     assert score(reviewer, shortfall, [2, 5, 5, 5, 5])['assessment']['classification'] == 'shortfall'

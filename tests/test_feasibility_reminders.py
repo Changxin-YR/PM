@@ -83,3 +83,21 @@ def test_only_unfinished_feasibility_conditions_warn_after_due_time(live, team):
     update({'status': 'done'})
     scan(postponed + timedelta(seconds=2))
     assert {row['status'] for row in events(pm, project, 'LR-02')} == {'resolved'}
+
+    # This read-side warning follows the live condition even before the next rule scan.
+    dashboard = f'project-overview/{pid}'
+    past_due = datetime.now(UTC) - timedelta(minutes=1)
+    update({'status': 'in_progress', 'dueAt': past_due.isoformat()})
+    response = pm.get(dashboard)
+    summary = data(response)
+    dashboard_warning, = summary['overdueConditions']
+    assert summary['overdueConditionCount'] == 1
+    assert (dashboard_warning['taskId'], dashboard_warning['title']) == (task['taskId'], task['title'])
+    assert datetime.fromisoformat(dashboard_warning['dueAt']) == past_due
+    assert any(ref.startswith(f"task:{task['taskId']}@") for ref in response.json()['meta']['sourceRefs'])
+    assert 'overdueConditions' not in data(users['initiator'].get(dashboard))
+    update({'status': 'done'})
+    cleared = data(pm.get(dashboard))
+    assert 'overdueConditions' not in cleared
+    assert {key: val for key, val in summary['indicators'].items() if key != 'asOf'} == {
+        key: val for key, val in cleared['indicators'].items() if key != 'asOf'}

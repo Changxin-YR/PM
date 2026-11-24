@@ -51,6 +51,7 @@ const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('overview'),focusTaskId=ref<string>()
 const focusReviewId=ref<string>(),focusApprovalId=ref<string>(),focusChangeId=ref<string>()
 const focusReportId=ref<string>()
+const lessonDraftProject=ref<string>()
 const entry=ref('ledger'), retainedEntries=ref(new Set<string>())
 const activeAccount=ref(''), projectError=ref(''), projectLoading=ref(false)
 const authLayout=ref<InstanceType<typeof AuthLayout>>()
@@ -100,6 +101,7 @@ function backToLedger(){
   materialEpoch++
   showMaterials.value=false
   materialProject.value=null
+  lessonDraftProject.value=undefined
   projectLoading.value=false
   projectError.value=''
   const resumeProject=deferredProjectLink
@@ -118,12 +120,19 @@ function materials(row:Project){
   projectLoading.value=false
   projectError.value=''
   materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=focusChangeId.value=focusReportId.value=undefined
+  lessonDraftProject.value=undefined
   deferredProjectLink=false
   materialTab.value='overview';showMaterials.value=true;goTop()
   void nextTick(()=>projectHeading.value?.focus({preventScroll:true}))
 }
 function openTask(project:Project,taskId:string){materials(project);focusTaskId.value=taskId;materialTab.value='tasks'}
 function openChange(changeId:string){focusChangeId.value=changeId;selectDestination('changes')}
+function openReviewTask(taskId:string){focusTaskId.value=taskId;selectDestination('tasks')}
+function draftLessonFromAssistant(){
+  if(!materialProject.value)return
+  lessonDraftProject.value=materialProject.value.projectId
+  selectDestination('retrospective')
+}
 function openApproval(project:Project,kind:'review'|'transition'|'change',id:string){
   materials(project)
   if(kind==='review'){focusReviewId.value=id;materialTab.value='reviews'}
@@ -180,6 +189,7 @@ function clearSession(){
   loading.value=false;rows.value=[];total.value=0;page.value=1;query.value='';keyword.value='';stageFilter.value='';listReadAt.value=''
   selected.value=null;dialog.value=false;name.value='';code.value='';description.value='';formError.value='';attempt='';lastPayload=''
   showMaterials.value=false;materialProject.value=null;projectLoading.value=false;projectError.value=''
+  lessonDraftProject.value=undefined
   entry.value='ledger';retainedEntries.value.clear();deferredProjectLink=false;ledgerScroll=0;ledgerTrigger=undefined
   csrf.value='';sessionStorage.removeItem('pmo.csrf')
 }
@@ -247,17 +257,26 @@ async function openLinkedWorkbench(){
   }catch(e){if(user.value&&session===csrf.value)error.value=message(e)}
 }
 async function openAssignedProject(projectId:string){
+  await openProjectFromEntry(projectId,'appointments')
+}
+async function openPortfolioReport(projectId:string,reportId:string){
+  if(!uuid.test(projectId)||!uuid.test(reportId))return
+  await openProjectFromEntry(projectId,showMaterials.value?'assistant':'alerts',reportId)
+}
+async function openProjectFromEntry(projectId:string,source:'appointments'|'alerts'|'assistant',reportId?:string){
   if(projectLoading.value)return
   const epoch=materialEpoch
   const session=csrf.value
-  const stillOnAppointments=()=>epoch===materialEpoch&&session===csrf.value&&entry.value==='appointments'&&!showMaterials.value
+  const sameContext=()=>epoch===materialEpoch&&session===csrf.value&&
+    (source==='assistant'?showMaterials.value&&materialTab.value==='assistant':entry.value===source&&!showMaterials.value)
   projectLoading.value=true;error.value=''
   try{
     const {data}=await api('project-overview/'+projectId)
-    if(!stillOnAppointments())return
-    if(!data.materialsVisible){error.value='当前账号已无权读取该项目资料。';return}
+    if(!sameContext())return
+    if(!data.materialsVisible)throw new Error('当前账号已无权读取该项目资料。')
     materials(data.project)
-  }catch(e){if(stillOnAppointments())error.value=message(e)}
+    if(reportId){focusReportId.value=reportId;materialTab.value='reports'}
+  }catch(e){if(sameContext())(source==='assistant'?projectError:error).value=message(e)}
   finally{if(epoch===materialEpoch)projectLoading.value=false}
 }
 async function startSession(){
@@ -371,7 +390,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
       :active="!showMaterials && entry==='appointments'" :api="api" :opening-project="projectLoading"
       @changed="load" @open-project="openAssignedProject"/>
     <Alerts v-if="retainedEntries.has('alerts')" v-show="!showMaterials && entry==='alerts'"
-      :active="!showMaterials && entry==='alerts'" :api="api"/>
+      :active="!showMaterials && entry==='alerts'" :api="api" @open-report="openPortfolioReport"/>
     <IncomingRisk v-if="retainedEntries.has('incoming-risk')" v-show="!showMaterials && entry==='incoming-risk'"
       :active="!showMaterials && entry==='incoming-risk'" :api="api"/>
     <TerminationConfirmations v-if="retainedEntries.has('termination')" v-show="!showMaterials && entry==='termination'"
@@ -435,7 +454,8 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
         <Costs :project-id="materialProject.projectId" :api="api"/>
       </ProjectPane>
       <ProjectPane name="reviews" :active="materialTab==='reviews'">
-        <Reviews ref="reviewsView" :project-id="materialProject.projectId" :project-revision="materialProject.revision" :focus-review-id="focusReviewId" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead"/>
+        <Reviews ref="reviewsView" :project-id="materialProject.projectId" :project-revision="materialProject.revision" :active="materialTab==='reviews'"
+          :focus-review-id="focusReviewId" :stage-label="stageNames[materialProject.stage]??materialProject.stage" :api="api" @stage-read="stageRead" @open-task="openReviewTask"/>
       </ProjectPane>
       <ProjectPane name="lifecycle" :active="materialTab==='lifecycle'">
         <ProjectLifecycle :project-id="materialProject.projectId" :project-revision="materialProject.revision" :focus-approval-id="focusApprovalId" :api="api" @stage-read="stageRead" @clear-focus="focusApprovalId=undefined"/>
@@ -450,10 +470,12 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
         <Health :project-id="materialProject.projectId" :active="materialTab==='health'" :api="api"/>
       </ProjectPane>
       <ProjectPane name="retrospective" :active="materialTab==='retrospective'">
-        <Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"/>
+        <Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"
+          :requested-draft="lessonDraftProject===materialProject.projectId" @draft-opened="lessonDraftProject=undefined"/>
       </ProjectPane>
       <ProjectPane name="assistant" :active="materialTab==='assistant'">
-        <ProjectAssistant v-if="materialTab==='assistant'" :project-id="materialProject.projectId" :revision="materialProject.revision" :api="api" @navigate="selectDestination"/>
+        <ProjectAssistant v-if="materialTab==='assistant'" :project-id="materialProject.projectId" :project-label="`${materialProject.code} · ${materialProject.name}`"
+          :revision="materialProject.revision" :api="api" @navigate="selectDestination" @draft-lesson="draftLessonFromAssistant" @open-report="openPortfolioReport"/>
       </ProjectPane>
     </div>
     <el-dialog v-model="dialog" :title="title" width="min(560px,94vw)" align-center

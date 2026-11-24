@@ -120,6 +120,9 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     assert step(client,'customer-confirm',rev+1).json()['code']=='INVALID_REQUIREMENT_TRANSITION'
     assert step(manager,'accept',rev).json()['code']=='VERSION_CONFLICT'
     accepted=step(manager,'accept',rev+1); assert accepted.json()['data']['status']=='accepted' and accepted.json()['data']['acceptedAt']
+    internal_acceptance = manager.get(f'projects/{pid}/requirements').raise_for_status().json()['data']['items'][0]
+    assert internal_acceptance['acceptedBy'] == str(pm)
+    assert internal_acceptance['acceptedAt'] == accepted.json()['data']['acceptedAt']
     assert step(manager,'customer-confirm',rev+2).status_code==403
     with engine.begin() as c: c.execute(db.stakeholders.update().where(db.stakeholders.c.project_id==pid).values(linked_person_id=None))
     assert step(client,'customer-confirm',rev+2).status_code==403
@@ -133,10 +136,14 @@ def requirement_delivery(engine,api,port,manager,client,pid,req,rev,pm,uid,custo
     requirements_path = f'/api/v1/projects/{pid}/requirements'
     scoped = api.get(requirements_path, headers=customer_agent).raise_for_status().json()['data']['items']
     assert scoped[0]['requirementId'] == req and scoped[0]['status'] == 'accepted'
+    assert 'acceptedBy' not in scoped[0]
     denied = api.post('/api/v1/' + path + '/customer-confirm', headers={**h(rev+2), **customer_agent}, json=proof)
     assert (denied.status_code, denied.json()['code']) == (403, 'FORBIDDEN')
     assert api.get(requirements_path, headers=customer_agent).json()['data']['items'] == scoped
     final=step(client,'customer-confirm',rev+2); assert final.json()['data']['status']=='customer_confirmed',final.text
+    formal = manager.get(f'projects/{pid}/requirements').raise_for_status().json()['data']['items'][0]
+    assert (formal['status'], formal['acceptedBy'], formal['acceptedAt']) == (
+        'customer_confirmed', internal_acceptance['acceptedBy'], internal_acceptance['acceptedAt'])
     assert quality()['satisfaction']=='1.000000' and quality()['confirmedP0']==1
     issued=manager.post(tokens,headers=h(manager.get(tokens).json()['data']['collectionRevision']),json={**grant,'allowedActions':['pmo_change_propose']})
     assert issued.status_code==200,issued.text

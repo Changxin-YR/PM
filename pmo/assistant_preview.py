@@ -135,6 +135,12 @@ def execute(authorization, pid, key, revision, command, authorize, collect) -> R
         receipt, current = recheck(c, a, rid)
         if receipt.status == 'completed':
             return replay(receipt, current)
+        if not items and command.mode == 'ledger':
+            # Only the authorized, rechecked sources can be shown when the gateway returns no usable selection.
+            original = [model.Item(text=part.text, sourceRefs=part.sourceRefs, observedAt=part.observedAt)
+                        for part in current.parts.values()]
+            return complete(c, a, rid, receipt.id, current, status='manual', items=original,
+                            code=code or 'MODEL_NO_SELECTION')
         return complete(c, a, rid, receipt.id, opened, status='manual' if code else 'ready' if items else 'empty',
                         items=items, code=code)
 

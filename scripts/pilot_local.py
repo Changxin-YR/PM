@@ -37,7 +37,9 @@ STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
 RUNTIME_PROCESSES = {'api': r'pmo\.api:app(?:\s|"|$)', 'web': r'vite(?:\.js)?(?:\s|"|$)',
-                     'outbox': r'pmo\.outbox(?:\s|"|$)', 'reportWorker': r'pmo\.report_analysis_worker(?:\s|"|$)'}
+                     'outbox': r'pmo\.outbox(?:\s|"|$)', 'reportWorker': r'pmo\.report_analysis_worker(?:\s|"|$)',
+                     'scheduler': r'-m\s+pmo\.rule_scan\s+--watch(?:\s|"|$)',
+                     'supervisor': r'-m\s+scripts\.pilot_local\s+serve(?:-models)?(?:\s|"|$)'}
 CORE_RUNTIME_PROCESSES = {'api', 'web', 'outbox'}
 
 
@@ -236,12 +238,25 @@ ConvertTo-Json -InputObject $active -Compress'''
     return None
 
 
-def clear_stale_runtime():
-    runtime = read('runtime.json')
+def recorded_processes(runtime):
     if not isinstance(runtime, dict) or (runtime.get('web'), runtime.get('api')) != (WEB, API):
-        return False
+        return None
     pids = runtime.get('pids')
     if not isinstance(pids, dict) or not CORE_RUNTIME_PROCESSES <= pids.keys():
+        return None
+    return pids
+
+
+def scheduler_status(pids, active):
+    if pids is not None and 'scheduler' not in pids:
+        return 'not_recorded'
+    return 'running' if active is not None and 'scheduler' in active else 'unavailable'
+
+
+def clear_stale_runtime():
+    runtime = read('runtime.json')
+    pids = recorded_processes(runtime)
+    if pids is None:
         return False
     try:
         with bind(WEB_PORT), bind(API_PORT):
@@ -271,6 +286,10 @@ def ready():
                     and client.get(API.removesuffix('/api/v1/') + '/health/ready').json() == {'status': 'ready'})
     except (httpx.HTTPError, ValueError):
         return False
+
+
+class PilotStopTimeout(RuntimeError):
+    pass
 
 
 class ModelConfigError(ValueError):
@@ -357,7 +376,8 @@ def model_preflight():
     except (ValueError, OSError):
         runtime = {}
     services_ready = isinstance(runtime, dict) and (runtime.get('web'), runtime.get('api')) == (WEB, API) and ready()
-    active_processes = (probe_runtime_processes(runtime.get('pids')) or set()) if services_ready else set()
+    pids = recorded_processes(runtime)
+    active_processes = (probe_runtime_processes(pids) or set()) if services_ready and pids is not None else set()
     running = CORE_RUNTIME_PROCESSES <= active_processes
     loaded = runtime.get('models', {}) if running else {}
     channels = {}
@@ -380,7 +400,8 @@ def model_preflight():
             if entry['loaded']:
                 entry['worker'] = 'running' if 'reportWorker' in active_processes else 'unavailable'
         channels[name] = entry
-    return {'servicesReady': services_ready, 'running': running, 'channels': channels}
+    return {'servicesReady': services_ready, 'running': running,
+            'scheduler': scheduler_status(pids, active_processes), 'channels': channels}
 
 
 def configure_models():
@@ -463,7 +484,10 @@ def serve(active):
                                  '127.0.0.1', '--port', str(WEB_PORT), '--strictPort'], ROOT / 'web',
                                 base | {'PMO_API_PORT': str(API_PORT)}),
                    'outbox': start([str(PYTHON), '-m', 'pmo.outbox', '--watch'], ROOT,
-                                   base | {'DATABASE_URL': database(cfg, 'outbox')})}
+                                   base | {'DATABASE_URL': database(cfg, 'outbox')}),
+                   'scheduler': start([str(PYTHON), '-m', 'pmo.rule_scan', '--watch'], ROOT,
+                                      separate | {'PMO_EVIDENCE_DIR': str(evidence)}),
+                   'supervisor': os.getpid()}
             if worker_model['PMO_REPORT_ANALYSIS'] == '1':
                 ids['reportWorker'] = start([str(PYTHON), '-m', 'pmo.report_analysis_worker', '--watch'], ROOT,
                                             separate | worker_model)
@@ -489,7 +513,9 @@ def stop():
         return
     local_file('stop.request').touch()
     if not wait_for(lambda: not local_file('runtime.json').exists(), seconds=20):
-        raise RuntimeError('Pilot supervisor did not acknowledge stop; no process was killed by PID.')
+        raise PilotStopTimeout(
+            'Pilot supervisor did not acknowledge stop. Runtime marker retained. '
+            'Run status and see the protected supervisor.log and services.log. No process was stopped by PID.')
 
 
 def launch(active=False):
@@ -525,7 +551,11 @@ def main():
     elif args.action == 'stop':
         stop()
     elif args.action == 'status':
-        print(json.dumps({'running': ready(), 'runtime': read('runtime.json'),
+        runtime = read('runtime.json')
+        pids = recorded_processes(runtime)
+        processes = probe_runtime_processes(pids) if pids is not None else None
+        print(json.dumps({'running': ready(), 'runtime': runtime, 'scheduler': scheduler_status(pids, processes),
+            'matchedProcesses': sorted(processes) if processes is not None else None,
             'saved': {name: local_file(f'model-{name}.json').is_file() for name in CHANNELS}}, ensure_ascii=False))
     elif args.action == 'configure-models':
         configure_models()
@@ -554,6 +584,9 @@ if __name__ == '__main__':
         main()
     except ModelConfigError as error:
         print(f'Pilot model configuration: {error}', file=sys.stderr)
+        raise SystemExit(1) from None
+    except PilotStopTimeout as error:
+        print(str(error), file=sys.stderr)
         raise SystemExit(1) from None
     except (OSError, ValueError, RuntimeError, psycopg.Error, subprocess.SubprocessError) as error:
         # Subprocess errors can include commands; user inputs and database DSNs must not be echoed.

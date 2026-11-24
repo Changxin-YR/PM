@@ -1,5 +1,6 @@
 """Human retrospectives and independent Lesson confirmation, not stage transitions."""
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal, TypeVar
 from uuid import UUID
 
@@ -10,6 +11,8 @@ from pydantic import AfterValidator, Field, StringConstraints, ValidationError
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import Result, Strict
+from .cost_reconciliation import Attribution, _receipt_hash
+from .costs import Kind as CostKind
 from .identity import Failure, explicit_project_scope, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
@@ -71,6 +74,7 @@ class Draft(Strict):
     what: Text
     rootCause: Text
     advice: Text
+    sourceRetrospectiveRevision: int | None = Field(default=None, ge=1)
 
 
 class Confirm(Strict):
@@ -89,8 +93,15 @@ class Retrospective(Strict):
     canSave: bool
 
 
+class CostDiscussion(Strict):
+    type: CostKind
+    attribution: Attribution
+    sourceRef: str
+
+
 class RetrospectiveView(Retrospective):
     questions: Questions
+    costDiscussion: list[CostDiscussion] = Field(default_factory=list, max_length=2)
 
 
 class Lesson(Strict):
@@ -146,6 +157,35 @@ def _kind(entry) -> Kind | None:
     if entry is None:
         return None
     return 'terminated' if entry.from_stage == 'terminated' else 'normal'
+
+
+def _cost_discussion(c, p, entry) -> list[CostDiscussion]:
+    if _kind(entry) != 'normal':
+        return []
+    row = c.execute(sa.text('''SELECT r.id,r.revision,r.signed_by,r.grant_id,r.signed_at,r.covered_through,
+        r.cost_hash,r.receipt_hash,r.lines,r.request_id,r.rule_version,f.materials,f.snapshot_hash
+        FROM project_stage_transitions s
+        JOIN decisions d ON d.review_id=s.review_id AND d.project_id=s.project_id AND d.subject='closing'
+          AND d.option IN ('pass','conditional_pass')
+        JOIN review_decision_snapshots ds ON ds.decision_id=d.id AND ds.review_id=s.review_id
+          AND ds.request_id=s.request_id
+        JOIN review_submission_snapshots f ON f.review_id=ds.review_id AND f.snapshot_hash=ds.material_hash
+        JOIN cost_reconciliations r ON r.project_id=s.project_id
+          AND CAST(r.id AS text)=f.materials->'costReconciliation'->>'id'
+          AND CAST(r.revision AS text)=f.materials->'costReconciliation'->>'revision'
+          AND r.receipt_hash=f.materials->'costReconciliation'->>'receipt_hash'
+          AND r.cost_hash=f.materials->'costReconciliation'->>'cost_hash'
+        WHERE s.project_id=:pid AND s.to_revision<:revision AND s.from_stage='closing_review' AND s.to_stage='closed'
+        ORDER BY s.to_revision DESC LIMIT 1'''), {'pid': p.id, 'revision': entry.to_revision}).mappings().one_or_none()
+    if row is None or fingerprint(row.materials) != row.snapshot_hash:
+        return []
+    digest = _receipt_hash(p.id, row.revision, row.signed_by, row.grant_id, row.signed_at, row.covered_through,
+                           row.cost_hash, row.lines, row.request_id, rule_version=row.rule_version)
+    if digest != row.receipt_hash:
+        return []
+    return [CostDiscussion(type=line['type'], attribution=line['overrunReason'],
+                           sourceRef=f'cost-reconciliation:{row.id}@{row.revision}')
+            for line in row.lines if line.get('overrunReason') and Decimal(line['current'].get('difference') or '0') > 0]
 
 
 def _entry_ref(entry):
@@ -290,7 +330,10 @@ def get_retrospective(projectId: UUID, authorization: Auth) -> Result[Retrospect
         entry = _origin(c, p)
         result = _retrospective_result(GET, p, _retrospective(c, p.id), entry,
                                        can_save=entry is not None and p.stage == 'retrospective' and _pm(c, a, p))
-        return Result[RetrospectiveView](data=RetrospectiveView(**result.data.model_dump(), questions=list(QUESTIONS)),
+        discussions = _cost_discussion(c, p, entry)
+        result.meta.sourceRefs = list(dict.fromkeys([*result.meta.sourceRefs, *(i.sourceRef for i in discussions)]))
+        return Result[RetrospectiveView](data=RetrospectiveView(**result.data.model_dump(), questions=list(QUESTIONS),
+                                                               costDiscussion=discussions),
                                          meta=result.meta)
     return run(authorization, GET, query)
 
@@ -337,7 +380,7 @@ def list_lessons(projectId: UUID, authorization: Auth) -> Result[LessonList]:
 
 @router.post('/projects/{projectId}/lessons', operation_id=DRAFT)
 def draft_lesson(projectId: UUID, command: Draft, authorization: Auth, key: Key) -> Result[Lesson]:
-    signature = fingerprint([str(projectId), command.model_dump(mode='json')])
+    signature = fingerprint([str(projectId), command.model_dump(mode='json', exclude_none=True)])
 
     def write(c, a, rid):
         p = _human_project(c, a, projectId, write=True)
@@ -347,9 +390,15 @@ def draft_lesson(projectId: UUID, command: Draft, authorization: Auth, key: Key)
         if prior is not None:
             return prior
         entry = _require_entry(c, p)
+        basis = []
+        if command.sourceRetrospectiveRevision is not None:
+            source = _retrospective(c, p.id)
+            if source is None or source.revision != command.sourceRetrospectiveRevision:
+                raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
+            basis.append(_retro_ref(source))
         row = c.execute(_lessons.insert().values(project_id=p.id, created_by=a.person, status='draft', category=command.category,
             what=command.what, root_cause=command.rootCause, advice=command.advice).returning(_lessons)).mappings().one()
-        result = Result[Lesson](data=_lesson(row), meta=meta(DRAFT, [_project_ref(p), _entry_ref(entry), _lesson_ref(row)]))
+        result = Result[Lesson](data=_lesson(row), meta=meta(DRAFT, [_project_ref(p), _entry_ref(entry), *basis, _lesson_ref(row)]))
         return _record(c, a, p, DRAFT, key, rid, signature, result, row, 'lessonId', 'lesson.drafted')
     return run(authorization, DRAFT, write)
 

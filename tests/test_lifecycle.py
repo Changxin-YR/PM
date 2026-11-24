@@ -140,7 +140,8 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
                          json={'toStage': 'delivering', 'approvalRequestId': request['requestId']}).status_code == 403
     assert data(execute(pm, project, request))['status'] == 'applied'
     assert stage(pm, project)['stage'] == 'delivering'
-    now, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk)
+    now, risk_proof, cost_proof = close_materials(pm, reviewer, customer, project, requirement, risk,
+                                                 actuals=('110.00', '10.00'))
     checked = data(pm.get(project + '/closing/check'))
     assisted = data(pm.get(project + '/assistant/closing'))
     assert assisted['gateEligible'] is False and assisted['gateGaps'] == checked['missing']
@@ -148,7 +149,9 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     reco = project + '/cost-reconciliations'
     state = data(reconciler.get(reco))
     assert state['canCreate']
-    data(reconciler.post(reco, headers=headers(state['revision']), json={'costHash': state['costHash'], 'evidenceRefs': [cost_proof['evidenceRef']]}))
+    cost_receipt = data(reconciler.post(reco, headers=headers(state['revision']), json={
+        'costHash': state['costHash'], 'evidenceRefs': [cost_proof['evidenceRef']],
+        'overrunReasons': {'money': 'estimate', 'effort': 'scope'}}))
     assert data(pm.get(project + '/closing/check'))['eligible']
     assert data(pm.get(project + '/assistant/closing'))['gateEligible'] is True
     closing = gate(pm, project, 'closing')
@@ -159,7 +162,12 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     entered = data(execute(pm, project, ret))
     assert entered['appliedProjectRevision'] == ret['revision'] + 1 and 'decisionId' not in entered
     retro = project + '/retrospective'
-    assert data(pm.get(retro))['kind'] == 'normal'
+    retro_response = pm.get(retro)
+    assert data(retro_response)['kind'] == 'normal'
+    source = f"cost-reconciliation:{cost_receipt['receiptId']}@{cost_receipt['revision']}"
+    expected_discussion = [{'type': 'money', 'attribution': 'estimate', 'sourceRef': source}]
+    assert data(retro_response)['costDiscussion'] == expected_discussion
+    assert source in retro_response.json()['meta']['sourceRefs']
     assert propose(pm, project, 'archived').json()['code'] == 'RETROSPECTIVE_ANSWERS_REQUIRED'
     data(pm.put(retro, headers=headers(data(pm.get(retro))['revision']), json={'answers': ANSWERS}))
     assert propose(pm, project, 'archived').json()['code'] == 'CONFIRMED_LESSON_REQUIRED'
@@ -201,6 +209,7 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     archive_state = committed()
     assert reviewer.post(f"approvals/{archive['requestId']}/decide", headers=key, json=command).json() == saved.json()
     assert stage(pm, project)['stage'] == 'archived'
+    assert data(pm.get(retro))['costDiscussion'] == expected_discussion
     assert pm.put(retro, headers=headers(2), json={'answers': ANSWERS}).status_code == 422
     assert pm.post(project + '/cost-postings', headers=headers(), json={'type': 'money', 'amount': '1', 'period': now.strftime('%Y-%m'),
         'sourceRef': 'New posting must not be allowed'}).status_code == 422

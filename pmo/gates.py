@@ -120,7 +120,35 @@ def signed_baseline(c, pid):
     return [pm, customer] if pm and pm.snapshot == customer.snapshot else []
 
 
+def charter_strengthening(c, p, out):
+    rows = c.execute(sa.text('''WITH approved_charter AS (
+        SELECT r.id, r.revision, s.transitioned_at FROM project_stage_transitions s
+        JOIN reviews r ON r.id=s.review_id AND r.project_id=s.project_id
+        JOIN review_decision_snapshots ds ON ds.review_id=r.id AND ds.request_id=s.request_id
+        JOIN decisions d ON d.id=ds.decision_id AND d.review_id=r.id AND d.project_id=s.project_id
+        WHERE s.project_id=:pid AND s.to_revision<=:revision AND s.from_stage='charter_review'
+          AND s.to_stage='designing' AND r.type='charter' AND r.status='decided'
+          AND r.verdict=d.option AND d.option IN ('pass','conditional_pass')
+        ORDER BY s.to_revision DESC LIMIT 1
+    )
+    SELECT t.id,t.revision,t.title,t.status,t.completed_at,r.transitioned_at,r.id AS review_id,
+           r.revision AS review_revision
+    FROM approved_charter r JOIN review_strengthening_tasks b ON b.review_id=r.id
+    JOIN tasks t ON t.id=b.task_id AND t.project_id=:pid AND t.source_type='review' AND t.source_id=r.id
+    WHERE b.item_key LIKE 'dimension:%' OR b.item_key LIKE 'condition:%'
+    ORDER BY b.item_key'''), {'pid': p.id, 'revision': p.revision}).mappings()
+    for row in rows:
+        refs = [f'task:{row.id}@{row.revision}', f'review:{row.review_id}@{row.review_revision}']
+        out.refs.extend(refs)
+        # The reply is a live requirement. Existing feasibility material hashes remain replayable.
+        if row.status != 'done' or not row.completed_at or row.completed_at < row.transitioned_at:
+            out.reject('CHARTER_STRENGTHENING_RESPONSE_REQUIRED',
+                       f'立项补强尚未处理完成：{row.title}。', refs)
+
+
 def planning_material(c, a, p, gate, out):
+    if gate == 'feasibility':
+        charter_strengthening(c, p, out)
     milestones = [m for m in rows_in(c, db.milestones, p.id) if not m.is_cancelled]
     ms_refs = out.include('milestones', 'milestone', milestones)
     if gate == 'feasibility' and not 3 <= len(milestones) <= 8:

@@ -9,15 +9,19 @@ type Activity={kind:keyof typeof activityNames;resourceId:string;occurredAt:stri
 type Indicators={asOf:string;health:'green'|'yellow'|'red'|'untrusted'|'unavailable';publication:'official'|'preview'|'withheld'|'unavailable';
   timeLine?:'green'|'yellow'|'red';moneyVarianceRate?:string;effortVarianceRate?:string;requirementSatisfactionRate?:string}
 type Identity={projectId:string;code:string;name:string;stage:string;revision:number}
+type OverdueCondition={taskId:string;title:string;dueAt:string}
+type RuleNotification={alertId:string;ruleId:'LR-04'|'LR-08';status:'open'|'resolved';deliveredAt:string}
 type Detail={project:Identity;materialsVisible:boolean;indicators?:Indicators;
   charterSummary?:{isFrozen:boolean;revision:number;valueProp?:string;targetClient?:string;roughCost?:string;roughEffort?:string;roughDurationDays?:number};
-  recentTransitions:StageReceipt[];recentActivity?:Activity[]}
+  recentTransitions:StageReceipt[];recentActivity?:Activity[];overdueConditions?:OverdueCondition[];overdueConditionCount?:number;
+  ruleNotifications?:RuleNotification[]}
 const props=defineProps<{projectId:string;active:boolean;stages:Record<string,string>;api:(path:string)=>Promise<any>}>()
 const emit=defineEmits<{projectRead:[project:Identity];navigate:[tab:string];openChange:[changeId:string]}>()
 const data=ref<Detail|null>(null),loading=ref(false),error=ref(''),refs=ref<string[]>([])
 const colors={green:'绿',yellow:'黄',red:'红',untrusted:'数据不可信',unavailable:'不可用'}
 const tags={green:'success',yellow:'warning',red:'danger',untrusted:'warning',unavailable:'info'} as const
 const publication={official:'正式快照',preview:'实时预览',withheld:'暂停正式发布',unavailable:'未处于健康监控阶段'}
+const ruleMessages={'LR-04':'项目成本超过规则阈值','LR-08':'结项后的复盘或教训未按期完成'}
 let sequence=0
 
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
@@ -39,6 +43,16 @@ defineExpose({refresh:read,loading})
 
 <template>
   <section class="overview" aria-label="项目概览" :aria-busy="loading">
+    <section v-if="data?.ruleNotifications?.length" class="overview-section" aria-label="我的项目提醒">
+      <h3>我的项目提醒</h3>
+      <ul class="edges">
+        <li v-for="item in data.ruleNotifications" :key="item.alertId">
+          <span>{{ruleMessages[item.ruleId]}} · {{item.ruleId}}</span>
+          <el-tag class="rule-receipt" :type="item.status==='open'?'warning':'info'" effect="plain" size="small">{{item.status==='open'?'待处理':'已解除'}}</el-tag>
+          <time class="muted" :datetime="item.deliveredAt">{{time(item.deliveredAt)}} 北京时间</time>
+        </li>
+      </ul>
+    </section>
     <el-alert v-if="error" :title="error" type="error" :closable="false"/>
     <div v-else-if="loading&&!data" class="overview-section" role="status">
       <p class="muted">读取项目概览…</p><el-skeleton :rows="3" animated/>
@@ -69,6 +83,19 @@ defineExpose({refresh:read,loading})
           <div><dt>人天偏差</dt><dd>{{ratio(data.indicators.effortVarianceRate)}}</dd></div>
           <div><dt>需求满足率</dt><dd>{{ratio(data.indicators.requirementSatisfactionRate)}}</dd></div>
         </dl>
+      </section>
+      <section v-if="data.overdueConditions?.length" class="overview-section" aria-label="落地补强逾期">
+        <div class="overview-heading">
+          <h3>落地补强逾期 <el-tag type="warning" effect="plain" size="small">{{data.overdueConditionCount}} 项</el-tag></h3>
+          <el-button text @click="emit('navigate','tasks')">查看任务 <ArrowRight :size="15"/></el-button>
+        </div>
+        <ul class="edges">
+          <li v-for="item in data.overdueConditions" :key="item.taskId">
+            <span>{{item.title}}</span>
+            <time class="muted" :datetime="item.dueAt">截止于 {{time(item.dueAt)}} 北京时间</time>
+          </li>
+        </ul>
+        <p v-if="(data.overdueConditionCount??0)>data.overdueConditions.length" class="muted">显示最早到期的 {{data.overdueConditions.length}} 项。</p>
       </section>
       <div class="overview-activity">
       <section class="overview-section" aria-label="最近阶段活动">
@@ -117,10 +144,11 @@ dd {margin:4px 0 0;font-size:17px;font-weight:600;font-variant-numeric:tabular-n
 .purpose {white-space:pre-wrap;margin:12px 0 4px}
 .overview-activity {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .edges {margin:4px 0 0;padding-inline-start:24px}
-.edges li {padding:8px 0;border-bottom:1px solid var(--pmo-line)}
+.edges li {padding:8px 0;border-bottom:1px solid var(--pmo-line);overflow-wrap:anywhere}
 .edges li:last-child {border-bottom:0;padding-bottom:0}
 .edges li svg {vertical-align:middle}
 .edges li .muted {display:block}
+.rule-receipt {margin-inline-start:8px}
 .sources summary {cursor:pointer;font-weight:600}
 .activity li>div {display:inline-block;vertical-align:middle}
 .activity button {margin-inline-start:8px}

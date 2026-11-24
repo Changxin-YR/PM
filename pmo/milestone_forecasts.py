@@ -23,7 +23,7 @@ class Forecast(Strict):
 def reconcile(c,p,row):
     e=events
     active=c.scalar(sa.text('SELECT event_id FROM milestone_delay_episodes WHERE milestone_id=:mid AND closing_revision IS NULL'),{'mid':row.id})
-    late=(p.stage in ('executing','on_hold','delivering','closing_review') and row.is_key and row.actual_date is None
+    late=(p.stage in ('executing','on_hold','delivering','closing_review') and row.actual_date is None
           and not row.is_cancelled and row.forecast_date is not None and row.forecast_date>row.planned_date)
     if active and not late:
         c.execute(sa.text('UPDATE milestone_delay_episodes SET closing_revision=:rev WHERE event_id=:id'),{'rev':row.revision,'id':active})

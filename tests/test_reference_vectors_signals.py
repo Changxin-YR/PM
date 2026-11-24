@@ -76,7 +76,8 @@ def test_cost_warning(case, live, team):
     rows = events(pm, project, 'LR-04')
     assert len(rows) == int(case['expectedTriggered'])
     assert first['costLine'] == ('red' if case['expectedTriggered'] else 'yellow')
-    assert [r['recipientId'] for r in queued(live[0], rows)] == [str(people['sponsor'])] * len(rows)
+    assert sorted(r['recipientId'] for r in queued(live[0], rows)) == sorted(
+        [str(people['sponsor']), str(people['initiator'])] * len(rows))
     assert not [r for r in data(pm.get(project + '/tasks'))['items'] if r['title'].startswith('LR-04')]
 
 
@@ -150,4 +151,5 @@ def test_retrospective_reminder(case, live, team):
         scan_lr08(live[0], pid, at)
     rows = events(pm, project, 'LR-08')
     assert len(rows) == int(case['expectedTriggered'])
-    assert [r['recipientId'] for r in queued(live[0], rows)] == [str(people['sponsor'])] * len(rows)
+    assert sorted(r['recipientId'] for r in queued(live[0], rows)) == sorted(
+        [str(people['sponsor']), str(people['initiator'])] * len(rows))

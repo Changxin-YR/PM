@@ -109,6 +109,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
 
         with psycopg.connect(**connection_args(urls['api']), autocommit=True) as api_db:
             assert api_db.execute('SELECT id FROM user_roles FOR SHARE').fetchall()
+            assert api_db.execute('SELECT project_id,rule_event_id,recipient_person_id,delivery_status,delivered_at FROM notifications').fetchall() == []
             assert api_db.execute('SELECT id FROM project_transition_grants FOR SHARE').fetchall() == []
             assert api_db.execute("SELECT has_table_privilege('requirement_exception_events', 'SELECT,INSERT')").fetchone() == (True,)
             denied(api_db, [
@@ -132,6 +133,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE requirement_disputes SET reason=reason', 'DELETE FROM requirement_disputes',
                 'UPDATE organization_user_invitations SET code_hash=code_hash', 'UPDATE account_status_changes SET reason=reason',
                 'SELECT payload FROM outbox_events', 'UPDATE outbox_events SET status=status',
+                'SELECT payload FROM notifications', 'UPDATE notifications SET delivery_status=delivery_status',
                 sql.SQL('SET ROLE {}').format(sql.Identifier(urls['owner'].username)),
             ])
         with psycopg.connect(**connection_args(urls['worker']), autocommit=True) as worker_db:

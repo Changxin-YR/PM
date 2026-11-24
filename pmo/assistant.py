@@ -30,7 +30,8 @@ router = APIRouter(prefix='/api/v1/projects/{projectId}/assistant', tags=['Proje
 HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 Keyword = Annotated[retrospectives.QueryText | None, Query(max_length=160)]
 Category = Annotated[retrospectives.QueryText | None, Query(max_length=80)]
-Topic = Literal['health', 'cost', 'requirements', 'fact', 'lesson']
+PreviewTopic = Literal['health', 'cost', 'requirements', 'fact', 'lesson']
+Topic = Literal[PreviewTopic, 'forecast']
 HITS = 6
 LESSON_TERMS = re.compile(r'[A-Za-z][A-Za-z0-9_-]{3,}|[\u3400-\u9fff]{2,}')
 IGNORED_LESSON_TERMS = frozenset({'project', 'system', 'with', 'from', 'that', 'this', 'only', '项目', '系统'})
@@ -51,9 +52,19 @@ class ScoreSummary(Assessment):
     sourceRefs: list[str]
 
 
+class PendingScore(Strict):
+    total: str | None
+    means: dict[str, str]
+    observedAt: datetime
+    sourceRefs: list[str]
+
+
 class CharterMode(Strict):
     completeness: gates.Check
     scoreSummary: ScoreSummary | None
+    pendingScore: PendingScore | None
+    pendingWeaknesses: list[Cited]
+    charterFacts: list[Cited]
     weaknesses: list[Cited]
     lessonRefs: list[LessonRef]
     reviewDraft: list[Cited]
@@ -89,6 +100,7 @@ class ClosingMode(Strict):
     retrospectiveKind: retrospectives.Kind | None
     retrospectiveQuestions: retrospectives.Questions
     lessonDrafts: list[Cited]
+    canStartLessonDraft: bool
     previewEnabled: bool
 
 
@@ -185,11 +197,46 @@ def _published_assessment(c, p, at):
     return None
 
 
+def _pending_assessment(c, a, p, at):
+    if p.stage != 'charter_review':
+        return None, []
+    v = reviews.reviews.c
+    review = c.execute(sa.select(reviews.reviews).where(v.project_id == p.id, v.type == 'charter',
+        v.status == 'pending').order_by(v.created_at.desc(), v.id).limit(1)).mappings().one_or_none()
+    if review is None:
+        return None, []
+    frozen = review_outcomes.one(c, reviews.snapshots, reviews.snapshots.c.review_id == review.id)
+    bench = review_outcomes.workbench(c, a, p, review, frozen)
+    assessment = bench.assessment
+    if assessment is None or bench.stale or bench.scoreEvidenceStale:
+        return None, []
+    source = [f'review:{review.id}@{review.revision}']
+    labels = {item.key: item.label for item in rubric('charter')}
+    weak = [Cited(text=f'{labels[dimension]}：维度均分 {assessment.means[dimension]}，复核依据并补强。',
+                  sourceRefs=source, observedAt=at) for dimension in assessment.weakDimensions]
+    return PendingScore(total=assessment.total, means=assessment.means, sourceRefs=source, observedAt=at), weak
+
+
+def _charter_facts(c, p):
+    if not p.materials_visible:
+        return []
+    row = c.execute(sa.select(db.charters).where(db.charters.c.project_id == p.id)).mappings().one_or_none()
+    if row is None:
+        return []
+    fields = [('价值主张', row.value_prop), ('目标客户', row.target_client), ('吸引力', row.attractiveness),
+              ('预期收益', row.expected_benefit), ('成功标准', row.success_criteria), ('估算金额（元）', row.rough_cost),
+              ('估算人天', row.rough_effort), ('估算工期（天）', row.rough_duration_days)]
+    reference = [f'charter:{row.id}@{row.revision}']
+    return [Cited(text=f'{label}：{value}', sourceRefs=reference) for label, value in fields if value not in (None, '')]
+
+
 @router.get('/charter', operation_id=CHARTER, openapi_extra=HUMAN)
 def charter(projectId: UUID, authorization: Auth, keyword: Keyword = None, category: Category = None) -> Result[CharterMode]:
     def read(c, a, p, at):
         check, materials = gates.evaluate(c, a, p, 'charter', pending=p.stage == 'charter_review')
         score = _published_assessment(c, p, at) if p.materials_visible else None
+        pending, pending_weak = _pending_assessment(c, a, p, at)
+        facts = _charter_facts(c, p)
         labels = {item.key: item.label for item in rubric('charter')}
         weak = [Cited(text=f'{labels[key]}：维度均分 {score.means[key]}，复核依据并补强。', sourceRefs=score.sourceRefs)
                 for key in score.weakDimensions] if score else []
@@ -198,9 +245,11 @@ def charter(projectId: UUID, authorization: Auth, keyword: Keyword = None, categ
             draft.append(Cited(text='材料预检通过；独立评分、必要确认与人工裁决仍需完成。',
                               sourceRefs=reviews.refs(p, materials)[:100]))
         lessons = _lesson_references(c, a, p, at, keyword, category, history_only=True) if p.materials_visible else []
-        refs = [*(score.sourceRefs if score else []), *(ref for item in lessons for ref in item.sourceRefs), *materials.refs]
+        refs = [*(score.sourceRefs if score else []), *(pending.sourceRefs if pending else []),
+                *(ref for item in [*facts, *lessons] for ref in item.sourceRefs), *materials.refs]
         return Result[CharterMode](data=CharterMode(completeness=check, scoreSummary=score, weaknesses=weak,
-            lessonRefs=lessons, reviewDraft=draft, previewEnabled=_previews_enabled(p.id)), meta=_meta(CHARTER, p, at, refs))
+            pendingScore=pending, pendingWeaknesses=pending_weak, charterFacts=facts, lessonRefs=lessons, reviewDraft=draft,
+            previewEnabled=_previews_enabled(p.id)), meta=_meta(CHARTER, p, at, refs))
     return _read(authorization, CHARTER, projectId, read)
 
 
@@ -271,6 +320,7 @@ def closing(projectId: UUID, authorization: Auth) -> Result[ClosingMode]:
         return Result[ClosingMode](data=ClosingMode(gateGaps=check.missing if applicable else [],
             gateEligible=check.eligible if applicable else None, retrospectiveKind=kind,
             retrospectiveQuestions=list(retrospectives.QUESTIONS), lessonDrafts=drafts,
+            canStartLessonDraft=bool(answers and p.stage == 'retrospective' and retrospectives._pm(c, a, p)),
             previewEnabled=_previews_enabled(p.id)), meta=_meta(CLOSING, p, at, refs))
     return _read(authorization, CLOSING, projectId, read)
 
@@ -289,12 +339,14 @@ def _closing_sources(c, a, p):
     return check, materials, origin, [Cited(text=answer, sourceRefs=refs, observedAt=retro.completed_at) for answer in answers]
 
 
-def _ledger_fact(c, p, at, keyword):
+def _ledger_fact(c, a, p, at, keyword):
     if not keyword or not keyword.strip():
         return []
-    f, r = fact_store.f, reports.r
-    rows = c.execute(fact_store.query().join(reports.reports, (r.id == f.report_id) & (r.project_id == f.project_id))
-        .where(f.project_id == p.id, f.as_of <= at, r.submitted_at <= at, f.validation_status == 'verified',
+    f = fact_store.f
+    readable = reports.readable_reports(a, p.id)
+    authorized = readable.subquery()
+    rows = c.execute(fact_store.query().join(authorized, authorized.c.id == f.report_id)
+        .where(f.project_id == p.id, f.as_of <= at, authorized.c.submitted_at <= at, f.validation_status == 'verified',
             f.trust.in_(('high', 'medium')), sa.or_(f.subject.icontains(keyword.strip(), autoescape=True),
                 f.predicate.icontains(keyword.strip(), autoescape=True), f.quote.icontains(keyword.strip(), autoescape=True)))
         .order_by(f.as_of.desc(), f.id).limit(30)).mappings()
@@ -303,8 +355,8 @@ def _ledger_fact(c, p, at, keyword):
     for row in rows:
         if row.group_key in groups:
             continue
-        report = c.execute(sa.select(reports.reports).where(r.id == row.report_id, r.project_id == p.id)).mappings().one()
-        if verified_source(c, report, row):
+        report = c.execute(readable.where(reports.r.id == row.report_id)).mappings().one_or_none()
+        if report is not None and verified_source(c, report, row):
             refs = [fact_store.fact_ref(row), row.source_ref, *([row.evidence_ref] if row.evidence_ref else [])]
             items.append(Cited(text=row.quote, observedAt=row.as_of, sourceRefs=list(dict.fromkeys(refs))))
             groups.add(row.group_key)
@@ -329,6 +381,21 @@ def _ledger_health(c, a, p, at):
     return items, missing, current.asOf
 
 
+def _ledger_forecasts(c, p, at):
+    e = events.c
+    matches = c.execute(sa.select(events).where(e.project_id == p.id, e.rule_id == 'LR-03', e.status == 'open',
+        e.updated_at <= at).order_by(e.updated_at.desc(), e.id).limit(HITS + 1)).mappings().all()
+    results = []
+    for row in matches[:HITS]:
+        history = row.input_snapshot or {}
+        subject = history.get('milestoneName') or '里程碑'
+        plan, forecast = history.get('plannedDate'), history.get('forecastDate')
+        detail = f'{subject}：计划 {plan}，预测 {forecast}。' if plan and forecast else subject
+        results.append(Cited(text=f'{detail}　{history.get("reason") or "预测延期的正式计划变更待处理。"}',
+            observedAt=row.updated_at, sourceRefs=[f'rule-event:{row.id}', *row.source_refs[:20]]))
+    return results, ['仅显示最近六条；其余记录可在预警中心查询。'] if len(matches) > HITS else []
+
+
 @router.get('/ledger', operation_id=LEDGER, openapi_extra=HUMAN)
 def ledger(projectId: UUID, authorization: Auth, topic: Topic = 'health', keyword: Keyword = None,
            category: Category = None) -> Result[LedgerMode]:
@@ -338,12 +405,16 @@ def ledger(projectId: UUID, authorization: Auth, topic: Topic = 'health', keywor
 def _ledger(c, a, p, at, topic, keyword, category, *, for_preview=False):
     answer, unknowns = [], []
     if topic == 'fact':
-        answer = _ledger_fact(c, p, at, keyword)
+        answer = _ledger_fact(c, a, p, at, keyword)
     elif topic == 'lesson':
         answer = [Cited(text=f'{item.category}：{item.text}', observedAt=item.observedAt, sourceRefs=item.sourceRefs)
                   for item in _lesson_references(c, a, p, at, keyword, category, for_preview=for_preview)]
     elif topic == 'health':
         answer, unknowns, at = _ledger_health(c, a, p, at)
+    elif topic == 'forecast':
+        answer, unknowns = _ledger_forecasts(c, p, at)
+        if not answer:
+            unknowns.append('当前项目暂无未解决的 LR-03 延期预警。')
     elif topic == 'requirements':
         quality, refs = metrics(c, p.id)
         if quality.satisfaction is not None:
@@ -366,7 +437,7 @@ def _ledger(c, a, p, at, topic, keyword, category, *, for_preview=False):
         unknowns.append('没有匹配的可核验来源，无法回答。')
     info = _meta(LEDGER, p, at, [ref for item in answer for ref in item.sourceRefs])
     return Result[LedgerMode](data=LedgerMode(answer=answer, asOf=at, sourceRefs=info.sourceRefs, unknowns=unknowns,
-        previewEnabled=_previews_enabled(p.id)), meta=info)
+        previewEnabled=topic != 'forecast' and _previews_enabled(p.id)), meta=info)
 
 
 class CharterPreview(Strict):
@@ -381,7 +452,7 @@ class ClosingPreview(Strict):
 
 class LedgerPreview(Strict):
     mode: Literal['ledger']
-    topic: Topic = 'health'
+    topic: PreviewTopic = 'health'
     keyword: retrospectives.QueryText | None = Field(default=None, max_length=160)
     category: retrospectives.QueryText | None = Field(default=None, max_length=80)
 

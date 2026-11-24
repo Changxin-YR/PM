@@ -6,12 +6,13 @@ import RequirementHistory from './RequirementHistory.vue'
 import RequirementDisputes from './RequirementDisputes.vue'
 const actions=ref<string[]>([]),statuses:Record<string,string>={baseline:'基线',delivered:'已交付',accepted:'已验收',customer_confirmed:'客户已确认',cancelled:'已取消'}
 type Priority='P0'|'P1'|'P2'
-interface Requirement {requirementId:string;desc:string;priority:Priority;acceptanceCriteria:string;plannedConfirmAt?:string;revision:number;baselineVersion:number;status:string}
+interface Requirement {requirementId:string;desc:string;priority:Priority;acceptanceCriteria:string;plannedConfirmAt?:string;revision:number;baselineVersion:number;status:string;acceptedBy?:string;acceptedAt?:string}
 const props=defineProps<{projectId:string;stage:string;api:(path:string,options?:RequestInit)=>Promise<any>}>()
 const path=`projects/${props.projectId}/requirements`,rows=ref<Requirement[]>([]),page=ref(1),total=ref(0),query=ref(''),filter=ref('')
 const loading=ref(false),saving=ref(false),form=ref(false),error=ref(''),editing=ref<Requirement|null>(null)
 const desc=ref(''),criteria=ref(''),priority=ref<Priority>('P1'),date=ref('');let attempt='',signature='',seq=0
 function message(e:unknown){return e instanceof Error?e.message:'操作失败'}
+function shanghai(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
 async function read(){const id=++seq;loading.value=true;error.value='';try{const params=new URLSearchParams({page:String(page.value),pageSize:'10','filters[keyword]':filter.value});const r=await props.api(path+'?'+params);if(id===seq){rows.value=r.data.items;total.value=r.data.total;actions.value=r.data.deliveryActions??[]}}catch(e){if(id===seq){rows.value=[];error.value=message(e)}}finally{if(id===seq)loading.value=false}}
 function search(){page.value=1;filter.value=query.value.trim();void read()}
 function begin(row:Requirement|null){editing.value=row;desc.value=row?.desc||'';criteria.value=row?.acceptanceCriteria||'';priority.value=row?.priority||'P1';date.value=row?.plannedConfirmAt||'';error.value='';form.value=true;attempt=''}
@@ -27,7 +28,14 @@ onMounted(read)
   <el-table-column type="expand" width="44">
     <template #default="{row}">
       <div class="requirement-detail">
-        <dl><dt>验收标准</dt><dd>{{row.acceptanceCriteria}}</dd><dt>计划确认日期</dt><dd>{{row.plannedConfirmAt||'未填报'}}</dd><dt>需求编号</dt><dd>{{row.requirementId}}</dd><dt>记录版本</dt><dd>{{row.revision}}</dd></dl>
+        <dl>
+          <dt>验收标准</dt><dd>{{row.acceptanceCriteria}}</dd><dt>计划确认日期</dt><dd>{{row.plannedConfirmAt||'未填报'}}</dd>
+          <dt>需求编号</dt><dd>{{row.requirementId}}</dd><dt>记录版本</dt><dd>{{row.revision}}</dd>
+          <template v-if="row.acceptedBy||row.acceptedAt">
+            <dt>内部验收人 ID</dt><dd><code v-if="row.acceptedBy">{{row.acceptedBy}}</code><template v-else>未记录</template></dd>
+            <dt>内部验收时间</dt><dd><time v-if="row.acceptedAt" :datetime="row.acceptedAt">{{shanghai(row.acceptedAt)}} 北京时间</time><template v-else>未记录</template></dd>
+          </template>
+        </dl>
         <RequirementDisputes v-if="row.baselineVersion" :api="api" :id="row.requirementId" :description="row.desc" @saved="read"/>
       </div>
     </template>

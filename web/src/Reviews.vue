@@ -9,8 +9,8 @@ type Draft={gateCheck:{gate:Gate;eligible:boolean;missing:{code:string;message:s
 type Review={reviewId:string;type:Gate;status:'draft'|'pending'|'decided'}
 type Attempt={revision:string;body:string;key:string}
 type Api=(path:string,options?:RequestInit,receiveHeaders?:(headers:Headers)=>void)=>Promise<any>
-const props=defineProps<{projectId:string;projectRevision?:number;focusReviewId?:string;stageLabel:string;api:Api}>()
-const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number]}>()
+const props=defineProps<{projectId:string;projectRevision?:number;focusReviewId?:string;stageLabel:string;active?:boolean;api:Api}>()
+const emit=defineEmits<{stageRead:[projectId:string,stage:string,revision:number];openTask:[taskId:string]}>()
 const gates:Record<string,Gate>={drafting:'charter',designing:'feasibility',delivering:'closing'}
 const labels={charter:'立项',feasibility:'落地',closing:'结项'}
 const statuses={draft:'草稿',pending:'待评审',decided:'已裁决'}
@@ -25,6 +25,10 @@ const locked=computed(()=>busy.value||!!retry.value)
 const navigationLocked=computed(()=>!!workbench.value?.navigationLocked||(confirm.value&&locked.value))
 defineExpose({navigationLocked})
 const path=`projects/${props.projectId}`
+function openStrengtheningTask(refs:string[]){
+  const task=refs.find(ref=>ref.startsWith('task:'))
+  if(task)emit('openTask',task.slice('task:'.length).split('@')[0])
+}
 let seenRevision=0
 
 function openWorkbench(reviewId:string,event?:MouseEvent){
@@ -93,6 +97,7 @@ async function send(attempt:Attempt){
   }finally{busy.value=false}
 }
 onMounted(refresh)
+watch(()=>props.active,active=>{if(active&&!navigationLocked.value)void refresh()})
 watch(()=>props.projectRevision,rev=>{if(!busy.value&&rev!==seenRevision)void refresh()})
 watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
 </script>
@@ -109,6 +114,8 @@ watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
       <h4>{{labels[gate]}}预检 · {{draft.gateCheck.eligible?'材料齐备':'存在缺口'}}</h4>
       <ul v-if="draft.gateCheck.missing.length" class="gate-gaps">
         <li v-for="(gap,i) in draft.gateCheck.missing" :key="i">{{gap.message}}
+          <el-button v-if="gap.code==='CHARTER_STRENGTHENING_RESPONSE_REQUIRED'" :disabled="locked" text
+            @click="openStrengtheningTask(gap.sourceRefs)">打开补强任务</el-button>
           <details v-if="gap.sourceRefs.length"><summary>出处</summary><code v-for="source in gap.sourceRefs" :key="source">{{source}}</code></details>
         </li>
       </ul>

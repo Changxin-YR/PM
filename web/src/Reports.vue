@@ -2,6 +2,7 @@
 import {ref,watch} from 'vue'
 import {Check,FilePlus,FileText,Pencil,Plus,RefreshCw,Save,Send,Trash2,X} from 'lucide-vue-next'
 import ReportFacts from './ReportFacts.vue'
+import WeeklyEffortPosting from './WeeklyEffortPosting.vue'
 
 type Kind='weekly'|'daily'
 type Status='draft'|'submitted'|'confirmed'
@@ -307,8 +308,11 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
         </section>
         <section v-if="detail.narrative"><h4>补充说明</h4><p class="report-copy">{{detail.narrative}}</p></section>
       </div>
+      <WeeklyEffortPosting v-if="detail.type==='weekly'&&detail.isCurrentConfirmed&&detail.contentHash"
+        :key="`effort-${detail.reportId}`" :report-id="detail.reportId" :revision="detail.revision" :api="api"/>
       <ReportFacts v-if="detail.submittedAt&&detail.contentHash" :key="detail.reportId" :project-id="projectId" :report-id="detail.reportId"
         :initially-expanded="focusReportId===detail.reportId"
+        :current-weekly="detail.type==='weekly'&&detail.isCurrentConfirmed"
         :revision="detail.revision" :submitted-at="detail.submittedAt" :api="api"/>
     </article>
   </section>

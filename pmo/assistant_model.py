@@ -65,6 +65,7 @@ PROFILES: dict[Mode, tuple[str, type[Strict], str, str]] = {
         'Do not invent a lesson, accept a gap, or imply the project can close or archive.'),
     'ledger': ('ledger_qa', LedgerOutput, 'answer',
         'Select and order existing ledger answers by relevance to the selected topic. '
+        'For the health and cost topics, select every supplied excerpt. '
         'Do not calculate, fill missing values, or replace the original answer.'),
 }
 LENSES = {

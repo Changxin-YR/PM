@@ -30,7 +30,7 @@ def slot(at: datetime) -> date:
     return local.date() - timedelta(days=int(local.time() < time(9)))
 
 
-def _event(c, p, rule, period, condition, refs, context, recipient, *, open_now=True, recorded_at=None) -> UUID:
+def _event(c, p, rule, period, condition, refs, context, *recipients, open_now=True, recorded_at=None) -> UUID:
     digest = fingerprint([RULE_VERSION, condition])
     status = 'open' if open_now else 'resolved'
     timestamps = {} if recorded_at is None else {'created_at': recorded_at, 'updated_at': recorded_at}
@@ -46,7 +46,8 @@ def _event(c, p, rule, period, condition, refs, context, recipient, *, open_now=
             c.execute(events.update().where(events.c.id == eid).values(status=status,
                 updated_at=recorded_at if recorded_at is not None else sa.func.now()))
     if open_now:
-        notify(c, p.id, eid, recipient)
+        for recipient in dict.fromkeys(recipients):
+            notify(c, p.id, eid, recipient)
     return eid
 
 
@@ -65,28 +66,32 @@ def _resolve_inactive(c, pid, rule, opened, *criteria):
         events.c.status == 'open', ~events.c.id.in_(opened)).values(status='resolved', updated_at=sa.func.now()))
 
 
-def _feasibility_deadlines(c, p, at, pm):
-    opened = []
-    if p.stage in ACTIVE:
-        # Cancelling a task does not fulfil a condition in the approved decision.
-        rows = c.execute(sa.text('''SELECT t.id,t.revision,t.title,t.due_at,r.id AS review_id,r.revision AS review_revision
+def feasibility_overdue(c, p, at):
+    if p.stage not in ACTIVE:
+        return []
+    # Cancelling a task does not fulfil a condition in the approved decision.
+    return c.execute(sa.text('''SELECT t.id,t.revision,t.title,t.due_at,r.id AS review_id,r.revision AS review_revision
             FROM review_strengthening_tasks b JOIN tasks t ON t.id=b.task_id
             JOIN reviews r ON r.id=b.review_id AND r.project_id=t.project_id AND t.source_id=r.id
             WHERE t.project_id=:pid AND t.source_type='review' AND b.item_key LIKE 'condition:%'
               AND r.type='feasibility' AND r.status='decided' AND r.verdict='conditional_pass'
-              AND t.due_at<:at AND t.status!='done' ORDER BY t.id'''), {'pid': p.id, 'at': at}).mappings()
-        for row in rows:
-            due = row.due_at.astimezone(UTC).isoformat()
-            refs = [f'task:{row.id}@{row.revision}', f'review:{row.review_id}@{row.review_revision}']
-            opened.append(_event(c, p, 'LR-02', row.due_at.astimezone(TZ).date().isoformat(),
-                [FEASIBILITY_OVERDUE, str(row.id), due], refs,
-                {'kind': FEASIBILITY_OVERDUE, 'dueAt': due, 'taskTitle': row.title,
-                 'reason': '落地有条件通过的补强任务已逾期。'}, pm))
+              AND t.due_at<:at AND t.status!='done' ORDER BY t.due_at,t.id'''), {'pid': p.id, 'at': at}).mappings().all()
+
+
+def _feasibility_deadlines(c, p, at, pm):
+    opened = []
+    for row in feasibility_overdue(c, p, at):
+        due = row.due_at.astimezone(UTC).isoformat()
+        refs = [f'task:{row.id}@{row.revision}', f'review:{row.review_id}@{row.review_revision}']
+        opened.append(_event(c, p, 'LR-02', row.due_at.astimezone(TZ).date().isoformat(),
+            [FEASIBILITY_OVERDUE, str(row.id), due], refs,
+            {'kind': FEASIBILITY_OVERDUE, 'dueAt': due, 'taskTitle': row.title,
+             'reason': '落地有条件通过的补强任务已逾期。'}, pm))
     _resolve_inactive(c, p.id, 'LR-02', opened, events.c.input_snapshot['kind'].astext == FEASIBILITY_OVERDUE)
     return opened
 
 
-def _retrospective(c, p, at, sponsor):
+def _retrospective(c, p, at, sponsor, initiator):
     if p.stage not in ('closed', 'retrospective', 'archived'):
         return None
     closing = c.execute(sa.text('''SELECT s.to_revision,s.transitioned_at,d.id AS decision_id FROM project_stage_transitions s
@@ -137,7 +142,7 @@ def _retrospective(c, p, at, sponsor):
         'deadline': deadline.isoformat(), 'observedAt': at.isoformat(),
         'retrospectiveComplete': completed is not None, 'confirmedLessonPresent': lesson is not None,
         'retrospectiveCompletedAt': completed.isoformat() if completed else None,
-        'lessonConfirmedAt': lesson.confirmed_at.isoformat() if lesson else None}, sponsor,
+        'lessonConfirmedAt': lesson.confirmed_at.isoformat() if lesson else None}, sponsor, initiator,
         open_now=still_missing, recorded_at=at)
     return eid if still_missing else None
 
@@ -146,6 +151,7 @@ def _governance_events(c, p, at, health: Observation | None):
     opened: dict[str, list[UUID]] = {'LR-04': [], 'LR-06': [], 'LR-08': []}
     pm = p.pm_id if p.pm_id and active_member(c, p, p.pm_id, 'pm') else None
     sponsor = p.sponsor_id if p.sponsor_id and active_member(c, p, p.sponsor_id, 'sponsor') else None
+    initiator = p.initiator_id if active_member(c, p, p.initiator_id, 'initiator') else None
     visible_ids: list[UUID] = _feasibility_deadlines(c, p, at, pm)
     if health is not None:
         for milestone in health.milestones:
@@ -160,7 +166,7 @@ def _governance_events(c, p, at, health: Observation | None):
             refs = line['sourceRefs'] or [f'project:{p.id}@{p.revision}']
             level = 'zero' if line['budget'] == '0.00' else 'reassess' if line['reassess'] else 'red'
             eid = _event(c, p, 'LR-04', period, [kind, line['budgetRefs'], level], refs,
-                {**line, 'kind': kind, 'reason': '金额超支' if kind == 'money' else '人天超支'}, sponsor)
+                {**line, 'kind': kind, 'reason': '金额超支' if kind == 'money' else '人天超支'}, sponsor, initiator)
             opened['LR-04'].append(eid)
             if line['reassess']:
                 _task(c, p, eid, sponsor, f'LR-04 复评继续投入（{"金额" if kind == "money" else "人天"}）', at)
@@ -180,7 +186,7 @@ def _governance_events(c, p, at, health: Observation | None):
         # Resolve delay episodes after leaving the operational lifecycle.
         for row in c.execute(sa.select(db.milestones).where(db.milestones.c.project_id == p.id)).mappings():
             reconcile(c, p, row)
-    reminder = _retrospective(c, p, at, sponsor)
+    reminder = _retrospective(c, p, at, sponsor, initiator)
     if reminder:
         opened['LR-08'].append(reminder)
     for rule, eids in opened.items():

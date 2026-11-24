@@ -17,8 +17,10 @@ from .health_schema import events
 from .identity import Failure, visible
 from .projects import meta, run
 from .requirement_disputes import t as disputes
+from .weekly_portfolio import router as weekly_portfolio_router
 
 router = APIRouter(prefix='/api/v1/analytics', tags=['Analytics'])
+router.include_router(weekly_portfolio_router)
 OP = 'human_weekly_health_list'
 SIGNALS = ('yellow', 'red')
 Color = Literal['green', 'yellow', 'red']

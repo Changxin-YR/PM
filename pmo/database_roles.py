@@ -218,6 +218,8 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str, *, synthetic_sc
         conn.execute(sql.SQL('GRANT USAGE ON SEQUENCE {}.cost_baseline_history_seq_seq TO {}').format(ns, sql.Identifier(api)))
         # ON CONFLICT and RETURNING require SELECT on the referenced columns only.
         grant(conn, api, 'outbox_events', 'SELECT', 'id dedupe_key', schema=schema)
+        grant(conn, api, 'notifications', 'SELECT',
+              'project_id rule_event_id recipient_person_id delivery_status delivered_at', schema=schema)
         grant(conn, worker, 'notifications', 'SELECT', 'rule_event_id recipient_person_id', schema=schema)
 
 

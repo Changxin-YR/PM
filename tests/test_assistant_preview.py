@@ -186,6 +186,47 @@ def test_injected_command_and_missing_source_retry_then_fallback(live, team, tmp
     assert stage(initiator, project)['stage'] == 'drafting'
 
 
+def test_empty_model_selection_recovers_ledger_with_authorized_citations(live, team, tmp_path):
+    pid, _, users, _ = team
+    pm = users['pm']
+    project, _ = close_for_lr08(live, team)
+    rev = stage(pm, project)['revision']
+    with enabled_api(live, tmp_path, pid, {'answer': []}) as (server, calls), session_at(pm, server.base_url) as actor:
+        original = data(actor.get(project + '/assistant/ledger', params={'topic': 'cost'}))['answer']
+        key = headers(rev)
+        response = request(actor, project, rev, 'ledger', key=key, topic='cost')
+        evidence = data(response)
+        assert evidence['status'] == 'manual' and evidence['errorCode'] == 'MODEL_NO_SELECTION'
+        assert evidence['items'] == [{key: value for key, value in item.items() if value is not None} for item in original]
+        assert len(original) == 2 and all(item['sourceRefs'] for item in evidence['items'])
+        assert request(actor, project, rev, 'ledger', key=key, topic='cost').json() == response.json()
+    assert len(calls) == 1
+
+
+def test_assisted_lesson_draft_is_scoped_and_bound_to_saved_answers(live, team):
+    _, _, users, _ = team
+    pm, reviewer = users['pm'], users['reviewer']
+    project, _ = close_for_lr08(live, team)
+    data(execute(pm, project, data(propose(pm, project, 'retrospective'))))
+    retro = project + '/retrospective'
+    answers = data(pm.put(retro, headers=headers(data(pm.get(retro))['revision']), json={'answers': ANSWERS}))
+    assert data(pm.get(project + '/assistant/closing'))['canStartLessonDraft']
+    assert not data(reviewer.get(project + '/assistant/closing'))['canStartLessonDraft']
+    path = project + '/lessons'
+    command = {'category': 'technical', 'what': ANSWERS[0], 'rootCause': ANSWERS[1], 'advice': ANSWERS[3],
+               'sourceRetrospectiveRevision': answers['revision']}
+    code(pm.post(path, headers=headers(), json={**command, 'sourceRetrospectiveRevision': answers['revision'] + 1}),
+         409, 'VERSION_CONFLICT')
+    code(reviewer.post(path, headers=headers(), json=command), 403, 'PM_ASSIGNMENT_REQUIRED')
+    key = headers()
+    response = pm.post(path, headers=key, json=command)
+    assert data(response)['status'] == 'draft'
+    assert f"retrospective:{answers['retrospectiveId']}@{answers['revision']}" in response.json()['meta']['sourceRefs']
+    data(pm.put(retro, headers=headers(answers['revision']), json={'answers': [*ANSWERS[:3], 'Revised action after review.']}))
+    assert pm.post(path, headers=key, json=command).json() == response.json()
+    code(pm.post(path, headers=headers(), json=command), 409, 'VERSION_CONFLICT')
+
+
 @pytest.mark.parametrize('invalidate', ['charter', 'logout'])
 def test_in_flight_no_duplicate_and_discard_changed_authority_or_sources(live, team, tmp_path, invalidate):
     pid, _, users, _ = team

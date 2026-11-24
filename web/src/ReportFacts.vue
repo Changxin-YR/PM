@@ -3,6 +3,7 @@ import {ref,watch} from 'vue'
 import {CalendarDays,Check,ChevronDown,ChevronUp,GitMerge,History,Plus,RefreshCw,X} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 import ReportAnalysis from './ReportAnalysis.vue'
+import WeeklyFactReview from './WeeklyFactReview.vue'
 
 type Status='candidate'|'verified'|'disputed'|'rejected'
 type Trust='low'|'medium'|'high'
@@ -17,12 +18,13 @@ type ComparisonStatus='same'|'changed'|'current_unverified'|'no_previous_fact'|'
 type WeeklyComparison={status:ComparisonStatus;previousStart:string;previousEnd:string;
   previous?:{asOf:string;typedValue:string|number|boolean;quote:string;factRef:string;reportRef:string;evidenceRef?:string}}
 
-const props=defineProps<{reportId:string;projectId:string;revision:number;submittedAt:string;initiallyExpanded?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{reportId:string;projectId:string;revision:number;submittedAt:string;initiallyExpanded?:boolean;currentWeekly?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
 const page=ref<Page>(), expanded=ref(props.initiallyExpanded??false), reading=ref(false), working=ref(false)
 const error=ref(''), notice=ref(''), mode=ref<Mode>(), selected=ref<Fact>(), trust=ref<Trust>('medium')
 const subject=ref(''), predicate=ref(''), value=ref(''), kind=ref('text'), quote=ref(''), at=ref(''), reason=ref('')
 const evidence=ref<string[]>([]), historyFor=ref(''), log=ref<Log>(), logLoading=ref(false)
 const compareFor=ref(''),comparison=ref<WeeklyComparison>(),compareLoading=ref(false),compareError=ref('')
+const comparisonRefresh=ref(0)
 let pickedAt:{local:string;iso:string}|undefined
 let compareSeq=0
 const comparisonLabels:Record<ComparisonStatus,string>={
@@ -53,7 +55,7 @@ async function read(n=page.value?.page??1){
   clearComparison();reading.value=true
   try{
     const {data}:{data:Page}=await props.api(`reports/${props.reportId}/facts?page=${n}`)
-    if(id===seq&&scope===epoch)page.value=data
+    if(id===seq&&scope===epoch){page.value=data;++comparisonRefresh.value}
   }catch(e){if(id===seq&&scope===epoch)error.value=message(e)}
   finally{if(id===seq&&scope===epoch)reading.value=false}
 }
@@ -141,6 +143,7 @@ watch(()=>[props.reportId,props.revision],()=>{
       <p v-if="notice" role="status" class="fact-notice">{{notice}}</p>
       <ReportAnalysis v-if="page?.canReadAnalysis" :report-id="reportId" :revision="page.reportRevision" :api="api"
         :can-select="page.canPropose&&!working&&!reading&&!mode" @choose="choose"/>
+      <WeeklyFactReview v-if="currentWeekly" :report-id="reportId" :refresh-version="comparisonRefresh" :api="api" @requested="read()"/>
       <form v-if="mode" class="fact-form" :aria-label="mode==='propose'?'Fact 候选':mode==='verify'?'Fact 核验':'Fact 澄清'" @submit.prevent="submit">
         <div v-if="mode==='propose'" class="fact-inputs">
           <label>主题<input v-model="subject" required maxlength="256" :disabled="working"></label>

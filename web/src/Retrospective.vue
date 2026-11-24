@@ -2,8 +2,11 @@
 import {computed,onMounted,ref,watch} from 'vue'
 import {FileCheck2,Pencil,Plus,RefreshCw,Save,Search} from 'lucide-vue-next'
 
+type CostDiscussion={type:'money'|'effort';attribution:'estimate'|'execution'|'scope';sourceRef:string}
 type State={projectId:string;stage:string;kind:'normal'|'terminated'|null;fromStage:'closed'|'terminated'|null;
-  retrospectiveId:string|null;revision:number;answers:string[];questions:string[];completedAt:string|null;canSave:boolean}
+  retrospectiveId:string|null;revision:number;answers:string[];questions:string[];completedAt:string|null;canSave:boolean;
+  costDiscussion?:CostDiscussion[]}
+const attributionLabels={estimate:'估算',execution:'执行',scope:'范围'}
 type LessonContent={category:string;what:string;rootCause:string;advice:string}
 type Lesson=LessonContent & {lessonId:string;projectId:string;revision:number;status:'draft'|'confirmed';
   createdBy:string;createdAt:string;confirmedBy:string|null;confirmedAt:string|null;canConfirm:boolean}
@@ -13,7 +16,8 @@ type SearchPage={items:SearchHit[];page:number;pageSize:number;total:number;asOf
 type SearchCriteria={keyword:string;category:string}
 type Intent={kind:'answers';revision:number}|{kind:'draft'}|{kind:'confirm';lessonId:string;revision:number}
 
-const props=defineProps<{projectId:string;projectRevision?:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{projectId:string;projectRevision?:number;requestedDraft?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{draftOpened:[]}>()
 const fields=[{name:'category',label:'教训分类'},{name:'what',label:'发生了什么'},
   {name:'rootCause',label:'根因'},{name:'advice',label:'建议'}] as const
 const prompts={answers:{title:'填写项目复盘',submit:'保存复盘',icon:Save},draft:{title:'新增教训草稿',submit:'保存教训草稿',icon:Save},
@@ -21,6 +25,7 @@ const prompts={answers:{title:'填写项目复盘',submit:'保存复盘',icon:Sa
 const placeholders=new Set(['todo','tbd','n/a','na','none','null','unknown','待补','待填写','待定','未知','无','暂无','不适用','略'])
 const state=ref<State|null>(null),lessons=ref<LessonList|null>(null),loading=ref(false),saving=ref(false),dialog=ref(false)
 const intent=ref<Intent|null>(null),answers=ref<string[]>([]),draft=ref<LessonContent>({category:'',what:'',rootCause:'',advice:''})
+const draftSource=ref<number>()
 const notice=ref(''),error=ref(''),formError=ref('')
 const keyword=ref(''),category=ref(''),searching=ref(false),searchError=ref(''),hits=ref<SearchPage|null>(null)
 const criteria=ref<SearchCriteria|null>(null),pageSize=20
@@ -49,7 +54,7 @@ async function refresh(){
 onMounted(refresh)
 watch(()=>props.projectRevision,()=>void refresh())
 
-function begin(kind:Intent['kind'],lesson?:Lesson){
+function begin(kind:Intent['kind'],lesson?:Lesson,fromAnswers=false){
   const retro=state.value
   if(busy.value||!retro)return
   if(kind==='confirm'){
@@ -58,10 +63,21 @@ function begin(kind:Intent['kind'],lesson?:Lesson){
   }else{
     if(retro.canSave!==true)return
     if(kind==='answers'){intent.value={kind,revision:retro.revision};answers.value=retro.questions.map((_,i)=>retro.answers[i]??'')}
-    else{intent.value={kind};draft.value={category:'',what:'',rootCause:'',advice:''}}
+    else{
+      if(fromAnswers&&!retro.completedAt)return
+      intent.value={kind}
+      draftSource.value=fromAnswers?retro.revision:undefined
+      draft.value={category:'',what:fromAnswers?(retro.answers[0]??''):'',
+        rootCause:fromAnswers?(retro.answers[1]??''):'',advice:fromAnswers?(retro.answers[3]??''):''}
+    }
   }
   formError.value='';notice.value='';attempt=undefined;dialog.value=true
 }
+watch([()=>props.requestedDraft,state,busy],([requested,retro,wait])=>{
+  if(!requested||!retro||retro.projectId!==props.projectId||wait)return
+  if(!dialog.value&&retro.canSave&&retro.completedAt)begin('draft',undefined,true)
+  emit('draftOpened')
+},{immediate:true})
 const command=computed(()=>{
   const action=intent.value,retro=state.value
   if(!action||!retro)return null
@@ -78,7 +94,8 @@ const command=computed(()=>{
   }
   const {category,what,rootCause,advice}=draft.value
   if(![category,what,rootCause,advice].every(plain)||Array.from(category.trim()).length>20)return null
-  return {path:`${base()}/lessons`,method:'POST',payload:{category:category.trim(),what:what.trim(),rootCause:rootCause.trim(),advice:advice.trim()}}
+  return {path:`${base()}/lessons`,method:'POST',payload:{category:category.trim(),what:what.trim(),rootCause:rootCause.trim(),advice:advice.trim(),
+    ...(draftSource.value===undefined?{}:{sourceRetrospectiveRevision:draftSource.value})}}
 })
 
 async function save(){
@@ -138,11 +155,22 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
         <div v-for="(question,index) in questions" :key="question"><dt>{{question}}</dt><dd>{{state.answers[index]||'—'}}</dd></div>
       </dl>
       <p v-else class="meta">{{state.kind?'复盘答复尚未登记。':'暂无复盘记录。'}}</p>
+      <section v-if="state.costDiscussion?.length" class="group" aria-label="结项超支归因">
+        <h3>结项超支归因</h3>
+        <p class="meta">来自结项审批绑定的正式对账回执，供复盘对照。</p>
+        <dl class="answers">
+          <div v-for="item in state.costDiscussion" :key="item.type">
+            <dt>{{item.type==='money'?'金额':'人天'}}</dt>
+            <dd>{{attributionLabels[item.attribution]}} <code>{{item.sourceRef}}</code></dd>
+          </div>
+        </dl>
+      </section>
     </template>
 
     <section class="group" aria-label="项目教训">
       <div class="section-toolbar"><div class="section-heading"><h3>项目教训</h3><span v-if="lessons" class="meta">{{lessons.total}} 条</span></div>
         <el-button v-if="state?.canSave" :disabled="busy" @click="begin('draft')"><Plus :size="15"/>新增教训草稿</el-button>
+        <el-button v-if="state?.canSave&&state.completedAt" :disabled="busy" @click="begin('draft',undefined,true)">从复盘答复起草</el-button>
       </div>
       <p v-if="lessons&&!lessons.items.length" class="meta">暂无项目教训。</p>
       <ul v-if="lessons?.items.length" class="entries">
@@ -189,6 +217,7 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
           <label v-for="(question,index) in questions" :key="question">{{question}}<textarea v-model="answers[index]" rows="2" required/></label>
         </template>
         <template v-else-if="intent.kind==='draft'">
+          <p v-if="draftSource" class="meta">已引用复盘版本 {{draftSource}}，保存前请核对和编辑。</p>
           <label v-for="field in fields" :key="field.name">{{field.label}}
             <input v-if="field.name==='category'" v-model="draft.category" maxlength="20" required/>
             <textarea v-else v-model="draft[field.name]" rows="2" required/>
@@ -219,6 +248,7 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
 .notice{color:var(--el-color-primary)}
 .answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.7rem;margin:.7rem 0}
 .answers dt{font-weight:600}.answers dd{margin:.25rem 0 0;white-space:pre-wrap}
+.answers code{overflow-wrap:anywhere}
 .entries{list-style:none;margin:.45rem 0;padding:0}
 .entries li{border-top:1px solid var(--el-border-color-lighter);padding:.65rem 0}
 .detail-lines{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.3rem .65rem;margin:.45rem 0}

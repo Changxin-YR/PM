@@ -2,9 +2,11 @@
 import {ref,watch} from 'vue'
 import {RefreshCw} from 'lucide-vue-next'
 import WeeklyHealthOverview from './WeeklyHealthOverview.vue'
+import WeeklyPortfolioReports from './WeeklyPortfolioReports.vue'
 type Alert={alertId:string;projectCode:string;ruleId:string;severity:string;status:string;asOf:string;milestoneName?:string;plannedDate?:string;forecastDate?:string;reason?:string;sourceRefs:string[];notifiedAt?:string;businessPeriod?:string;dueAt?:string;taskTitle?:string}
 type AlertPage={items:Alert[];page:number;pageSize:number;total:number;asOf:string}
 const props=defineProps<{active?:boolean;api:(p:string)=>Promise<any>}>()
+const emit=defineEmits<{openReport:[projectId:string,reportId:string]}>()
 const busy=ref(false),error=ref(''),items=ref<Alert[]>([]),page=ref(1),total=ref(0)
 const month=ref(''),rule=ref(''),view=ref('rules'),asOf=ref('')
 const formatTime=(value:string)=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})
@@ -46,7 +48,9 @@ watch([()=>props.active,view],([active,tab])=>{if(active&&tab==='rules')void loa
   <el-table-column label="状态" width="90"><template #default="{row}">{{row.status==='open'?'未解决':row.status==='resolved'?'已解决':row.status}}</template></el-table-column>
 </el-table>
 <el-pagination v-if="total>20" :current-page="page" :total="total" :page-size="20" :disabled="busy" layout="prev,pager,next" @current-change="load"/>
-</el-tab-pane><el-tab-pane name="weekly" label="每周三线" lazy><WeeklyHealthOverview v-if="active&&view==='weekly'" :api="api"/></el-tab-pane></el-tabs>
+</el-tab-pane><el-tab-pane name="weekly" label="每周三线" lazy><WeeklyHealthOverview v-if="active&&view==='weekly'" :api="api"/></el-tab-pane>
+<el-tab-pane name="portfolio" label="组合周报" lazy><WeeklyPortfolioReports :active="active&&view==='portfolio'" :api="api"
+  @open-report="(projectId,reportId)=>emit('openReport',projectId,reportId)"/></el-tab-pane></el-tabs>
 </section>
 </template>
 <style scoped>

@@ -58,3 +58,17 @@ def test_forecast_slip_remains_until_independent_plan_change_applies(live, team)
     assert (alert['alertId'], alert['status']) == (closed['alertId'], 'resolved')
     persisted = next(m for m in milestones.structuredContent['data']['items'] if m['milestoneId'] == target['milestoneId'])
     assert persisted['plannedDate'] == persisted['forecastDate'] == forecast
+
+    ordinary = next(row for row in data(pm.get(project + '/milestones'))['items'] if row['milestoneId'] != target['milestoneId'])
+    with live[0].begin() as c:
+        c.execute(sa.text('UPDATE milestones SET is_key=false WHERE id=:id'), {'id': ordinary['milestoneId']})
+    green = sample(pm, project)
+    slipped = (first_day + timedelta(days=12)).isoformat()
+    data(pm.patch(f"milestones/{ordinary['milestoneId']}/forecast", headers=headers(ordinary['revision']),
+        json={'newDate': slipped, 'reason': 'Local documentation is forecast twelve days late.'}))
+    non_key, = [row for row in events(pm, project, 'LR-03') if row['status'] == 'open']
+    assert non_key['forecastDate'] == slipped
+    assert any(ref.startswith(f"milestone:{ordinary['milestoneId']}@") for ref in non_key['sourceRefs'])
+    unchanged = sample(pm, project)
+    assert non_key['alertId'] in unchanged['eventIds']
+    assert (unchanged['timeLine'], unchanged['health']) == (green['timeLine'], green['health'])
