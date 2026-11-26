@@ -1,5 +1,9 @@
 # M3 工具与目标 Host：部分实测，未整体验收
 
+## 2026-11-26 R5 受控 REST／MCP 复验
+
+报告与 Fact DTO 增加可选人天类别字段。评分锚点检查、重估裁决和正式报告发送保持人工权限。当前运行目录、SDK stdio 联调及实际客户端结果见 [R5 验收](../acceptance/r5/verification.md)。下方保留历史 Desktop 回执。
+
 ## 2026-11-23 Codex Desktop 合成试点实测
 
 13:05（北京时间）在实际 Desktop 聊天调用本机 `pmo_synthetic_codex`，发现 40 个工具。受限合成委托只允许项目 `SIM-NEW-001` 的列表、详情及草稿编辑。列表只返回该项目，详情为 `drafting`。读取另一个合成项目返回 `RESOURCE_NOT_FOUND`，调用委托未授权的里程碑读取返回 `FORBIDDEN`。

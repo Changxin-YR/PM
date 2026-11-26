@@ -1,5 +1,11 @@
 # 进度与续接索引
 
+## 2026-11-26 R5 联合整改（北京时间）
+
+- R5 从当前恢复版 `fe7c50b` 续作。隔离预览 `127.0.0.1:18788`，API `18789`，PostgreSQL `16.14` / Alembic `0043`，独立合成库 `55454/pmo_pilot`。两组合成项目和私密登录入口见 [一页手册](../acceptance/r5/workbench.md)。
+- 已补周报分类差额和 Fact 来源、正式周报隔离投递、LR-04 独立复评、评分锚点检查、自然人快通候选和结项校准。界面沿蓝白工作台保留各角色操作。代码、命令、截图和阻断项由 [R5 验收](../acceptance/r5/verification.md) 汇总。
+- [102 条追踪](../acceptance/r5/lite-traceability.csv)、[20 项差异](../acceptance/r5/differences.md)、[功能保留矩阵](../acceptance/r5/feature-parity.csv)。
+
 ## 2026-11-26 原方案逐项核对（北京时间）
 
 - 在 `codex/lite-implementation-audit` 从 `f1f1c82` 续作。用户给的 HTML 与仓库原件 SHA-256 一致。对照表按十章列出 102 条原始要求、差异、优化说明、剩余依赖和验证入口。[原方案与工作台比对](../acceptance/pmo-lite-comparison.html)

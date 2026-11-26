@@ -1,5 +1,9 @@
 # M4 四模式、证据与恢复：未整体验收
 
+## 2026-11-26 R5 候选验收
+
+R5 在独立工作台验证四模式、报告提取及独立 Fact 核验、正式周报 A4、规则与迁移恢复。精确版本、命令、运行状态和外部解除条件见 [R5 验收](../acceptance/r5/verification.md)，页面材料见 [功能保留矩阵](../acceptance/r5/feature-parity.csv)。
+
 ## 2026-11-24 收尾开发与候选证据
 
 本轮用 `2f4ef39` 作为开发起点。旧 `5f54c26` 的 365/28 与 `0037` 保留为历史。`2f4ef39` 起点远端后端 404 项通过。本机 30 项 Edge 取得原始日志和 JUnit，历史测试工作区与当前 HEAD 的完整绑定仍需同候选复验确认。合成工程、真实模型、真实试点和目标放行分别记在[证据索引](../acceptance/release-evidence-manifest.md)。[起点 CI](https://github.com/Changxin-YR/PM/actions/runs/45361736427)
