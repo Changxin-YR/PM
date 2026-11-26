@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue'
 import {Pencil,Plus,RefreshCw,Save} from 'lucide-vue-next'
+import CostReassessment,{type Reassessment} from './CostReassessment.vue'
 
 const sourceLabels={review:'评审',rule_event:'规则事件',remediation:'风险整改'}
 const displaySources={...sourceLabels,fact_clarification:'Fact 澄清',report_analysis:'报告人工复核'}
@@ -11,7 +12,7 @@ const reviewLabels:Record<string,string>={charter:'立项评审',feasibility:'�
 type Source=keyof typeof sourceLabels
 type Status=keyof typeof statusLabels
 type Task={taskId:string;projectId:string;title:string;status:Status;revision:number;sourceType:keyof typeof displaySources;sourceId:string;
-  assigneeId?:string;dueAt?:string;completedAt?:string;canUpdate:boolean;canRespond?:boolean;responseEvidenceRequired?:boolean;
+  assigneeId?:string;dueAt?:string;completedAt?:string;canUpdate:boolean;canRespond?:boolean;responseEvidenceRequired?:boolean;reassessment?:Reassessment;
   writtenResponse?:{responseText:string;evidenceRefs:string[];submittedAt:string;submittedBy:string;revision:number}}
 type Page={items:Task[];page:number;pageSize:number;total:number;canCreate:boolean;projectRevision:number}
 type Member={personId:string;name:string}
@@ -23,6 +24,8 @@ const path=computed(()=>
   'projects/'+props.projectId+'/tasks')
 const pageSize=20,rows=ref<Task[]>([]),page=ref(1),total=ref(0),canCreate=ref(false),projectRevision=ref(0)
 const loading=ref(false),busy=ref(false),error=ref(''),formError=ref(''),notice=ref('')
+const reassessmentId=ref<string|null>(null)
+const selectedReassessment=computed(()=>rows.value.find(row=>row.taskId===reassessmentId.value&&row.reassessment))
 const mode=ref<'create'|'update'|'respond'|null>(null),editing=ref<Task|null>(null),createRevision=ref(0)
 const title=ref(''),sourceType=ref<Source>('review'),sourceId=ref(''),assigneeId=ref(''),due=ref(''),status=ref<Status>('todo')
 const responseText=ref(''),responseRefs=ref('')
@@ -135,7 +138,7 @@ async function save(){
 }
 
 watch(()=>[props.projectId,props.focusTaskId],()=>{
-  closeForm();busy.value=false;canCreate.value=false;notice.value='';rows.value=[];members.value=[];total.value=0
+  closeForm();reassessmentId.value=null;busy.value=false;canCreate.value=false;notice.value='';rows.value=[];members.value=[];total.value=0
   void load(1);void loadMembers()
 },{immediate:true})
 </script>
@@ -195,6 +198,14 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
         <el-button native-type="submit" type="primary" :loading="busy"><Save :size="15"/>{{mode==='respond'?'提交书面回应':'保存任务'}}</el-button>
       </div>
     </form>
+    <section v-if="selectedReassessment?.reassessment" class="reassessment-panel" aria-label="超支重估详情">
+      <div class="toolbar reassessment-toolbar">
+        <h3>{{selectedReassessment.title}}</h3>
+        <el-button text @click="reassessmentId=null">收起重估</el-button>
+      </div>
+      <CostReassessment :key="selectedReassessment.taskId" :task-id="selectedReassessment.taskId" :revision="selectedReassessment.revision"
+        :item="selectedReassessment.reassessment" :api="api" @saved="load()"/>
+    </section>
     <el-table :data="rows" row-key="taskId" v-loading="loading" :empty-text="error?'任务未读取':focusTaskId?'此任务已不可见':'暂无补强任务'">
       <el-table-column label="任务" min-width="170">
         <template #default="{row}">
@@ -225,6 +236,8 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
       <el-table-column label="操作" min-width="120">
         <template #default="{row}">
           <el-button v-if="row.canRespond" text :disabled="!!mode||busy||loading" @click="openResponse(row)">{{row.writtenResponse?'修改回应':'书面回应'}}</el-button>
+          <el-button v-if="row.reassessment" text :aria-expanded="reassessmentId===row.taskId" :disabled="!!mode||busy||loading"
+            @click="reassessmentId=row.taskId">查看重估</el-button>
           <el-button v-if="row.canUpdate" text title="编辑任务" aria-label="编辑任务" :disabled="!!mode||busy||loading" @click="openForm(row)"><Pencil :size="15"/></el-button>
         </template>
       </el-table-column>
@@ -246,6 +259,8 @@ fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;mar
 .wide{grid-column:1/-1}
 .task-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .task-actions button{margin:0}
+.reassessment-panel{padding:12px 16px;margin-bottom:12px;border:1px solid var(--pmo-line);border-radius:7px}
+.reassessment-toolbar{justify-content:space-between;padding:0;margin:0}
 .task-title{overflow-wrap:anywhere}
 small{display:block;color:var(--el-text-color-secondary);line-height:1.4}
 @media (max-width:520px){fieldset{grid-template-columns:minmax(0,1fr)}}

@@ -27,14 +27,17 @@ from pmo.model_gateway import PROTOCOLS, base_endpoint, endpoint
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'PMO_PILOT_RUNTIME'
 NATIVE = os.getenv(PROFILE) == 'native'
-HOME = ROOT / '.local' / ('pmo-synthetic-pilot-native' if NATIVE else 'pmo-synthetic-pilot')
+R5_PREVIEW = NATIVE and os.getenv('PMO_PILOT_INSTANCE') == 'r5-preview'
+HOME = ROOT / '.local' / ('pmo-r5-preview' if R5_PREVIEW else
+                          'pmo-synthetic-pilot-native' if NATIVE else 'pmo-synthetic-pilot')
 COMPOSE = ROOT / 'deploy' / 'pilot-db.compose.yaml'
 PYTHON = ROOT / '.venv' / 'Scripts' / 'python.exe'
-DB_PORT, WEB_PORT, API_PORT = (55443, 18778, 18779) if NATIVE else (55441, 18775, 18776)
+DB_PORT, WEB_PORT, API_PORT = ((55454, 18788, 18789) if R5_PREVIEW else
+                              (55443, 18778, 18779) if NATIVE else (55441, 18775, 18776))
 API = f'http://127.0.0.1:{API_PORT}/api/v1/'
 WEB = f'http://127.0.0.1:{WEB_PORT}'
 DB_NAME = 'pmo_pilot'
-UPGRADABLE_HEADS = {('0036',), ('0037',), ('0038',), ('0039',), ('0040',)}
+UPGRADABLE_HEADS = {('0036',), ('0037',), ('0038',), ('0039',), ('0040',), ('0041',), ('0042',)}
 STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
@@ -548,7 +551,8 @@ def serve(active):
                                  '127.0.0.1', '--port', str(WEB_PORT), '--strictPort'], ROOT / 'web',
                                 base | {'PMO_API_PORT': str(API_PORT)}),
                    'outbox': start([str(PYTHON), '-m', 'pmo.outbox', '--watch'], ROOT,
-                                   base | {'DATABASE_URL': database(cfg, 'outbox')}),
+                                   base | {'DATABASE_URL': database(cfg, 'outbox'),
+                                           'PMO_SYNTHETIC_POLICY_SCHEMA': schema(cfg)}),
                    'scheduler': start([str(PYTHON), '-m', 'pmo.rule_scan', '--watch'], ROOT,
                                       separate | {'PMO_EVIDENCE_DIR': str(evidence)}),
                    'supervisor': os.getpid()}
@@ -590,7 +594,8 @@ def launch(active=False, *, permit='', closing_code=None):
         raise RuntimeError('Run npm.cmd --prefix web run build before starting the pilot.')
     with local_file('supervisor.log').open('a', encoding='utf-8') as log:
         child = subprocess.Popen([str(PYTHON), '-m', 'scripts.pilot_local', 'serve-models' if active else 'serve'], cwd=ROOT,
-                                env=env_base() | ({PROFILE: 'native'} if NATIVE else {}) | (
+                                env=env_base() | ({PROFILE: 'native'} if NATIVE else {}) |
+                                    ({'PMO_PILOT_INSTANCE': 'r5-preview'} if R5_PREVIEW else {}) | (
                                     {'PMO_PILOT_MODEL_PERMIT': permit, 'PMO_PILOT_CLOSING_CODE': closing_code or ''} if active else {}),
                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)

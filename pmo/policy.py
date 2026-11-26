@@ -15,6 +15,8 @@ from .contracts import RULE_VERSION
 from .identity import Failure
 
 RULE_PACKAGE = 'pmo-closure-policy-v1'
+FAST_CHARTER = 'review.charter-fast'
+FAST_CHARTER_VERSION = 'pmo-lite-charter-fast-r5-v1'
 SYNTHETIC_SCHEMA = re.compile(r'pmo_test_[0-9a-f]{32}')
 ENVIRONMENT = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{1,63}')
 
@@ -29,10 +31,13 @@ TERMS = {
     'DEC-19': 'An authenticated organization member may prepare a draft; Sponsor and PM appointments are independently authorized and accepted before review. Fast track uses initiator and Sponsor confirmation and independent reviewer decision.',
     'DEC-20': 'Keep rubric anchors at one, three and five and use the versioned intermediate anchors. Retain the feasibility two-point hard gate and written strengthening responses. Comparable dimensional variance of at least 1.00 requires retrospective explanation and improvement. Archive may retain pending observations with a named reviewer, deadline and evidence plan. Append later independent results without altering the archive.',
     'DEC-26': 'No Sponsor override of an overrun. Independent approved budget change preserves original comparisons, validates both units separately, and records category budget and forecast separately. Posting actual costs grants no authorization to continue investment.',
+    'RP-01': 'Classified weekly effort requires exact declared totals, explicit period and source, independent verification, and reconciliation against verified category net amounts. Ambiguous legacy amounts block classified posting until clarified.',
+    'RP-02': 'A current PM-approved weekly published version and its printable attachment may be submitted only to specifically authorized recipients with current scope, verified content identity, and distinct channel and actual receipt evidence. Unknown channel outcomes require verification before retry.',
 }
 
 ACTIONS: dict[str, tuple[str, ...]] = {
     'review.charter': ('DEC-04', 'DEC-19', 'DEC-20'),
+    FAST_CHARTER: ('DEC-04', 'DEC-19', 'DEC-20'),
     'review.feasibility': ('DEC-04', 'DEC-19', 'DEC-20'),
     'review.closing': ('DEC-04', 'DEC-07', 'DEC-16', 'DEC-26'),
     'review.calibrate': ('DEC-20',),
@@ -45,6 +50,9 @@ ACTIONS: dict[str, tuple[str, ...]] = {
     'change.charter': ('DEC-19',),
     'cost.reconciliation': ('DEC-16', 'DEC-26'),
     'cost.category': ('DEC-26',),
+    'cost.reassess': ('DEC-26',),
+    'report.effort': ('RP-01',),
+    'report.delivery': ('RP-02',),
     'transition.hold': ('DEC-19',),
     'transition.resume': ('DEC-19', 'DEC-26'),
     'transition.terminate': ('DEC-19',),
@@ -91,6 +99,17 @@ def payload(code: str, actions: list[str]) -> dict:
     elif code == 'DEC-26':
         from .cost_categories import CATEGORY_KIND
         policy['parameters'] = {'categories': CATEGORY_KIND, 'independentBudgetApproval': True}
+        if 'cost.reassess' in actions:
+            policy['reassessment'] = {'thresholdExclusivePercent': 20, 'reviewer': 'current_independent_sponsor',
+                'options': ['continue', 'adjust', 'hold', 'terminate'], 'changesBudgetOrStage': False}
+    if FAST_CHARTER in actions:
+        policy['charterFastTrack'] = {
+            'version': FAST_CHARTER_VERSION,
+            'terms': ('After the complete independent roster reaches the exact 4.20 threshold without a veto, '
+                      'the active initiator confirms the frozen review. The human decision, review filing and '
+                      'transition to designing are recorded together. Sponsor and PM appointments remain required. '
+                      'The extra Sponsor confirmation and reviewer verdict do not apply to this scope.'),
+        }
     return policy
 
 
@@ -144,7 +163,10 @@ def lock(c, org_id, *, exclusive=False):
 def selection(c, p, action: str) -> list[dict] | None:
     """Return an immutable policy basis, or None when the action lacks approval."""
     codes = ACTIONS[action]
-    if synthetic_confirmation(c):
+    if synthetic_confirmation(c) and (action != FAST_CHARTER
+            or os.getenv('PMO_R5_FAST_TRACK_SCHEMA') == os.getenv('PMO_SYNTHETIC_POLICY_SCHEMA')):
+        if action == FAST_CHARTER:
+            return [{'synthetic': FAST_CHARTER_VERSION, 'ruleVersion': RULE_VERSION}]
         return [{'synthetic': RULE_PACKAGE, 'ruleVersion': RULE_VERSION}]
     target = environment()
     if target is None:
@@ -204,14 +226,17 @@ def freeze(c, p, action: str, subject_id) -> None:
     _bind(c, p, action, subject_id, 'pending', selection(c, p, action) or [])
 
 
-def matches(c, p, action: str, subject_id) -> bool:
-    basis = selection(c, p, action)
-    if basis and 'synthetic' in basis[0]:
-        return True  # Retain compatibility with snapshots made in old isolated fixtures.
+def frozen_basis(c, p, action: str, subject_id) -> list[dict]:
     b = bindings.c
-    recorded = c.scalar(sa.select(b.basis).where(b.subject_id == subject_id, b.project_id == p.id,
-                                                  b.action == action, b.kind == 'pending'))
-    return (basis or []) == (recorded or [])
+    return c.scalar(sa.select(b.basis).where(b.subject_id == subject_id, b.project_id == p.id,
+                                             b.action == action, b.kind == 'pending')) or []
+
+
+def matches(c, p, action: str, subject_id, *, exact=False) -> bool:
+    basis = selection(c, p, action)
+    if basis and 'synthetic' in basis[0] and not exact:
+        return True  # Retain compatibility with snapshots made in old isolated fixtures.
+    return (basis or []) == frozen_basis(c, p, action, subject_id)
 
 
 def receipt_refs(c, request_id) -> list[str]:

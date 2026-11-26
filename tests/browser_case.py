@@ -703,3 +703,23 @@ def test_browser_weekly_portfolio_and_manual_fact_handoff(live, team, tmp_path):
             'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'reviewer', 'outsider', 'initiator')),
             'PMO_TEST_SCREENSHOTS': str(tmp_path),
         })
+
+
+def test_browser_成本超支重估与独立继续投入裁决(live, team, tmp_path):
+    from test_cost_reassessment import 任务, 设置预测, 材料
+    from test_health import prepare, sample
+
+    _, _, users, _ = team
+    pm = users['pm']
+    project, _ = prepare(live, team)
+    设置预测(pm, project, '121.00')
+    sample(pm, project)
+    material = 材料(pm, users['reviewer'], project)
+    screenshots = os.getenv('PMO_R5_SCREENSHOTS', str(tmp_path))
+    Path(screenshots).mkdir(parents=True, exist_ok=True)
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'cost-reassessment', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'sponsor')),
+            'PMO_R5_SCREENSHOTS': screenshots, 'PMO_TEST_REASSESSMENT': json.dumps({
+                'projectName': stage(pm, project)['name'], 'evidenceRef': material['evidenceRefs'][0]})})
+    assert 任务(pm, project)['reassessment']['history'][0]['decision']['option'] == 'continue'
+    assert sample(pm, project)['costLine'] == 'red'

@@ -11,6 +11,7 @@ from sqlalchemy.engine import Connection, RowMapping
 
 from . import schema_v1 as db
 from . import review_responses as written
+from . import cost_reassessment as reassess
 from .access import Auth, Key, Revision
 from .contracts import ProjectView, Result, Strict
 from .identity import Actor, Failure, explicit_grants, visible
@@ -96,6 +97,7 @@ class Task(Strict):
     canRespond: bool | None = None
     responseEvidenceRequired: bool | None = None
     writtenResponse: written.Response | None = None
+    reassessment: reassess.View | None = None
 
 
 class TaskPage(Strict):
@@ -224,6 +226,9 @@ def listing(projectId: UUID, authorization: Auth, page: int = Query(1, ge=1),
         if human:
             for row, item in zip(rows, items, strict=True):
                 _response_state(c, p, row, item, pm=pm)
+                if (event := reassess.task_event(c, row)) is not None:
+                    item.canUpdate = False
+                    item.reassessment = reassess.view(c, a, p, row, event, pm=pm)
         result = TaskPage(items=items, page=page, pageSize=pageSize, total=total,
                           canCreate=writable and pm if human else None, projectRevision=p.revision if human else None)
         return Result[TaskPage](data=result, meta=meta(LIST, [f'task:{i.taskId}@{i.revision}' for i in items], project_id=p.id))
@@ -249,7 +254,8 @@ def personal_queue(authorization: Auth, page: int = Query(1, ge=1),
             selected.c.due_at.asc().nulls_last(), selected.c.created_at.desc(), selected.c.id)).mappings().all()
         items = [QueueEntry(project=ProjectView(projectId=r.project_id, code=r.code, name=r.name, stage=r.stage,
                     orgId=r.org_id, revision=r.project_revision, createdAt=r.project_created_at),
-                    task=_task(r, can_update=r.source_type not in SYSTEM_SOURCES)) for r in rows if r.id is not None]
+                    task=_task(r, can_update=r.source_type not in SYSTEM_SOURCES and reassess.task_event(c, r) is None))
+                 for r in rows if r.id is not None]
         info = meta(QUEUE, [f'task:{item.task.taskId}@{item.task.revision}' for item in items])
         info.asOf = rows[0].read_at
         return Result[QueuePage](data=QueuePage(items=items, page=page, pageSize=pageSize, total=rows[0].total), meta=info)
@@ -269,7 +275,8 @@ def _prior(c, a, p, op, key, sig):
         raise
 
 
-def _finish(c, a, p, op, rid, key, sig, row, *, before=None, bound=None, response_row=None) -> Result[Task]:
+def _finish(c, a, p, op, rid, key, sig, row, *, before=None, bound=None, response_row=None,
+            reassessment=None, decision_id=None) -> Result[Task]:
     item = _task(row, can_update=True if a.kind == 'human' else None)
     refs = [f'task:{item.taskId}@{item.revision}']
     if response_row is not None:
@@ -277,10 +284,17 @@ def _finish(c, a, p, op, rid, key, sig, row, *, before=None, bound=None, respons
         item.responseEvidenceRequired = bool(bound.evidence_required)
         item.writtenResponse = written.view(response_row, bound.review_id, bound.item_key)
         refs.extend([written.source_ref(response_row), *item.writtenResponse.evidenceRefs])
+    if reassessment is not None:
+        item.canUpdate = False
+        item.reassessment = reassessment
+        refs.append(f'rule-event:{reassessment.eventId}')
+        if decision_id is not None:
+            refs.append(f'decision:{decision_id}')
     response = Result[Task](data=item, meta=meta(op, refs))
     body = response.model_dump(mode='json', exclude_none=True)
-    record_receipt(c, a, key, op, rid, row.id, p.id, sig, body, fingerprint(body), before)
-    event = {CREATE: 'task.created', RESPOND: 'task.response_submitted'}.get(op, 'task.updated')
+    record_receipt(c, a, key, op, rid, row.id, p.id, sig, body, fingerprint(body), before, decision_id=decision_id)
+    event = {CREATE: 'task.created', RESPOND: 'task.response_submitted', reassess.SUBMIT: 'cost.reassessment_submitted',
+             reassess.DECIDE: 'cost.reassessment_decided'}.get(op, 'task.updated')
     c.execute(db.outbox_events.insert().values(dedupe_key=rid, event_type=event,
         status='pending', payload={'projectId': str(p.id), 'taskId': str(row.id), 'revision': row.revision, 'status': item.status}))
     return response
@@ -307,6 +321,10 @@ def create(projectId: UUID, command: Create, authorization: Auth, key: Key, expe
         source = SOURCES[command.sourceType]
         if c.scalar(sa.select(source.c.id).where(source.c.id == command.sourceId, source.c.project_id == p.id)) is None:
             raise Failure(422, 'INVALID_TASK_SOURCE', project_id=p.id)
+        if command.sourceType == 'rule_event' and c.scalar(sa.select(reassess.events.c.id).where(
+                reassess.events.c.id == command.sourceId, reassess.events.c.rule_id == 'LR-04',
+                reassess.events.c.input_snapshot['reassess'].astext == 'true')) is not None:
+            raise Failure(422, 'COST_REASSESSMENT_CONTROLLED', project_id=p.id)
         if command.assigneeId is not None and not _roles(c, p, command.assigneeId):
             raise Failure(422, 'INVALID_TASK_ASSIGNEE', project_id=p.id)
         row = c.execute(t.insert().values(project_id=p.id, title=command.title, created_by=a.person, status='todo',
@@ -332,6 +350,8 @@ def update(taskId: UUID, command: Update, authorization: Auth, key: Key, expecte
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
         if row.source_type in SYSTEM_SOURCES:
             raise Failure(422, 'TASK_SOURCE_CONTROLLED', project_id=p.id)
+        if reassess.task_event(c, row) is not None:
+            raise Failure(422, 'COST_REASSESSMENT_CONTROLLED', project_id=p.id)
         old = _prior(c, a, p, UPDATE, key, sig)
         if old is not None:
             return old
@@ -394,3 +414,55 @@ def respond(taskId: UUID, command: written.Command, authorization: Auth, key: Ke
         return _finish(c, a, p, RESPOND, rid, key, signature, saved, before=before, bound=bound, response_row=submitted)
 
     return run(authorization, RESPOND, write)
+
+
+def _reassessment(task_id, command, authorization, key, expected, op):
+    revision = int(expected)
+    sig = fingerprint([str(task_id), revision, command.model_dump(mode='json', exclude_none=True)])
+
+    def write(c, a, rid):
+        p = _project(c, a, task_id=task_id, write=True)
+        row = c.execute(sa.select(t).where(t.c.id == task_id, t.c.project_id == p.id)
+                        .with_for_update()).mappings().one()
+        event = reassess.task_event(c, row)
+        if event is None:
+            raise Failure(404, 'RESOURCE_NOT_FOUND')
+        records = reassess.latest_records(c, row)
+        latest = records[0] if records else None
+        submission = next((item for item in records if item.decision_id is None), None)
+        pm = _pm(p, a, _roles(c, p, a.person))
+        permitted = pm if op == reassess.SUBMIT else reassess.can_decide(c, a, p, submission)
+        if a.kind != 'human' or not permitted:
+            raise Failure(403, 'FORBIDDEN', project_id=p.id)
+        if op == reassess.DECIDE:
+            reassess.policy.guard(c, p, reassess.ACTION)
+        old = _prior(c, a, p, op, key, sig)
+        if old is not None:
+            if op == reassess.DECIDE:
+                previous = old.data.reassessment
+                previous_id = previous.history[0].decisionId if previous and previous.history else None
+                receipt = next((item for item in records if item.decision_id and item.decision_id == previous_id), None)
+                if receipt is None or not reassess.policy.receipt_matches(c, p, reassess.ACTION, receipt.request_id):
+                    raise Failure(409, 'COST_REASSESSMENT_STALE', project_id=p.id)
+            return old
+        _open_project(p)
+        if row.revision != revision:
+            raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
+        saved, decision = reassess.save(c, a, p, row, event, command, latest, rid)
+        result = reassess.view(c, a, p, saved, event, pm=pm)
+        return _finish(c, a, p, op, rid, key, sig, saved, reassessment=result, decision_id=decision)
+    return run(authorization, op, write)
+
+
+@router.post('/tasks/{taskId}/cost-reassessment', operation_id=reassess.SUBMIT, response_model_exclude_none=True,
+             openapi_extra={'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True})
+def submit_reassessment(taskId: UUID, command: reassess.Submit, authorization: Auth, key: Key,
+                        expected: Revision) -> Result[Task]:
+    return _reassessment(taskId, command, authorization, key, expected, reassess.SUBMIT)
+
+
+@router.post('/tasks/{taskId}/cost-reassessment/decision', operation_id=reassess.DECIDE,
+             response_model_exclude_none=True, openapi_extra={'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True})
+def decide_reassessment(taskId: UUID, command: reassess.Decide, authorization: Auth, key: Key,
+                        expected: Revision) -> Result[Task]:
+    return _reassessment(taskId, command, authorization, key, expected, reassess.DECIDE)

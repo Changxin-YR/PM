@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from . import schema_v1 as db
 from .contracts import RULE_VERSION
+from .cost_reassessment import decision_basis
 from .db import engine
 from .health_calculation import ACTIVE, Observation, observe
 from .health_schema import FEASIBILITY_OVERDUE, events, scan_state
@@ -51,14 +52,19 @@ def _event(c, p, rule, period, condition, refs, context, *recipients, open_now=T
     return eid
 
 
-def _task(c, p, eid, owner, title, at):
+def _task(c, p, eid, owner, title, at, *, resume=False):
     if owner is None:
         return
     t = db.tasks
-    if not c.scalar(sa.select(t.c.id).where(t.c.project_id == p.id, t.c.source_type == 'rule_event',
-                                           t.c.source_id == eid, t.c.title == title).limit(1)):
+    current = c.execute(sa.select(t.c.id, t.c.status).where(t.c.project_id == p.id,
+        t.c.source_type == 'rule_event', t.c.source_id == eid, t.c.title == title)
+        .order_by(t.c.created_at, t.c.id).limit(1)).one_or_none()
+    if current is None:
         c.execute(t.insert().values(project_id=p.id, source_type='rule_event', source_id=eid, title=title,
             assignee_id=owner, created_by=p.created_by, due_at=at + timedelta(days=7), status='todo'))
+    elif resume and current.status == 'cancelled':
+        c.execute(t.update().where(t.c.id == current.id).values(status='todo', due_at=at + timedelta(days=7),
+            revision=t.c.revision + 1, updated_at=sa.func.clock_timestamp()))
 
 
 def _resolve_inactive(c, pid, rule, opened, *criteria):
@@ -165,11 +171,21 @@ def _governance_events(c, p, at, health: Observation | None):
             period = at.astimezone(TZ).strftime('%Y-%m')
             refs = line['sourceRefs'] or [f'project:{p.id}@{p.revision}']
             level = 'zero' if line['budget'] == '0.00' else 'reassess' if line['reassess'] else 'red'
-            eid = _event(c, p, 'LR-04', period, [kind, line['budgetRefs'], level], refs,
-                {**line, 'kind': kind, 'reason': '金额超支' if kind == 'money' else '人天超支'}, sponsor, initiator)
+            condition = [kind, line['budgetRefs'], level]
+            context = {**line, 'kind': kind, 'reason': '金额超支' if kind == 'money' else '人天超支'}
+            if line['reassess']:
+                context['reassessmentHash'] = decision_basis(line)
+                condition.append(context['reassessmentHash'])
+                # A monthly boundary does not invalidate unchanged reassessment evidence.
+                digest = fingerprint([RULE_VERSION, condition])
+                period = c.scalar(sa.select(events.c.business_period).where(events.c.project_id == p.id,
+                    events.c.rule_id == 'LR-04', events.c.fingerprint == digest)
+                    .order_by(events.c.created_at).limit(1)) or period
+            eid = _event(c, p, 'LR-04', period, condition, refs, context, sponsor, initiator)
             opened['LR-04'].append(eid)
             if line['reassess']:
-                _task(c, p, eid, sponsor, f'LR-04 复评继续投入（{"金额" if kind == "money" else "人天"}）', at)
+                _task(c, p, eid, sponsor or pm or initiator or p.created_by,
+                      f'LR-04 复评继续投入（{"金额" if kind == "money" else "人天"}）', at, resume=True)
         weekly = health.inputs['weekly']
         if weekly['twoMissed']:
             periods = weekly['missingPeriods']
@@ -192,6 +208,13 @@ def _governance_events(c, p, at, health: Observation | None):
     for rule, eids in opened.items():
         _resolve_inactive(c, p.id, rule, eids)
         visible_ids.extend(eids)
+    # Superseded work stops showing as an open assignment. Completed history is retained.
+    t = db.tasks
+    superseded = sa.select(events.c.id).where(events.c.project_id == p.id, events.c.rule_id == 'LR-04',
+        events.c.status == 'resolved', events.c.input_snapshot['reassess'].astext == 'true')
+    c.execute(t.update().where(t.c.project_id == p.id, t.c.source_type == 'rule_event',
+        t.c.source_id.in_(superseded), t.c.status.in_(['todo', 'open', 'in_progress', 'blocked']))
+        .values(status='cancelled', revision=t.c.revision + 1, updated_at=sa.func.clock_timestamp()))
     return sorted(set(visible_ids))
 
 

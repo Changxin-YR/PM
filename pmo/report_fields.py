@@ -126,7 +126,7 @@ def _check_effort(total: str | None, parts: list[EffortEntry] | None) -> None:
 class DraftFields(Strict):
     milestone_progress: Milestones = Field(default_factory=list)
     effort_person_days: Effort | None = None
-    effort_breakdown: EffortBreakdown | SkipJsonSchema[None] = None
+    effort_breakdown: EffortBreakdown | SkipJsonSchema[None] = Field(default=None, exclude_if=lambda value: value is None)
     requirement_progress: Requirements = Field(default_factory=list)
     risks_and_blockers: Risks = Field(default_factory=list)
 

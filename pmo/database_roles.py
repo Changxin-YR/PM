@@ -37,7 +37,8 @@ API_READ = frozenset('''alembic_version organizations user_accounts user_roles p
     health_appeal_decisions health_zero_budgets project_rule_scan_state
     facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
     organization_user_invitations account_status_changes requirement_disputes
-    policy_versions policy_events policy_bindings'''.split())
+    policy_versions policy_events policy_bindings cost_reassessment_records weekly_delivery_authorizations
+    weekly_deliveries'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders reports
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
     category_cost_budgets category_cost_forecasts category_posting_requests category_posting_classifications
@@ -52,7 +53,8 @@ API_ADD = frozenset('''projects project_members charters charter_versions milest
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
     health_appeal_decisions health_zero_budgets project_rule_scan_state
     facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
-    user_accounts persons organization_user_invitations account_status_changes requirement_disputes policy_bindings'''.split())
+    user_accounts persons organization_user_invitations account_status_changes requirement_disputes policy_bindings
+    cost_reassessment_records weekly_deliveries'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
@@ -92,11 +94,14 @@ API_EDIT = {
     'organization_user_invitations': 'account_id revision accepted_at revoked_at revoked_by revocation_reason',
     'requirement_disputes': 'revision withdrawn_at withdrawal_reason withdrawal_request_id',
 }
-WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'rule_events'})
-WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'notifications'})
+WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'rule_events',
+    'weekly_delivery_authorizations', 'weekly_deliveries', 'weekly_delivery_inbox'})
+WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'notifications',
+    'weekly_delivery_inbox'})
 WORKER_EDIT = {
     'outbox_events': 'status retry_count locked_until next_attempt_at last_error updated_at published_at',
     'outbox_attempts': 'outcome finished_at', 'rule_events': 'notified_at',
+    'weekly_deliveries': 'status provider_message_id channel_received_at error_code updated_at',
 }
 KNOWN = API_READ | API_ADD | API_EDIT.keys() | WORKER_READ | WORKER_ADD | WORKER_EDIT.keys()
 
@@ -226,6 +231,14 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str, *, synthetic_sc
         grant(conn, api, 'notifications', 'SELECT',
               'project_id rule_event_id recipient_person_id delivery_status delivered_at', schema=schema)
         grant(conn, worker, 'notifications', 'SELECT', 'rule_event_id recipient_person_id', schema=schema)
+        grant(conn, worker, 'projects', 'SELECT', 'id org_id pm_id sponsor_id stage', schema=schema)
+        grant(conn, worker, 'reports', 'SELECT',
+              'id project_id type version_no revision content_hash status is_current_confirmed confirmed_by confirmed_at '
+              'submitted_by submitted_at author_id structured_fields narrative period period_start period_end weekly_basis',
+              schema=schema)
+        grant(conn, worker, 'project_members', 'SELECT', 'project_id person_id role assignment_status accepted_at revoked_at', schema=schema)
+        grant(conn, worker, 'persons', 'SELECT', 'id org_id user_id is_active', schema=schema)
+        grant(conn, worker, 'user_accounts', 'SELECT', 'id is_active locked_until', schema=schema)
 
 
 def main() -> int:
