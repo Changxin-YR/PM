@@ -3,14 +3,16 @@ import {ref,watch} from 'vue'
 import {Check,Download,FilePlus,FileText,Pencil,Plus,RefreshCw,Save,Send,Trash2,X} from 'lucide-vue-next'
 import ReportFacts from './ReportFacts.vue'
 import WeeklyEffortPosting from './WeeklyEffortPosting.vue'
-import {weeklyReportDocument} from './weeklyReportPrint'
+import WeeklyDelivery from './WeeklyDelivery.vue'
 
 type Kind='weekly'|'daily'
 type Status='draft'|'submitted'|'confirmed'
 type Section='milestone_progress'|'requirement_progress'|'risks_and_blockers'
+type EffortCategory='development'|'implementation'|'management'|'unclassified'
+type EffortLine={category:EffortCategory;personDays:string;basis:string}
 type Entry={summary?:string;name?:string;description?:string;milestoneId?:string;requirementId?:string;riskId?:string;
   claim?:'progress'|'completion';evidenceRef?:string;evidenceRefs?:string[]}
-type Fields=Record<Section,Entry[]>&{effort_person_days?:string}
+type Fields=Record<Section,Entry[]>&{effort_person_days?:string;effort_breakdown?:EffortLine[]}
 type SourcedFact={sourceRef:string;reportRef:string;reportHash:string;quotePath:string;quoteOffset:number;quote:string;
   subject:string;predicate:string;trust:'high'|'medium';asOf:string;evidenceRef?:string;evidenceHash?:string}
 type Basis={asOf:string;ruleVersion:string;projectRevision:number;sourceHash:string;sourceRefs:string[];verifiedPeriodPersonDays:string;
@@ -19,8 +21,8 @@ type Basis={asOf:string;ruleVersion:string;projectRevision:number;sourceHash:str
 type Report={reportId:string;projectId:string;type:Kind;period:string;periodStart:string;periodEnd:string;versionNo:number;revision:number;
   status:Status;authorId:string;submittedAt?:string;submittedBy?:string;confirmedAt?:string;confirmedBy?:string;structuredFields?:Fields;narrative?:string;
   isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean;contentHash?:string;
-  legacyStructuredFields?:boolean;weeklyBasis?:Basis}
-type Editor={item?:Report;type:Kind;day:string;effort:string;fields:Record<Section,Entry[]>;narrative:string}
+  legacyStructuredFields?:boolean;weeklyBasis?:Basis;canManageDelivery?:boolean}
+type Editor={item?:Report;type:Kind;day:string;effort:string;classified:boolean;effortLines:EffortLine[];fields:Record<Section,Entry[]>;narrative:string}
 type Milestone={milestoneId:string;name:string;isKey:boolean}
 type Evidence={evidenceRef:string;linkedResourceType:string;linkedResourceId:string;originalName:string}
 type Attempt={signature:string;key:string}
@@ -32,6 +34,8 @@ const sections:{key:Section;label:string;empty:string;add:string}[]=[
   {key:'risks_and_blockers',label:'风险与阻塞',empty:'本期无风险或阻塞记录',add:'添加风险或阻塞'},
 ]
 const labels:Record<Status,string>={draft:'草稿',submitted:'待确认',confirmed:'已确认'}
+const effortLabels:Record<EffortCategory,string>={development:'研发',implementation:'实施',management:'管理',unclassified:'未分类／待澄清'}
+const effortPattern=/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/
 const rows=ref<Report[]>([]), detail=ref<Report|null>(null), editor=ref<Editor|null>(null)
 const filter=ref<Kind|''>(''), page=ref(1), total=ref(0), canCreate=ref(false)
 const generationRevision=ref<number|null>(null), generating=ref(false), generationDay=ref('')
@@ -65,38 +69,26 @@ function publishedWeek(row:Report):row is Report & {confirmedAt:string;contentHa
   return row.type==='weekly'&&row.status==='confirmed'&&row.revision>=2&&!!row.contentHash&&
     !!row.submittedBy&&!!row.submittedAt&&!!row.confirmedBy&&!!row.confirmedAt&&Date.parse(row.submittedAt)<=Date.parse(row.confirmedAt)
 }
-function downloadWeeklyReport(row:Report){
-  if(!publishedWeek(row))return
-  const basis=row.weeklyBasis, health=basis?.health
-  const metrics=[
-    {label:'时间线',value:lamp(health?.timeLine??'unavailable')},
-    {label:'成本线',value:lamp(health?.costLine??'unavailable')},
-    {label:'质量线',value:lamp(health?.qualityLine??'unavailable')},
-    {label:'申报人天',value:row.structuredFields?.effort_person_days??'未填写'},
-    {label:'当周核验人天净额',value:basis?.verifiedPeriodPostingCount
-      ? `${basis.verifiedPeriodPersonDays}（${basis.verifiedPeriodPostingCount} 笔）` : basis ? '无核验流水' : '不可用'},
-    {label:'整体健康',value:lamp(health?.health??'unavailable')},
-  ]
-  const printableSections=sections.map(section=>({title:section.label,empty:section.empty,
-    entries:(row.structuredFields?.[section.key]??[]).map(entry=>{
-      const itemId=entry.milestoneId??entry.requirementId??entry.riskId
-      const claim=entry.claim==='completion'?'完工申报':entry.claim==='progress'?'进展申报':''
-      return [entryText(entry),claim,itemId].filter(Boolean).join(' · ')||'详见原报告条目'
-    })}))
-  const html=weeklyReportDocument({ period:row.period,start:row.periodStart,end:row.periodEnd,
-    version:row.versionNo,revision:row.revision,current:row.isCurrentConfirmed,confirmedAt:time(row.confirmedAt),
-    projectId:row.projectId,reportId:row.reportId,contentHash:row.contentHash,metrics,sections:printableSections,narrative:row.narrative,
-    basis:basis?{asOf:time(basis.asOf),ruleVersion:basis.ruleVersion,sourceHash:basis.sourceHash,
-      omitted:[basis.omittedRequirements?`需求 ${basis.omittedRequirements} 项`:'',basis.omittedRisks?`风险 ${basis.omittedRisks} 项`:'',
-        basis.omittedVerifiedFacts?`已核验 Fact ${basis.omittedVerifiedFacts} 项`:''].filter(Boolean)}:undefined,
-  })
-  const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}))
-  const link=document.createElement('a')
-  link.href=url;link.download=`项目周报-${row.period}-v${row.versionNo}.html`
-  link.hidden=true;document.body.append(link);link.click();link.remove()
-  window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+async function downloadWeeklyReport(row:Report){
+  if(!publishedWeek(row)||busy.value)return
+  const scope=epoch
+  busy.value=true;error.value=''
+  try{
+    const {data}=await props.api(`${target(row)}/weekly-export`)
+    if(scope!==epoch)return
+    const url=URL.createObjectURL(new Blob([data.html],{type:'text/html;charset=utf-8'}))
+    const link=document.createElement('a')
+    link.href=url;link.download=data.filename
+    link.hidden=true;document.body.append(link);link.click();link.remove()
+    window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+  }catch(e){if(scope===epoch)error.value=problem(e)}
+  finally{if(scope===epoch)busy.value=false}
 }
 function setRefs(item:Entry,refs:string[]){item.evidenceRefs=refs;delete item.evidenceRef}
+function hundredths(value:string){
+  const [whole,fraction='']=value.split('.')
+  return Number(whole)*100+Number(fraction.padEnd(2,'0'))
+}
 function evidenceOptions(item:Entry){
   const options=evidence.value.filter(file=>file.linkedResourceType==='milestone'&&file.linkedResourceId===item.milestoneId)
     .map(file=>({value:file.evidenceRef,label:file.originalName}))
@@ -150,7 +142,12 @@ function begin(item?:Report){
   if(busy.value||reading.value)return
   const copy=(key:Section):Entry[]=>JSON.parse(JSON.stringify(item?.structuredFields?.[key]??[]))
   generating.value=false;error.value='';notice.value='';attempt=null
+  const parts=item?.structuredFields?.effort_breakdown??[]
   editor.value={item,type:item?.type??'weekly',day:item?.periodStart??today(),effort:item?.structuredFields?.effort_person_days??'',
+    classified:parts.length>0,effortLines:(Object.keys(effortLabels) as EffortCategory[]).map(category=>{
+      const line=parts.find(part=>part.category===category)
+      return line?{...line}:{category,personDays:'',basis:''}
+    }),
     fields:{milestone_progress:copy('milestone_progress'),requirement_progress:copy('requirement_progress'),risks_and_blockers:copy('risks_and_blockers')},
     narrative:item?.narrative??''}
   void loadSources()
@@ -184,12 +181,23 @@ function save(){
   const form=editor.value
   if(!form)return
   const effort=form.effort.trim()
-  if(effort&&!/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/.test(effort)){error.value='人天须为非负数，最多两位小数。';return}
+  if(effort&&!effortPattern.test(effort)){error.value='人天须为非负数，最多两位小数。';return}
   if(form.fields.milestone_progress.some(item=>item.claim&&!item.milestoneId)){error.value='请为里程碑申报选择里程碑。';return}
   const fields:Fields={...form.fields,milestone_progress:form.fields.milestone_progress.map(item=>{
     const value={...item};if(!value.milestoneId)delete value.milestoneId;return value
   })}
   if(effort)fields.effort_person_days=effort
+  if(form.classified&&form.type==='weekly'){
+    const parts=form.effortLines.map(line=>({...line,personDays:line.personDays.trim(),basis:line.basis.trim()}))
+      .filter(line=>line.personDays||line.basis)
+    if(!effort||!parts.length||parts.some(line=>!effortPattern.test(line.personDays)||!line.basis)){
+      error.value='请填写申报总量，以及各分类的本期人天与依据。';return
+    }
+    if(parts.reduce((sum,line)=>sum+hundredths(line.personDays),0)!==hundredths(effort)){
+      error.value='各分类人天合计必须等于申报总量。';return
+    }
+    fields.effort_breakdown=parts
+  }
   const action={structuredFields:fields,narrative:form.narrative}
   if(form.item)void write(target(form.item),'PATCH',action,'草稿已保存。',form.item.revision)
   else void write(`${base()}/drafts`,'POST',{...action,reportType:form.type,period:form.type==='weekly'?isoWeek(form.day):form.day},'草稿已保存。')
@@ -248,6 +256,17 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
         <label v-if="!editor.item">{{editor.type==='weekly'?'报告周内日期':'报告日期'}}<input v-model="editor.day" type="date" required :max="today()" :disabled="busy"></label>
         <label>申报人天<input v-model="editor.effort" type="text" inputmode="decimal" maxlength="13" :disabled="busy"></label>
       </div>
+      <fieldset v-if="editor.type==='weekly'" :disabled="busy">
+        <legend>本期人天分类</legend>
+        <label class="effort-toggle"><input v-model="editor.classified" type="checkbox">填写人天分类</label>
+        <template v-if="editor.classified">
+          <p class="report-muted">将本周新增投入按类别填报，累计投入留在补充说明。分类合计须等于申报总量，无法确认的分项填入待澄清。</p>
+          <div v-for="line in editor.effortLines" :key="line.category" class="report-fields effort-fields">
+            <label>{{effortLabels[line.category]}}人天<input v-model="line.personDays" type="text" inputmode="decimal" maxlength="13"></label>
+            <label>{{effortLabels[line.category]}}投入依据<input v-model="line.basis" maxlength="1000"></label>
+          </div>
+        </template>
+      </fieldset>
       <el-alert v-if="sourceError" :title="sourceError" type="warning" :closable="false"/>
       <fieldset v-for="section in sections" :key="section.key" :disabled="busy">
         <legend>{{section.label}}</legend>
@@ -306,6 +325,15 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
         <div v-if="detail.weeklyBasis"><dt>当周核验人天净额</dt><dd>{{detail.weeklyBasis.verifiedPeriodPostingCount? `${detail.weeklyBasis.verifiedPeriodPersonDays}（${detail.weeklyBasis.verifiedPeriodPostingCount} 笔）`:'无核验流水'}}</dd></div>
         <div v-if="detail.confirmedAt"><dt>确认时间（上海）</dt><dd>{{time(detail.confirmedAt)}}</dd></div>
       </dl>
+      <section v-if="detail.structuredFields?.effort_breakdown?.length" aria-label="申报人天分类">
+        <h4>本期申报人天分类</h4>
+        <dl class="report-meta">
+          <div v-for="line in detail.structuredFields.effort_breakdown" :key="line.category">
+            <dt>{{effortLabels[line.category]}} · {{line.personDays}} 人天</dt><dd>{{line.basis}}</dd>
+          </div>
+        </dl>
+      </section>
+      <p v-else-if="detail.type==='weekly'&&detail.structuredFields?.effort_person_days" class="report-muted">人天分类未记录。</p>
       <details v-if="detail.weeklyBasis" class="report-basis">
         <summary>生成依据 · {{time(detail.weeklyBasis.asOf)}}（上海） · {{lamp(detail.weeklyBasis.health.health)}}</summary>
         <p v-if="detail.weeklyBasis.health.timeLine">
@@ -347,6 +375,9 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
       </div>
       <WeeklyEffortPosting v-if="detail.type==='weekly'&&detail.isCurrentConfirmed&&detail.contentHash"
         :key="`effort-${detail.reportId}`" :report-id="detail.reportId" :revision="detail.revision" :api="api"/>
+      <WeeklyDelivery v-if="detail.canManageDelivery&&detail.contentHash" :key="`delivery-${detail.reportId}`"
+        :report-id="detail.reportId" :report-version="detail.versionNo" :revision="detail.revision"
+        :report-hash="detail.contentHash" :api="api"/>
       <ReportFacts v-if="detail.submittedAt&&detail.contentHash" :key="detail.reportId" :project-id="projectId" :report-id="detail.reportId"
         :initially-expanded="focusReportId===detail.reportId"
         :current-weekly="detail.type==='weekly'&&detail.isCurrentConfirmed"
@@ -373,4 +404,6 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
 .report-copy{display:block;white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0}
 .report-basis{padding:8px 0;border-block:1px solid var(--el-border-color-light);overflow-wrap:anywhere}.report-basis summary{cursor:pointer;font-weight:600}
 .report-muted{color:var(--el-text-color-secondary);margin:4px 0}.report-notice{color:var(--el-color-success-dark-2);margin:0}
+.effort-toggle{display:flex;align-items:center;gap:8px}.effort-toggle input{width:auto}.effort-fields{grid-template-columns:minmax(100px,1fr) minmax(180px,3fr);margin:8px 0}
+@media(max-width:540px){.effort-fields{grid-template-columns:1fr}}
 </style>

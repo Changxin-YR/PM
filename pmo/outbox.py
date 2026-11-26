@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .db import engine
 from .org_events import ORGANIZATION_EVENTS
 from .observability import emit
+from .weekly_delivery import DELIVER as WEEKLY_DELIVERY, dead_letter as weekly_dead_letter, deliver as deliver_weekly
 
 LEASE_SECONDS = 30
 MAX_ATTEMPTS = 5
@@ -21,6 +22,7 @@ MAX_ATTEMPTS = 5
 class Lease:
     event_id: UUID
     attempt: int
+    event_type: str = ''
 
 
 def received(c: Connection, event_id: UUID) -> bool:
@@ -37,7 +39,7 @@ def finish_attempt(c: Connection, lease: Lease, outcome: str) -> None:
 def claim(db: Engine) -> Lease | None:
     with db.begin() as c:
         while True:
-            row = c.execute(text('''SELECT id,status,retry_count FROM outbox_events
+            row = c.execute(text('''SELECT id,status,retry_count,event_type,payload FROM outbox_events
                 WHERE (status='pending' AND next_attempt_at<=clock_timestamp()) OR
                       (status='processing' AND locked_until<=clock_timestamp())
                 ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED''')).mappings().one_or_none()
@@ -52,8 +54,9 @@ def claim(db: Engine) -> Lease | None:
                 finish_attempt(c, prior, 'lease_expired')
                 if previous >= MAX_ATTEMPTS:
                     c.execute(text("UPDATE outbox_events SET status='dead_letter',last_error='LEASE_EXHAUSTED',locked_until=NULL,updated_at=now() WHERE id=:id"), {'id':eid})
+                    _weekly_dead_letter(c, row)
                     continue
-            lease = Lease(eid, previous + 1)
+            lease = Lease(eid, previous + 1, row['event_type'])
             c.execute(text("""UPDATE outbox_events SET status='processing',retry_count=:n,
                 locked_until=clock_timestamp()+:seconds*interval '1 second',updated_at=now() WHERE id=:id"""),
                 dict(id=eid, n=lease.attempt, seconds=LEASE_SECONDS))
@@ -69,7 +72,9 @@ def current(c: Connection, lease: Lease) -> RowMapping | None:
 
 
 def consume(db: Engine, lease: Lease) -> bool:
-    with db.begin() as c:
+    # A local inbox receipt must be consistent with publication and scope checks.
+    source = db.execution_options(isolation_level='SERIALIZABLE') if lease.event_type == WEEKLY_DELIVERY else db
+    with source.begin() as c:
         row = current(c, lease)
         if row is None:
             return False
@@ -83,6 +88,8 @@ def consume(db: Engine, lease: Lease) -> bool:
                 dict(key=row['dedupe_key'], id=lease.event_id, org=org, kind=row['event_type']))
             return True
         pid = UUID(row['payload']['projectId'])
+        if row['event_type'] == WEEKLY_DELIVERY:
+            deliver_weekly(c, row['payload'])
         if row['event_type']=='rule.notify':
             event=UUID(row['payload']['eventId']); person=UUID(row['payload']['recipientId'])
             args=dict(id=event,pid=pid,person=person)
@@ -114,7 +121,8 @@ def acknowledge(db: Engine, lease: Lease) -> bool:
 
 def fail(db: Engine, lease: Lease, *, invalid: bool) -> None:
     with db.begin() as c:
-        if current(c, lease) is None:
+        row = current(c, lease)
+        if row is None:
             return
         if received(c, lease.event_id):
             mark_sent(c, lease)
@@ -126,8 +134,18 @@ def fail(db: Engine, lease: Lease, *, invalid: bool) -> None:
             dict(id=lease.event_id, status='dead_letter' if dead else 'pending',
                  code=code, delay=min(300,2**lease.attempt)))
         finish_attempt(c, lease, 'dead_letter' if dead else 'retry')
+        if dead:
+            _weekly_dead_letter(c, row)
     emit('outbox.dead_letter' if dead else 'outbox.retry', 'error' if dead else 'warning',
          eventId=str(lease.event_id), attempt=lease.attempt, code=code)
+
+
+def _weekly_dead_letter(c, event):
+    if event['event_type'] == WEEKLY_DELIVERY:
+        try:
+            weekly_dead_letter(c, event['payload'])
+        except (ValueError, KeyError, TypeError):
+            pass  # Invalid payloads cannot identify a delivery to update.
 
 
 def dispatch(db: Engine, limit: int) -> int:

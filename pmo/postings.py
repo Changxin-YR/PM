@@ -19,7 +19,9 @@ from .evidence import lookup_for_integrity, require_verified_content
 from .identity import Failure, visible
 from .materials import finish, replay
 from .pagination import pg_offset
+from .policy import enabled, lock as lock_policy, require as require_policy
 from .projects import fingerprint, meta, run
+from .report_fields import EffortCategory
 from .risks import can_manage
 
 router = APIRouter(prefix='/api/v1',tags=['Cost postings'])
@@ -35,7 +37,8 @@ HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
 WEEKLY_EFFORT_PREVIEW = 'human_weekly_report_effort_preview'
 WEEKLY_EFFORT_PROPOSE = 'human_weekly_report_effort_propose'
 WEEKLY_SOURCE_PREFIX = 'weekly-report-effort:'
-WEEKLY_SOURCE = re.compile(r'^weekly-report-effort:([0-9a-f-]{36})@([1-9][0-9]{0,18})$')
+WEEKLY_SOURCE = re.compile(r'^weekly-report-effort:([0-9a-f-]{36})@([1-9][0-9]{0,18})(?::(development|implementation|management))?$')
+WEEKLY_EFFORT_POLICY = 'report.effort'
 
 
 class Candidate(Strict):
@@ -67,6 +70,7 @@ class Verify(Reason):
 class WeeklyEffortCandidate(Strict):
     period: Annotated[str, Field(pattern=r'^[0-9]{4}-(0[1-9]|1[0-2])\z')]
     expectedAmount: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,15})\.[0-9]{2}\z')]
+    category: EffortCategory | None = None
 
 
 class Posting(Strict):
@@ -106,6 +110,16 @@ class Page(Strict):
     canPropose: bool
 
 
+class WeeklyEffortLine(Strict):
+    category: EffortCategory | Literal['unclassified']
+    basis: str
+    declaredPersonDays: str
+    verifiedPersonDays: str
+    candidatePersonDays: str
+    existing: Posting | None = None
+    canPropose: bool
+
+
 class WeeklyEffortPreview(Strict):
     reportRef: str
     declaredPersonDays: str
@@ -114,6 +128,9 @@ class WeeklyEffortPreview(Strict):
     allowedPeriods: list[str]
     existing: Posting | None = None
     canPropose: bool
+    breakdown: list[WeeklyEffortLine] | None = None
+    reviewRequired: bool | None = None
+    policyPending: bool | None = None
 
 
 def item(r):
@@ -152,8 +169,8 @@ def bucket(c,a,pid,kind,start,category=UNCATEGORIZED):
 def receipt(c,a,op,key,rid,pid,sig,row,before=None,*,evidence_ref=None):
     out=item(row)
     refs = [f'cost-posting:{row.id}@{2 if row.status=="verified" else 1}']
-    if _bound_weekly_posting(row):
-        refs.append(f'report:{row.source_ref.removeprefix(WEEKLY_SOURCE_PREFIX)}')
+    if (binding := _bound_report_version(row)) is not None:
+        refs.append(f'report:{binding[0]}@{binding[1]}')
     if evidence_ref:
         refs.append(evidence_ref)
     return finish(c,a,op,key,rid,pid,sig,Result[Posting](data=out,meta=meta(op,refs)),before)
@@ -197,8 +214,9 @@ def _week_range(report):
             datetime.combine(report.period_end, time.min, reports_service.TZ))
 
 
-def _weekly_source(report) -> str:
-    return f'{WEEKLY_SOURCE_PREFIX}{report.id}@{report.revision}'
+def _weekly_source(report, category=None) -> str:
+    source = f'{WEEKLY_SOURCE_PREFIX}{report.id}@{report.revision}'
+    return f'{source}:{category}' if category else source
 
 
 def _weekly_fingerprint(source: str, amount: Decimal, period: str) -> str:
@@ -222,17 +240,46 @@ def _bound_report_version(posting) -> tuple[UUID, int] | None:
         return None
 
 
-def _weekly_effort(c, report, now) -> tuple[Decimal, Decimal, Decimal]:
+def _weekly_fields(report, now):
     fields = reports_service.current_publication_fields(report, now)
     if report.type != 'weekly' or fields is None:
         raise Failure(422, 'WEEKLY_EFFORT_REQUIRES_CURRENT_PUBLICATION', project_id=report.project_id)
+    return fields
+
+
+def _weekly_verified_filter(report, now):
     lower, upper = _week_range(report)
     q = t.c
-    verified = c.scalar(sa.select(sa.func.coalesce(sa.func.sum(q.amount_signed), 0)).where(
-        q.project_id == report.project_id, q.type == 'effort', q.status == 'verified',
-        q.verified_at <= now, q.occurred_at <= now, q.occurred_at >= lower, q.occurred_at < upper))
-    declared = Decimal(fields.effort_person_days)
-    return declared, verified, max(Decimal(0), declared - max(Decimal(0), verified))
+    return (q.project_id == report.project_id, q.type == 'effort', q.status == 'verified',
+            q.verified_at <= now, q.occurred_at <= now, q.occurred_at >= lower, q.occurred_at < upper)
+
+
+def _weekly_total(c, report, now):
+    return c.scalar(sa.select(sa.func.coalesce(sa.func.sum(t.c.amount_signed), 0)).where(
+        *_weekly_verified_filter(report, now)))
+
+
+def _classified_effort(c, report, fields, now):
+    from .category_postings import current_categories
+
+    entries = db.cost_entries.c
+    assigned = current_categories(report.project_id)
+    effective = sa.func.coalesce(assigned.c.category, entries.category)
+    net = {}
+    for category, amount in c.execute(sa.select(effective, sa.func.sum(t.c.amount_signed)).select_from(
+            t.outerjoin(db.cost_entries, sa.and_(entries.id == t.c.cost_entry_id,
+                                                entries.project_id == t.c.project_id)).outerjoin(
+                assigned, assigned.c.posting_id == sa.func.coalesce(t.c.posting_of_id, t.c.id)))
+            .where(*_weekly_verified_filter(report, now)).group_by(effective)):
+        key = category if category in ('development', 'implementation', 'management') else 'unclassified'
+        net[key] = net.get(key, Decimal(0)) + amount
+    declared = {entry.category: Decimal(entry.personDays) for entry in fields.effort_breakdown}
+    # A positive unidentified net could already cover an explicitly classified claim.
+    # A negative or over-covered class also requires reconciliation before a new candidate.
+    ambiguous = net.get('unclassified', 0) != 0 or any(
+        amount < 0 or amount > declared.get(category, 0)
+        for category, amount in net.items() if category != 'unclassified')
+    return net, ambiguous
 
 
 def _allowed_periods(report, now) -> list[str]:
@@ -243,10 +290,10 @@ def _allowed_periods(report, now) -> list[str]:
                    (lower, min(now, upper - timedelta(microseconds=1)))})
 
 
-def _weekly_postings(c, report):
+def _weekly_postings(c, report, category=None):
     q = t.c
     return [row for row in c.execute(sa.select(t).where(q.project_id == report.project_id, q.type == 'effort',
-        q.posting_of_id.is_(None), q.source_ref == _weekly_source(report)).order_by(
+        q.posting_of_id.is_(None), q.source_ref == _weekly_source(report, category)).order_by(
         (q.status == 'verified').desc(), q.created_at.desc(), q.id)).mappings() if _bound_weekly_posting(row)]
 
 
@@ -256,15 +303,41 @@ def weekly_effort_preview(reportId: UUID, authorization: Auth) -> Result[WeeklyE
     def read(c, a, _):
         p, report, pm = reports_service._context(c, a, report_id=reportId)
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
-        declared, verified, remaining = _weekly_effort(c, report, now)
+        fields = _weekly_fields(report, now)
+        declared = Decimal(fields.effort_person_days)
+        periods = _allowed_periods(report, now)
+        can_propose = pm and p.stage in OPEN and bool(periods)
+        if fields.effort_breakdown is not None:
+            net, ambiguous = _classified_effort(c, report, fields, now)
+            policy_pending = not enabled(c, p, WEEKLY_EFFORT_POLICY)
+            lines = []
+            candidate = Decimal(0)
+            for entry in fields.effort_breakdown:
+                posted = _weekly_postings(c, report, entry.category)
+                existing = posted[0] if posted else None
+                actual = net.get(entry.category, Decimal(0))
+                remaining = (max(Decimal(0), Decimal(entry.personDays) - actual)
+                             if not ambiguous and entry.category != 'unclassified' else Decimal(0))
+                candidate += remaining
+                lines.append(WeeklyEffortLine(category=entry.category, basis=entry.basis,
+                    declaredPersonDays=format(Decimal(entry.personDays), '.2f'), verifiedPersonDays=format(actual, '.2f'),
+                    candidatePersonDays=format(remaining, '.2f'), existing=item(existing) if existing is not None else None,
+                    canPropose=can_propose and not policy_pending and remaining > 0
+                    and (existing is None or existing.status != 'verified')))
+            return Result[WeeklyEffortPreview](data=WeeklyEffortPreview(reportRef=reports_service._ref(report),
+                declaredPersonDays=format(declared, '.2f'), verifiedPersonDays=format(sum(net.values()), '.2f'),
+                candidatePersonDays=format(candidate, '.2f'), allowedPeriods=periods, canPropose=any(line.canPropose for line in lines),
+                breakdown=lines, reviewRequired=ambiguous, policyPending=policy_pending),
+                meta=meta(WEEKLY_EFFORT_PREVIEW, [reports_service._ref(report)]))
+        verified = _weekly_total(c, report, now)
+        remaining = max(Decimal(0), declared - max(Decimal(0), verified))
         candidates = _weekly_postings(c, report)
         existing = candidates[0] if candidates else None
-        periods = _allowed_periods(report, now)
         return Result[WeeklyEffortPreview](data=WeeklyEffortPreview(
             reportRef=reports_service._ref(report), declaredPersonDays=format(declared, '.2f'),
             verifiedPersonDays=format(verified, '.2f'), candidatePersonDays=format(remaining, '.2f'),
             allowedPeriods=periods, existing=item(existing) if existing is not None else None,
-            canPropose=pm and p.stage in OPEN and remaining > 0 and bool(periods)
+            canPropose=can_propose and remaining > 0
             and (existing is None or existing.status != 'verified')),
             meta=meta(WEEKLY_EFFORT_PREVIEW, [reports_service._ref(report)]))
     return run(authorization, WEEKLY_EFFORT_PREVIEW, read)
@@ -273,7 +346,7 @@ def weekly_effort_preview(reportId: UUID, authorization: Auth) -> Result[WeeklyE
 @router.post('/reports/{reportId}/effort-posting', operation_id=WEEKLY_EFFORT_PROPOSE, openapi_extra=HUMAN)
 def weekly_effort_propose(reportId: UUID, command: WeeklyEffortCandidate, authorization: Auth,
                           key: Key, expected: Revision) -> Result[Posting]:
-    signature = fingerprint([str(reportId), int(expected), command.model_dump()])
+    signature = fingerprint([str(reportId), int(expected), command.model_dump(exclude_none=True)])
 
     def write(c, a, rid):
         p, report, pm = reports_service._context(c, a, report_id=reportId, write=True)
@@ -286,12 +359,13 @@ def weekly_effort_propose(reportId: UUID, command: WeeklyEffortCandidate, author
         if report.revision != int(expected):
             raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
-        _, _, remaining = _weekly_effort(c, report, now)
+        fields = _weekly_fields(report, now)
         if command.period not in _allowed_periods(report, now):
             raise Failure(422, 'WEEKLY_EFFORT_PERIOD_INVALID', project_id=p.id)
-        source = _weekly_source(report)
+        remaining = _weekly_remaining(c, p, report, fields, command.category, now, rid)
+        source = _weekly_source(report, command.category)
         posting_hash = _weekly_fingerprint(source, Decimal(command.expectedAmount), command.period)
-        candidates = _weekly_postings(c, report)
+        candidates = _weekly_postings(c, report, command.category)
         if any(row.status == 'verified' for row in candidates):
             raise Failure(409, 'WEEKLY_EFFORT_ALREADY_VERIFIED', project_id=p.id)
         if remaining <= 0 or Decimal(command.expectedAmount) != remaining:
@@ -299,7 +373,7 @@ def weekly_effort_propose(reportId: UUID, command: WeeklyEffortCandidate, author
         if existing := next((row for row in candidates if row.source_fingerprint == posting_hash), None):
             return receipt(c, a, WEEKLY_EFFORT_PROPOSE, key, rid, p.id, signature, existing)
         start = period_start(command.period)
-        row = c.execute(t.insert().values(project_id=p.id, cost_entry_id=bucket(c, a, p.id, 'effort', start),
+        row = c.execute(t.insert().values(project_id=p.id, cost_entry_id=bucket(c, a, p.id, 'effort', start, command.category or UNCATEGORIZED),
             created_by=a.person, type='effort', source_type='effort', amount_signed=remaining, period=command.period,
             source_ref=source, source_fingerprint=posting_hash, occurred_at=datetime.combine(start, time.min, UTC),
             status='pending', correlation_id=UUID(rid)).returning(t)).mappings().one()
@@ -307,7 +381,20 @@ def weekly_effort_propose(reportId: UUID, command: WeeklyEffortCandidate, author
     return run(authorization, WEEKLY_EFFORT_PROPOSE, write)
 
 
-def _check_weekly_verification(c, posting, when: datetime, now: datetime) -> None:
+def _weekly_remaining(c, p, report, fields, category, now, rid) -> Decimal:
+    if fields.effort_breakdown is None and category is None:
+        return max(Decimal(0), Decimal(fields.effort_person_days) - max(Decimal(0), _weekly_total(c, report, now)))
+    entry = next((entry for entry in fields.effort_breakdown or [] if entry.category == category), None)
+    if entry is None:
+        raise Failure(422, 'WEEKLY_EFFORT_CATEGORY_REQUIRED', project_id=p.id)
+    require_policy(c, p, WEEKLY_EFFORT_POLICY, rid)
+    net, ambiguous = _classified_effort(c, report, fields, now)
+    if ambiguous:
+        raise Failure(409, 'WEEKLY_EFFORT_CLASSIFICATION_UNCLEAR', project_id=p.id)
+    return Decimal(entry.personDays) - net.get(category, Decimal(0))
+
+
+def _check_weekly_verification(c, p, posting, when: datetime, now: datetime, rid) -> None:
     if not _bound_weekly_posting(posting):
         return
     source = _bound_report_version(posting)
@@ -318,11 +405,17 @@ def _check_weekly_verification(c, posting, when: datetime, now: datetime) -> Non
         r.id == source[0], r.revision == source[1], r.project_id == posting.project_id)).mappings().one_or_none()
     if report is None:
         raise Failure(422, 'WEEKLY_EFFORT_REQUIRES_CURRENT_PUBLICATION', project_id=posting.project_id)
-    _, _, remaining = _weekly_effort(c, report, now)
+    match = WEEKLY_SOURCE.fullmatch(posting.source_ref)
+    category = match[3] if match else None
+    if category is not None and c.scalar(sa.select(db.cost_entries.c.category).where(
+            db.cost_entries.c.id == posting.cost_entry_id, db.cost_entries.c.project_id == p.id)) != category:
+        raise Failure(422, 'WEEKLY_EFFORT_CATEGORY_REQUIRED', project_id=p.id)
+    fields = _weekly_fields(report, now)
+    remaining = _weekly_remaining(c, p, report, fields, category, now, rid)
     lower, upper = _week_range(report)
     if not lower <= when < upper:
         raise Failure(422, 'WEEKLY_EFFORT_OCCURRENCE_OUTSIDE_WEEK', project_id=posting.project_id)
-    if any(row.status == 'verified' for row in _weekly_postings(c, report)):
+    if any(row.status == 'verified' for row in _weekly_postings(c, report, category)):
         raise Failure(409, 'WEEKLY_EFFORT_ALREADY_VERIFIED', project_id=posting.project_id)
     if remaining != posting.amount_signed:
         raise Failure(409, 'WEEKLY_EFFORT_BALANCE_CHANGED', project_id=posting.project_id)
@@ -421,7 +514,7 @@ def decide(auth,posting_id,command,expected,key,*,reverse):
             now=c.scalar(sa.select(sa.func.clock_timestamp()))
             if when>now or when.astimezone(UTC).strftime('%Y-%m')!=row.period: raise Failure(422,'INVALID_OCCURRENCE')
             if not row.source_fingerprint: raise Failure(422,'SOURCE_REQUIRED')
-            _check_weekly_verification(c, row, when, now)
+            _check_weekly_verification(c, p, row, when, now, rid)
             if command.evidenceRef:
                 if row.posting_of_id:
                     raise Failure(422,'REVERSAL_EVIDENCE_INHERITED')

@@ -1,6 +1,7 @@
 """Report field contracts, shared by HTTP, stdio and the deterministic weekly draft."""
 import json
 import re
+from decimal import Decimal
 from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 
@@ -101,16 +102,37 @@ class RiskEntry(_Entry):
 Milestones = Annotated[list[MilestoneEntry], Field(max_length=100)]
 Requirements = Annotated[list[RequirementEntry], Field(max_length=100)]
 Risks = Annotated[list[RiskEntry], Field(max_length=100)]
+EffortCategory = Literal['development', 'implementation', 'management']
+
+
+class EffortEntry(Strict):
+    category: EffortCategory | Literal['unclassified']
+    personDays: Effort
+    basis: Annotated[Text, Field(min_length=1, max_length=1000, pattern=r'\S')]
+
+
+EffortBreakdown = Annotated[list[EffortEntry], Field(min_length=1, max_length=4)]
+
+
+def _check_effort(total: str | None, parts: list[EffortEntry] | None) -> None:
+    if parts is None:
+        return
+    if total is None or sum(Decimal(item.personDays) for item in parts) != Decimal(total):
+        raise ValueError('人天分类合计必须等于本期申报总量')
+    if len({item.category for item in parts}) != len(parts):
+        raise ValueError('同一人天类别只能申报一项')
 
 
 class DraftFields(Strict):
     milestone_progress: Milestones = Field(default_factory=list)
     effort_person_days: Effort | None = None
+    effort_breakdown: EffortBreakdown | SkipJsonSchema[None] = None
     requirement_progress: Requirements = Field(default_factory=list)
     risks_and_blockers: Risks = Field(default_factory=list)
 
     @model_validator(mode='after')
     def validated(self):
+        _check_effort(self.effort_person_days, self.effort_breakdown)
         _check_size(self.model_dump(exclude_none=True))
         return self
 
@@ -145,11 +167,13 @@ class StoredFields(Strict):
     """Previously admissible bytes, for historical verification and exact-key replay only."""
     milestone_progress: StoredSection = Field(default_factory=list)
     effort_person_days: Effort | None = None
+    effort_breakdown: EffortBreakdown | None = None
     requirement_progress: StoredSection = Field(default_factory=list)
     risks_and_blockers: StoredSection = Field(default_factory=list)
 
     @model_validator(mode='after')
     def validated(self):
+        _check_effort(self.effort_person_days, self.effort_breakdown)
         value = self.model_dump(exclude_none=True)
         _check_legacy_json(value)
         _check_size(value)

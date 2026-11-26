@@ -129,6 +129,7 @@ class Report(Strict):
     canEdit: bool | None = None
     canSubmit: bool | None = None
     canConfirm: bool | None = None
+    canManageDelivery: bool | None = None
     weeklyBasis: WeeklyBasis | None = None
 
 
@@ -338,6 +339,8 @@ def _view(row, a, p, pm, author_role, *, detail=False, agent_excerpt=False, publ
         mutable = p.stage != 'archived' and row.status == 'draft'
         item.canEdit = mutable and author_role and row.author_id == a.person
         item.canSubmit = mutable and (pm or item.canEdit)
+        if detail and pm and row.type == 'weekly' and row.status == 'confirmed' and row.confirmed_at is not None:
+            item.canManageDelivery = True
         item.canConfirm = p.stage != 'archived' and pm and row.status == 'submitted' and row.content_hash is not None
     if agent_excerpt:
         item.narrative = row.narrative or ''
