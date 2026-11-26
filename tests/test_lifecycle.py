@@ -84,7 +84,11 @@ def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), firs
         assert saved['scores'][0]['anchorVersion']
     else:
         score(reviewer, charter, [4] * 4)
-    data(decide(reviewer, charter))
+    approved = data(decide(reviewer, charter))
+    for task in approved['tasks']:
+        resolved = data(users['pm'].post(f"tasks/{task['taskId']}/written-response",
+            headers=headers(task['revision']), json={'responseText': '已记录客户吸引力的待验证事项，并补充方案阶段所需的复核安排。'}))
+        assert resolved['status'] == 'done'
     project, requirement, risk = planning_setup(engine, pid, people, users, seed_stage=False, effort_budget=effort_budget,
                                                extra_priorities=extra_priorities, first_day=first_day)
     feasibility = gate(users['pm'], project, 'feasibility')
