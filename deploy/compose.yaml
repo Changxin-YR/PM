@@ -10,6 +10,7 @@ x-runtime: &runtime
 
 x-api-env: &api-env
   DATABASE_URL: postgresql+psycopg://pmo_api:${PMO_DEPLOY_API_PASSWORD:?set API password}@db:5432/pmo
+  PMO_POLICY_ENVIRONMENT: ${PMO_POLICY_ENVIRONMENT:-}
   PMO_REPORT_ANALYSIS: "0"
   PMO_ASSISTANT_PREVIEWS: "0"
 
@@ -44,6 +45,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://pmo_migrate:${PMO_DEPLOY_MIGRATE_PASSWORD:?set migration password}@db:5432/pmo
       PMO_MIGRATION_DATABASE_URL: postgresql+psycopg://pmo_migrate:${PMO_DEPLOY_MIGRATE_PASSWORD:?set migration password}@db:5432/pmo
+      PMO_POLICY_ENVIRONMENT: ${PMO_POLICY_ENVIRONMENT:-}
     command: [sh, -ec, 'alembic upgrade head && exec python -m pmo.database_roles --dedicated-database --api-role pmo_api --worker-role pmo_outbox']
 
   api:

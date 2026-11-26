@@ -25,6 +25,9 @@ from .audits import router as audit_router, is_admin
 from .agent_tokens import router as agent_token_router
 from .risks import router as risk_router
 from .costs import router as cost_router
+from .category_budget_changes import router as category_budget_router
+from .category_costs import router as category_cost_router
+from .category_postings import router as category_posting_router
 from .postings import router as posting_router
 from .spending import router as spending_router
 from .alerts import router as alerts_router
@@ -94,6 +97,9 @@ app.include_router(audit_router)
 app.include_router(agent_token_router)
 app.include_router(risk_router)
 app.include_router(cost_router)
+app.include_router(category_budget_router)
+app.include_router(category_cost_router)
+app.include_router(category_posting_router)
 app.include_router(posting_router)
 app.include_router(spending_router)
 app.include_router(alerts_router)

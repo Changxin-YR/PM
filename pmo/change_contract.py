@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from jsonschema import Draft202012Validator
 
+from .cost_categories import CATEGORY_KIND
+
 Target = Literal['requirement', 'milestone', 'budget', 'charter']
 Schema = dict[str, Any]
 DATE = {'type': 'string', 'format': 'date'}
@@ -69,7 +71,16 @@ def snapshots(*, stored: bool) -> list[Schema]:
 
 
 PROPOSAL: Schema = {'oneOf': snapshots(stored=False)}
-RECEIPT_CASES = [*snapshots(stored=True), ADDITION]
+_CATEGORY_AMOUNTS = patch(dict.fromkeys(CATEGORY_KIND, amount(16, stored=True)), complete=True)
+_CATEGORY_TOTALS = dict.fromkeys(('moneyBudget', 'effortBudget'), amount(16, stored=True))
+CATEGORY_BUDGET = variant('budget', patch({
+    'categoryBudgets': nullable(_CATEGORY_AMOUNTS), 'categoryBudgetRevision': {'type': 'integer', 'minimum': 1},
+    **_CATEGORY_TOTALS,
+}, complete=True), {
+    **patch({'categoryBudgets': _CATEGORY_AMOUNTS, **_CATEGORY_TOTALS, 'reestimate': text(3, 2000)}),
+    'required': ['categoryBudgets', *_CATEGORY_TOTALS],
+})
+RECEIPT_CASES = [*snapshots(stored=True), ADDITION, CATEGORY_BUDGET]
 HISTORY: Schema = {'oneOf': [
     *[{**case, 'not': {'required': ['legacySnapshot']}} for case in RECEIPT_CASES],
     {'description': 'Historical snapshot outside the current field contract; preserved for authorized human review.',

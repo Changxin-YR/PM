@@ -48,6 +48,37 @@ def in_project_scope(channel: Literal['REPORT', 'ASSISTANT'], project_id: UUID) 
     return project_id in _project_scope(f'PMO_{channel}_MODEL')
 
 
+def assistant_scope(project_id: UUID, mode: str) -> bool:
+    if not in_project_scope('ASSISTANT', project_id):
+        return False
+    value = os.getenv('PMO_ASSISTANT_CLOSING_ONLY_PROJECTS')
+    if value is None:
+        return True
+    try:
+        closing_only = {UUID(item.strip()) for item in value.split(',')}
+    except ValueError:
+        return False
+    return mode == 'closing' or project_id not in closing_only
+
+
+def report_binding() -> tuple[UUID, int, str] | None:
+    value = os.getenv('PMO_REPORT_MODEL_SOURCE')
+    if value is None:
+        return None
+    report_id, revision, digest = value.split(':')
+    if not re.fullmatch('[1-9][0-9]*', revision) or not re.fullmatch('[0-9a-f]{64}', digest):
+        raise ValueError('Invalid scoped report binding.')
+    return UUID(report_id), int(revision), digest
+
+
+def report_scope(project_id: UUID, report_id: UUID, revision: int, digest: str) -> bool:
+    try:
+        binding = report_binding()
+    except ValueError:
+        return False
+    return in_project_scope('REPORT', project_id) and (binding is None or binding == (report_id, revision, digest))
+
+
 def _fields(pairs):
     result: dict[str, object] = {}
     for key, value in pairs:

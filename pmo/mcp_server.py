@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 from string import Formatter
 from .change_contract import PROPOSAL, mcp_snapshots
+from .cost_categories import CategorySummary
 from .report_fields import DraftFields, SubmitFields
 from .tool_routes import ROUTES
 
@@ -51,6 +52,10 @@ def advertised(tool):
             outputs = deepcopy(outputs)
         report = outputs['oneOf'][0]['properties']['data']
         report['properties']['structuredFields'] = report_schema(DraftFields, outputs)
+    if name == 'pmo_cost_summary':
+        outputs = deepcopy(outputs)
+        cost = outputs['oneOf'][0]['properties']['data']
+        cost['properties']['categories'] = report_schema(CategorySummary, outputs)
     if name in {'pmo_requirement_change_history', 'pmo_change_propose'}:
         outputs = deepcopy(outputs)
         record = outputs['oneOf'][0]['properties']['data']

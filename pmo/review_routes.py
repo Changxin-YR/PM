@@ -2,13 +2,33 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response
 
-from . import review_meetings as meetings, review_outcomes as outcomes, reviews
+from . import review_calibration as calibration, review_meetings as meetings, review_outcomes as outcomes, reviews
 from .access import Auth, Key, Revision
 from .contracts import Result
 from .gates import Check, Gate
 from .review_scores import Score
 
 router = APIRouter(prefix='/api/v1', tags=['Reviews'])
+
+
+@router.get('/projects/{projectId}/review-calibration', operation_id=calibration.GET, openapi_extra=calibration.HUMAN,
+            response_model_exclude_none=True)
+def calibration_state(projectId: UUID, authorization: Auth) -> Result[calibration.State]:
+    return calibration.read(authorization, projectId)
+
+
+@router.put('/projects/{projectId}/review-calibration/plan', operation_id=calibration.PLAN, openapi_extra=calibration.HUMAN,
+            response_model_exclude_none=True)
+def calibration_plan(projectId: UUID, command: calibration.Plan, authorization: Auth, key: Key,
+                     expected: Revision) -> Result[calibration.State]:
+    return calibration.write_plan(authorization, projectId, command, key, int(expected))
+
+
+@router.put('/projects/{projectId}/review-calibration/results/{dimension}', operation_id=calibration.OUTCOME,
+            openapi_extra=calibration.HUMAN, response_model_exclude_none=True)
+def calibration_result(projectId: UUID, dimension: calibration.DimensionKey, command: calibration.Evaluation,
+                       authorization: Auth, key: Key, expected: Revision) -> Result[calibration.State]:
+    return calibration.write_result(authorization, projectId, dimension, command, key, int(expected))
 
 
 @router.get('/projects/{projectId}/closing/check', operation_id='human_closing_check')

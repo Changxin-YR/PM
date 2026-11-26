@@ -17,12 +17,16 @@ const uuidPattern=/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
 const maxEvidence=12,maxConditions=20
 
 type Role=keyof typeof roles
-type Dimension={key:string;label:string;anchors:Record<string,string>}
-type Rating={score:number;selectedAnchorCode:string;rationale:string;evidenceRefs:string[]}
+type Criterion={key:string;label:string;minimumScore:number}
+type Dimension={key:string;label:string;anchors:Record<string,string>;criteria:Criterion[]}
+type Judgment={criterion:string;value:'yes'|'no'|'unknown';evidenceRef?:string}
+type Rating={score:number;selectedAnchorCode:string;rationale:string;evidenceRefs:string[];judgments?:Judgment[];retainedReason?:string}
+type ScoreWarning={criterion:string;label:string;kind:'conflict'|'insufficient';evidenceRef?:string}
 type Workbench={
   review:{reviewId:string;projectId:string;type:keyof typeof gates;status:keyof typeof statuses;revision:number;verdict?:string}
   round:number;approvalRequestId?:string;dimensions:Dimension[];materialRefs:string[]
-  scores:{scorecardId:string;reviewerId:string;round:number;dimensions:Record<string,Rating>;reviewedAt:string}[]
+  scores:{scorecardId:string;reviewerId:string;round:number;dimensions:Record<string,Rating>;reviewedAt:string;anchorVersion?:string;
+    warnings?:Record<string,ScoreWarning[]>}[]
   appeal?:{reason:string;requestedAt:string;requestedBy:string}
   assessment?:{classification:keyof typeof classifications;total?:string;means:Record<string,string>;weakDimensions:string[]}
   confirmations:{role:Role;confirmedAt:string;confirmedBy:string;current:boolean}[]
@@ -32,9 +36,13 @@ type Workbench={
   tasks:{taskId:string;title:string;assigneeId?:string;dueAt?:string;sourceType:string;sourceId:string;status:string;revision:number}[]
   canScore:boolean;canAppeal:boolean;canDecide:boolean;canWithdraw:boolean;canConfirmSponsor:boolean;canConfirmInitiator:boolean
   policyPending:boolean;stale:boolean;scoreEvidenceStale?:true
+  requiredReviewerCount?:number;submittedReviewerCount?:number
+  reinforcementResponses?:{responseId:string;taskId:string;itemKey:string;revision:number;responseText:string;
+    evidenceRefs:string[];submittedBy:string;submittedAt:string}[]
 }
-type ScoreDraft=Omit<Rating,'score'> & {score:keyof typeof anchorCodes|'';attachment:string}
-type Condition={id:number;title:string;assigneeId:string;dueAt:string}
+type ScoreDraft=Omit<Rating,'score'|'judgments'|'retainedReason'> & {score:keyof typeof anchorCodes|'';attachment:string;
+  answers:Record<string,Judgment['value']>;sources:Record<string,string>;retainedReason:string}
+type Condition={id:number;title:string;assigneeId:string;dueAt:string;evidenceRequired:boolean}
 const actions=[
   {id:'score',flag:'canScore',label:'填写评分',submit:'提交评分',success:'已提交评分。',endpoint:'scores',icon:ClipboardPenLine},
   {id:'decide',flag:'canDecide',label:'登记裁决',submit:'确认裁决',success:'已登记裁决。',endpoint:'decisions',icon:Gavel},
@@ -78,7 +86,20 @@ function anchorFor(score:ScoreDraft['score']){return score?anchorCodes[score]:''
 function localTime(value:string){return new Date(value).toLocaleString('zh-CN',{hour12:false})}
 function dimensionLabel(key:string){return view.value?.dimensions.find(item=>item.key===key)?.label??key}
 function verdictLabel(option:string){return verdicts[option as keyof typeof verdicts]??(option==='withdrawn'?'已撤回':option)}
-function addCondition(){if(conditions.value.length<maxConditions)conditions.value.push({id:++conditionId,title:'',assigneeId:'',dueAt:''})}
+function addCondition(){if(conditions.value.length<maxConditions)conditions.value.push({id:++conditionId,title:'',assigneeId:'',dueAt:'',evidenceRequired:false})}
+function requiredCriteria(dimension:Dimension){
+  return (dimension.criteria??[]).filter(criterion=>criterion.minimumScore<=Number(scoreDraft.value[dimension.key]?.score))
+}
+function resetAnchor(dimension:Dimension){
+  const line=scoreDraft.value[dimension.key]
+  line.selectedAnchorCode='';line.answers={};line.sources={};line.retainedReason=''
+}
+function sourceChoices(line:ScoreDraft){
+  return [...new Set([...line.evidenceRefs.filter(ref=>materialRefs.value.includes(ref)),line.attachment.trim().toLowerCase()].filter(Boolean))]
+}
+function needsDisposition(dimension:Dimension){
+  return requiredCriteria(dimension).some(criterion=>scoreDraft.value[dimension.key]?.answers[criterion.key]!=='yes')
+}
 function selectAction(id:Action['id']){
   selected.value=id;reason.value='';verdict.value='';conditions.value=[];error.value='';notice.value=''
 }
@@ -88,7 +109,8 @@ async function read(){
   const {data:next}:{data:Workbench}=await props.api(`${path}/workbench`)
   const sameRound=view.value?.round===next.round
   scoreDraft.value=Object.fromEntries(next.dimensions.map(({key})=>[key,
-    (sameRound&&scoreDraft.value[key])||{score:'',selectedAnchorCode:'',rationale:'',evidenceRefs:[],attachment:''},
+    (sameRound&&scoreDraft.value[key])||{score:'',selectedAnchorCode:'',rationale:'',evidenceRefs:[],attachment:'',
+      answers:{},sources:{},retainedReason:''},
   ]))
   view.value=next
   if(!current.value)selected.value=''
@@ -121,6 +143,19 @@ const command=computed(()=>{
       if(!score||line.selectedAnchorCode!==anchorCodes[score]||!dimension.anchors[line.selectedAnchorCode]||
          !validReason(line.rationale)||!materials.length||evidenceRefs.length>maxEvidence||(attachment&&!validAttachment(attachment)))return null
       dimensions[dimension.key]={score,selectedAnchorCode:line.selectedAnchorCode,rationale:line.rationale.trim(),evidenceRefs}
+      const criteria=requiredCriteria(dimension)
+      const judgments:Judgment[]=[]
+      for(const criterion of criteria){
+        const value=line.answers[criterion.key]??'unknown',evidenceRef=line.sources[criterion.key]
+        if(value!=='unknown'&&!evidenceRefs.includes(evidenceRef))return null
+        judgments.push({criterion:criterion.key,value,...(value!=='unknown'?{evidenceRef}:{})})
+      }
+      if(criteria.length){
+        const retained=needsDisposition(dimension)
+        if(retained&&!validReason(line.retainedReason))return null
+        dimensions[dimension.key].judgments=judgments
+        if(retained)dimensions[dimension.key].retainedReason=line.retainedReason.trim()
+      }
     }
     return {reviewType:data.review.type,round:data.round,dimensions}
   }
@@ -137,7 +172,7 @@ const command=computed(()=>{
   if(!conditions.value.length||conditions.value.some(row=>textLength(row.title.replace(/\s+/g,' '))<4||
     !uuidPattern.test(row.assigneeId.trim())||!(Date.parse(row.dueAt)>Date.now())))return null
   return {...base,conditions:conditions.value.map(row=>({title:row.title.trim(),assigneeId:row.assigneeId.trim(),
-    dueAt:new Date(row.dueAt).toISOString()}))}
+    dueAt:new Date(row.dueAt).toISOString(),...(row.evidenceRequired?{evidenceRequired:true}:{})}))}
 })
 
 async function checkAttachments(data:Workbench){
@@ -213,6 +248,10 @@ async function submit(previous?:Attempt){
         <ReviewMeeting ref="meeting" :review-id="reviewId" :revision="view.review.revision" :api="api"
           :disabled="busy||readFailed||!!retry"/>
         <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" :closable="false" show-icon/>
+        <p v-if="view.requiredReviewerCount!==undefined && view.review.status==='pending'" class="meta">
+          必需评审名单已交卡 {{view.submittedReviewerCount}} / {{view.requiredReviewerCount}}。
+          <span v-if="view.submittedReviewerCount!==view.requiredReviewerCount">评分齐备后可确认快速立项或登记裁决。</span>
+        </p>
         <el-alert v-if="view.stale" type="warning" title="送审所依据的材料或授权已变化。" :closable="false" show-icon/>
         <el-alert v-if="view.scoreEvidenceStale" type="warning" title="有效评分的证据无法通过复核，暂不可确认或裁决。" :closable="false" show-icon/>
         <RequirementExceptionReceipt v-if="view.requirementException" :receipt="view.requirementException"
@@ -241,7 +280,7 @@ async function submit(previous?:Attempt){
               <fieldset v-for="dimension in view.dimensions" :key="dimension.key" class="form-block">
                 <legend>{{dimension.label}}</legend>
                 <div class="field-row">
-                  <label>评分<select v-model="scoreDraft[dimension.key].score" aria-label="评分" required @change="scoreDraft[dimension.key].selectedAnchorCode=''">
+                  <label>评分<select v-model="scoreDraft[dimension.key].score" aria-label="评分" required @change="resetAnchor(dimension)">
                     <option value="" disabled>请选择分值</option>
                     <option v-for="n in scoreValues" :key="n" :value="n" :disabled="!dimension.anchors[anchorCodes[n]]">{{n}} 分</option>
                   </select></label>
@@ -263,6 +302,24 @@ async function submit(previous?:Attempt){
                   </div>
                 </details>
                 <label>补充已核验附件引用（可选）<input v-model.trim="scoreDraft[dimension.key].attachment" placeholder="evidence:…" maxlength="45"/></label>
+                <div v-for="criterion in requiredCriteria(dimension)" :key="criterion.key" class="field-row">
+                  <label>{{criterion.label}}
+                    <select v-model="scoreDraft[dimension.key].answers[criterion.key]" :aria-label="criterion.label">
+                      <option :value="undefined">未知</option><option value="yes">是</option><option value="no">否</option>
+                    </select>
+                  </label>
+                  <label v-if="scoreDraft[dimension.key].answers[criterion.key]">判断来源
+                    <select v-model="scoreDraft[dimension.key].sources[criterion.key]" aria-label="判断来源" required>
+                      <option v-for="source in sourceChoices(scoreDraft[dimension.key])" :value="source" :key="source">{{source}}</option>
+                    </select>
+                  </label>
+                  <p v-if="scoreDraft[dimension.key].answers[criterion.key]!=='yes'" class="meta">
+                    {{scoreDraft[dimension.key].answers[criterion.key]==='no'?'此判断与选定锚点冲突。':'该判断的证据不足。'}}
+                  </p>
+                </div>
+                <label v-if="needsDisposition(dimension)">保留分数的理由
+                  <textarea v-model="scoreDraft[dimension.key].retainedReason" rows="2" required minlength="4" maxlength="1500"/>
+                </label>
               </fieldset>
             </template>
             <template v-else-if="current.id==='decide'">
@@ -280,6 +337,9 @@ async function submit(previous?:Attempt){
                     <label>负责人 ID<input v-model.trim="condition.assigneeId" maxlength="36" required/></label>
                     <label>截止时间（本地）<input v-model="condition.dueAt" type="datetime-local" required/></label>
                   </div>
+                  <label v-if="view.review.type==='charter'" class="ref-option">
+                    <input v-model="condition.evidenceRequired" type="checkbox"/>书面回应须提供已核验证据
+                  </label>
                   <el-button text :disabled="conditions.length===1||workDisabled" @click="conditions.splice(index,1)"><Trash2 :size="14"/> 移除条件</el-button>
                 </fieldset>
                 <el-button class="add-condition" :disabled="workDisabled||conditions.length>=maxConditions" @click="addCondition"><Plus :size="14"/> 添加条件</el-button>
@@ -324,10 +384,23 @@ async function submit(previous?:Attempt){
             <summary>第 {{card.round}} 轮 · <time :datetime="card.reviewedAt">{{localTime(card.reviewedAt)}}</time><span class="meta"> · 评审人 {{card.reviewerId}}</span></summary>
             <dl v-for="(rating,key) in card.dimensions" :key="key">
               <dt>{{dimensionLabel(key)}} · {{rating.score}} 分</dt>
-              <dd class="meta">{{view.dimensions.find(item=>item.key===key)?.anchors[rating.selectedAnchorCode]??rating.selectedAnchorCode}}</dd>
+              <dd class="meta">{{card.anchorVersion ? (view.dimensions.find(item=>item.key===key)?.anchors[rating.selectedAnchorCode]??rating.selectedAnchorCode) : rating.selectedAnchorCode}}</dd>
               <dd class="reason">{{rating.rationale}}</dd>
               <dd v-for="source in rating.evidenceRefs" :key="source"><code>{{source}}</code></dd>
+              <dd v-for="warning in card.warnings?.[key]" :key="warning.criterion">
+                {{warning.kind==='conflict'?'事实冲突':'证据不足'}} · {{warning.label}} <code v-if="warning.evidenceRef">{{warning.evidenceRef}}</code>
+              </dd>
+              <dd v-if="rating.retainedReason">保留理由 {{rating.retainedReason}}</dd>
             </dl>
+          </details>
+        </section>
+        <section v-if="view.reinforcementResponses?.length" class="group" aria-label="立项补强书面回应">
+          <h4>立项补强书面回应</h4>
+          <details v-for="response in view.reinforcementResponses" :key="response.responseId" class="history-item">
+            <summary>{{response.itemKey.startsWith('dimension:')?response.itemKey.split(':')[1]:'立项附条件任务'}} · 回应版本 {{response.revision}}</summary>
+            <p class="reason">{{response.responseText}}</p>
+            <p class="meta">{{response.submittedBy}} · {{localTime(response.submittedAt)}}</p>
+            <code v-for="source in response.evidenceRefs" :key="source">{{source}}</code>
           </details>
         </section>
         <section v-if="view.tasks.length" class="group" aria-label="关口任务">

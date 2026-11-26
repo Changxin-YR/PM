@@ -20,7 +20,7 @@ from .identity import Failure, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment
-from .requirement_delivery import synthetic_confirmation
+from .policy import guard, receipt_matches, require, selection, status
 from .scope_quality import metrics
 
 GET = 'human_requirement_exception_get'
@@ -135,7 +135,7 @@ class Receipt(AcceptanceScope, Proof):
     signedBy: UUID
     signedAt: datetime
     receiptHash: Hash
-    policyStatus: Literal['POLICY_PENDING'] = 'POLICY_PENDING'
+    policyStatus: Literal['POLICY_PENDING', 'POLICY_ACTIVE'] = 'POLICY_PENDING'
 
 
 class Revocation(Strict):
@@ -146,7 +146,7 @@ class Revocation(Strict):
     revokedBy: UUID
     revokedAt: datetime
     receiptHash: Hash
-    policyStatus: Literal['POLICY_PENDING'] = 'POLICY_PENDING'
+    policyStatus: Literal['POLICY_PENDING', 'POLICY_ACTIVE'] = 'POLICY_PENDING'
 
 
 class State(Strict):
@@ -160,7 +160,7 @@ class State(Strict):
     canRevoke: bool = False
     signerPersonId: UUID | None = None
     revocableExceptionId: UUID | None = None
-    policyStatus: Literal['POLICY_PENDING'] = 'POLICY_PENDING'
+    policyStatus: Literal['POLICY_PENDING', 'POLICY_ACTIVE'] = 'POLICY_PENDING'
 
 
 @dataclass(frozen=True)
@@ -313,6 +313,8 @@ def _latest(c, pid):
 def _current(c, p, basis, row, now) -> SignedPayload | None:
     if basis is None or row is None or row.kind != 'signed' or row.project_id != p.id:
         return None
+    if not receipt_matches(c, p, 'requirement.exception', row.request_id):
+        return None
     try:
         signed = SignedPayload.model_validate(row.payload)
         if (signed.ruleVersion != RULE_VERSION or not row.created_at <= now < signed.expiresAt
@@ -333,10 +335,10 @@ def _current(c, p, basis, row, now) -> SignedPayload | None:
         return None
 
 
-def _view(row, signed: SignedPayload) -> Receipt:
+def _view(c, p, row, signed: SignedPayload) -> Receipt:
     return Receipt(**signed.model_dump(include=set(AcceptanceScope.model_fields)), **signed.proof.model_dump(),
         exceptionId=row.id, projectId=row.project_id, revision=row.revision, signedBy=row.actor_id,
-        signedAt=row.created_at, receiptHash=row.fingerprint)
+        signedAt=row.created_at, receiptHash=row.fingerprint, policyStatus=status(c, p, 'requirement.exception'))
 
 
 def _refs(receipt: Receipt) -> list[str]:
@@ -360,7 +362,7 @@ def _now(c):
 
 def gate_check(c, a, p) -> GateException | None:
     """Caller holds the project lock. Recompute the entire requirements-only exception."""
-    if p.stage not in ACTIVE_STAGES or a.org != p.org_id or not synthetic_confirmation(c):
+    if p.stage not in ACTIVE_STAGES or a.org != p.org_id:
         return None
     if not c.scalar(sa.select(db.projects.c.id).where(db.projects.c.id == p.id, visible(a))):
         return None
@@ -370,7 +372,7 @@ def gate_check(c, a, p) -> GateException | None:
     signed = _current(c, p, _basis(c, p), row, _now(c))
     if signed is None:
         return None
-    receipt = _view(row, signed)
+    receipt = _view(c, p, row, signed)
     return GateException(receipt.model_dump(mode='json'), _refs(receipt))
 
 
@@ -379,11 +381,11 @@ def get(projectId: UUID, authorization: Auth) -> Result[State]:
     def read(c, a, _):
         p = _project(c, a, projectId, write=False)
         basis = _basis(c, p)
-        enabled = synthetic_confirmation(c)
-        row = _latest(c, p.id) if enabled else None
+        enabled = selection(c, p, 'requirement.exception') is not None
+        row = _latest(c, p.id)
         signed = _current(c, p, basis, row, _now(c)) if row is not None else None
         revision = row.revision if row is not None else 1
-        current = _view(row, signed) if signed is not None else None
+        current = _view(c, p, row, signed) if signed is not None else None
         authority = _client(c, p, a.person) if enabled and p.stage in ACTIVE_STAGES else None
         can_sign = (SIGN in a.actions and p.stage == 'delivering' and authority is not None and current is None and revision < BIGINT_MAX
                     and basis is not None and not basis.truncated and _independent(c, p, a.person, basis))
@@ -392,7 +394,7 @@ def get(projectId: UUID, authorization: Auth) -> Result[State]:
         state = State(projectId=p.id, revision=revision, gapHash=basis.digest if basis else None,
             gaps=basis.gaps if basis else [], gapsTruncated=basis.truncated if basis else False, current=current,
             canSign=can_sign, canRevoke=can_revoke, signerPersonId=a.person if authority is not None else None,
-            revocableExceptionId=row.id if can_revoke else None)
+            revocableExceptionId=row.id if can_revoke else None, policyStatus=status(c, p, 'requirement.exception'))
         return Result[State](data=state, meta=meta(GET, _refs(current) if current else [f'project:{p.id}@{p.revision}']))
 
     return run(authorization, GET, read)
@@ -400,11 +402,10 @@ def get(projectId: UUID, authorization: Auth) -> Result[State]:
 
 def _write_context(c, a, pid):
     p = _project(c, a, pid, write=True)
-    if not synthetic_confirmation(c):
-        raise Failure(403, 'POLICY_PENDING', project_id=pid)
     authority = _client(c, p, a.person)
     if authority is None:
         raise Failure(403, 'INDEPENDENT_CUSTOMER_REQUIRED', project_id=pid)
+    guard(c, p, 'requirement.exception')
     return p, authority
 
 
@@ -440,6 +441,7 @@ def sign(projectId: UUID, command: Sign, authorization: Auth, key: Key, expected
         prior = replay(c, a, SIGN, key, signature, Result[Receipt])
         if prior is not None:
             return prior
+        require(c, p, 'requirement.exception', rid)
         if p.stage != 'delivering':
             raise Failure(422, 'REQUIREMENT_EXCEPTION_LOCKED', project_id=p.id)
         last = _latest(c, p.id)
@@ -467,7 +469,7 @@ def sign(projectId: UUID, command: Sign, authorization: Auth, key: Key, expected
             ruleVersion=RULE_VERSION, policyVersion=POLICY_VERSION, customerStakeholderId=contact, proof=proof,
             verifierAssignmentId=verifier, evidenceUploadedBy=uploader, evidenceOwnerId=owner)
         row = _append(c, p, a, rid, revision, assignment.id, 'signed', signed.model_dump(mode='json'), now=now, evidence=evidence_id)
-        receipt = _view(row, signed)
+        receipt = _view(c, p, row, signed)
         result = Result[Receipt](data=receipt, meta=meta(SIGN, _refs(receipt)))
         return _finish(c, p, a, rid, key, SIGN, signature, row, result, last.fingerprint if last is not None else None)
 
@@ -484,6 +486,7 @@ def revoke(projectId: UUID, exceptionId: UUID, command: Revoke, authorization: A
         prior = replay(c, a, REVOKE, key, signature, Result[Revocation])
         if prior is not None:
             return prior
+        require(c, p, 'requirement.exception', rid)
         if p.stage not in ACTIVE_STAGES:
             raise Failure(422, 'REQUIREMENT_EXCEPTION_LOCKED', project_id=p.id)
         last = _latest(c, p.id)
@@ -496,7 +499,8 @@ def revoke(projectId: UUID, exceptionId: UUID, command: Revoke, authorization: A
                    'ruleVersion': RULE_VERSION, 'policyVersion': POLICY_VERSION}
         row = _append(c, p, a, rid, revision, assignment.id, 'revoked', payload, now=_now(c), revokes=last.id)
         result = Result[Revocation](data=Revocation(exceptionId=last.id, revocationId=row.id, projectId=p.id,
-            revision=row.revision, revokedBy=a.person, revokedAt=row.created_at, receiptHash=row.fingerprint),
+            revision=row.revision, revokedBy=a.person, revokedAt=row.created_at, receiptHash=row.fingerprint,
+            policyStatus=status(c, p, 'requirement.exception')),
             meta=meta(REVOKE, [f'requirement-exception:{last.id}@{last.revision}',
                               f'requirement-exception-revocation:{row.id}@{row.revision}']))
         return _finish(c, p, a, rid, key, REVOKE, signature, row, result, last.fingerprint)

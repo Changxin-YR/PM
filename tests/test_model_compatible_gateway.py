@@ -94,6 +94,9 @@ def test_pilot_supervises_scheduler_under_scoped_api_environment(monkeypatch, co
     monkeypatch.setattr(pilot_local, 'db_connect', lambda cfg, role: nullcontext(connection))
     monkeypatch.setattr(pilot_local, 'bind', lambda port: nullcontext())
     monkeypatch.setattr(pilot_local, 'ready', lambda: True)
+    monkeypatch.setattr(pilot_local, 'web_artifact_digest', lambda: 'fixture-web-index-sha')
+    monkeypatch.setattr(pilot_local, 'activation_scope', lambda *_: ({}, 'unit-test-permit'))
+    monkeypatch.setenv('PMO_PILOT_MODEL_PERMIT', 'unit-test-permit')
     monkeypatch.setattr(pilot_local.subprocess, 'CREATE_NO_WINDOW', 0, raising=False)
     monkeypatch.setattr(pilot_local.subprocess, 'check_output', lambda *args, **kwargs: 'synthetic-head\n')
     processes = {}
@@ -283,6 +286,26 @@ def test_saved_configuration_loads_only_into_the_right_process(monkeypatch, tmp_
     assert 'fixture-assistant-key' not in repr(client)
     monkeypatch.delenv('PMO_ASSISTANT_MODEL_VERSION')
     assert model_gateway.Gateway.for_previews() is None
+
+
+def test_explicit_model_fixture_scopes_fail_closed(monkeypatch):
+    project, drill, report = uuid4(), uuid4(), uuid4()
+    digest = 'a' * 64
+    monkeypatch.setenv('PMO_ASSISTANT_MODEL_PROJECTS', f'{project},{drill}')
+    monkeypatch.setenv('PMO_ASSISTANT_CLOSING_ONLY_PROJECTS', str(drill))
+    assert model_gateway.assistant_scope(project, 'ledger')
+    assert model_gateway.assistant_scope(drill, 'closing')
+    assert not model_gateway.assistant_scope(drill, 'ledger')
+
+    monkeypatch.setenv('PMO_REPORT_MODEL_PROJECTS', str(project))
+    monkeypatch.setenv('PMO_REPORT_MODEL_SOURCE', f'{report}:1:{digest}')
+    assert model_gateway.report_scope(project, report, 1, digest)
+    assert not model_gateway.report_scope(project, report, 2, digest)
+    assert not model_gateway.report_scope(project, report, 1, 'b' * 64)
+    assert not model_gateway.report_scope(project, uuid4(), 1, digest)
+    assert not model_gateway.report_scope(drill, report, 1, digest)
+    monkeypatch.setenv('PMO_REPORT_MODEL_SOURCE', f'{report}:1:malformed')
+    assert not model_gateway.report_scope(project, report, 1, digest)
 
 
 @pytest.mark.parametrize(('channel', 'enabled_flag', 'load'), (

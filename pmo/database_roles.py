@@ -22,6 +22,7 @@ API_READ = frozenset('''alembic_version organizations user_accounts user_roles p
     project_members charters charter_versions milestones requirements
     stakeholders risks reviews reports decisions scorecards cost_entries cost_postings
     cost_plan_versions cost_baseline_history evidence_files evidence_links
+    category_cost_budgets category_cost_forecasts category_posting_requests category_posting_classifications
     change_entries change_approval_grants change_decision_records approval_requests
     appointment_authorities role_invitations requirement_baseline_signatures project_member_revocations
     requirement_transitions milestone_completions milestone_forecasts milestone_delay_episodes
@@ -29,25 +30,29 @@ API_READ = frozenset('''alembic_version organizations user_accounts user_roles p
     agent_collection_versions web_sessions login_windows idempotency_keys audit_logs
     rule_events review_submission_snapshots project_stage_transitions tasks review_appeals review_confirmations
     review_decision_snapshots review_strengthening_tasks cost_reconciliation_grants cost_reconciliations
+    review_reinforcement_responses review_calibration_plans review_calibration_results
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
     project_transition_grants
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
     health_appeal_decisions health_zero_budgets project_rule_scan_state
     facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
-    organization_user_invitations account_status_changes requirement_disputes'''.split())
+    organization_user_invitations account_status_changes requirement_disputes
+    policy_versions policy_events policy_bindings'''.split())
 API_ADD = frozenset('''projects project_members charters charter_versions milestones requirements stakeholders reports
     risks reviews cost_entries cost_postings cost_plan_versions cost_baseline_history evidence_files evidence_links
+    category_cost_budgets category_cost_forecasts category_posting_requests category_posting_classifications
     change_entries change_decision_records approval_requests role_invitations requirement_baseline_signatures project_member_revocations
     requirement_transitions milestone_completions milestone_forecasts milestone_delay_episodes
     agent_credentials agent_project_grants agent_security_events agent_token_versions
     agent_collection_versions web_sessions login_windows idempotency_keys audit_logs outbox_events
     rule_events review_submission_snapshots project_stage_transitions tasks scorecards decisions
     review_appeals review_confirmations review_decision_snapshots review_strengthening_tasks cost_reconciliations
+    review_reinforcement_responses review_calibration_plans review_calibration_results
     risk_handoff_acceptances risk_resolutions lessons project_retrospectives project_transition_intents project_transition_outcomes
     requirement_exception_events project_termination_confirmations health_snapshots health_appeals
     health_appeal_decisions health_zero_budgets project_rule_scan_state
     facts fact_clarifications fact_source_receipts fact_history report_analysis_runs
-    user_accounts persons organization_user_invitations account_status_changes requirement_disputes'''.split())
+    user_accounts persons organization_user_invitations account_status_changes requirement_disputes policy_bindings'''.split())
 
 # Postgres uses the same privilege for UPDATE and SELECT ... FOR SHARE. These
 # tables need row locks but must not accept any UPDATE from the API login.
@@ -68,7 +73,7 @@ API_EDIT = {
     'projects': 'name description revision updated_at pm_id sponsor_id stage',
     'reviews': 'revision updated_at status verdict minutes attendees scheduled_at',
     'lessons': 'revision updated_at status confirmed_by confirmed_at',
-    'project_retrospectives': 'revision updated_at completed_at confirmed_by answers',
+    'project_retrospectives': 'revision updated_at completed_at confirmed_by answers calibration_deviations',
     'project_members': 'assigned_by assignment_status accepted_at revoked_at invitation_decision_at invitation_expires_at updated_at',
     'role_invitations': 'status issuer_id issuer_authority_generation expires_at decided_at revision',
     'charters': None, 'milestones': None, 'requirements': None, 'risks': None,

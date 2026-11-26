@@ -10,8 +10,10 @@ import sqlalchemy as sa
 
 from pmo import schema_v1 as db
 from pmo.cost_reconciliation import grants
+from pmo.reports import TZ
+from pmo.review_scores import WEIGHTS
 from test_evidence import binary
-from test_reviews import (bench, data, decide, headers, issue, member, planning_setup, score, start_charter,
+from test_reviews import (bench, data, decide, headers, issue, member, planning_setup, prepare_charter, score, score_command, start_charter,
                           team as team)
 
 ANSWERS = [
@@ -51,12 +53,36 @@ def upload(pm, reviewer, project, kind, resource, content=None):
         json={'reason': 'Reviewed original synthetic evidence bytes', 'sha256': proof['sha256']}))
 
 
-def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), first_day=None):
+def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), first_day=None, calibration=False):
     engine, _, _, _ = live
     pid, people, users, _ = team
     reviewer = users['reviewer']
-    charter = start_charter(pid, users)
-    score(reviewer, charter, [4] * 4)
+    if calibration:
+        owner = users['initiator']
+        project_path = f'projects/{pid}'
+        prepare_charter(owner, project_path)
+        expectations = {key: {'expected': 'Compare documented outcomes against the accepted charter and agreed objective.',
+            'reviewerId': str(people['reviewer']), 'observeAfter': datetime.now(TZ).date().isoformat()} for key in WEIGHTS}
+        payload = {'dimensions': expectations}
+        key = headers()
+        plan = owner.put(project_path + '/review-calibration/plan', headers=key, json=payload)
+        assert data(plan)['plan']['dimensions']['strategicAlignment']['expected'] == expectations['strategicAlignment']['expected']
+        assert owner.put(project_path + '/review-calibration/plan', headers=key, json=payload).json() == plan.json()
+        charter = gate(owner, project_path, 'charter')
+    else:
+        charter = start_charter(pid, users)
+    if calibration:
+        workbench = bench(reviewer, charter)
+        command = score_command(workbench, [4] * 4)
+        for dimension in workbench['dimensions']:
+            rating = command['dimensions'][dimension['key']]
+            rating['judgments'] = [{'criterion': item['key'], 'value': 'unknown'} for item in dimension['criteria']
+                                   if item['minimumScore'] <= 4]
+            rating['retainedReason'] = 'Unresolved evidence noted for independent recheck at the observation date.'
+        saved = data(reviewer.post(charter + '/scores', headers=headers(workbench['review']['revision']), json=command))
+        assert saved['scores'][0]['anchorVersion']
+    else:
+        score(reviewer, charter, [4] * 4)
     data(decide(reviewer, charter))
     project, requirement, risk = planning_setup(engine, pid, people, users, seed_stage=False, effort_budget=effort_budget,
                                                extra_priorities=extra_priorities, first_day=first_day)
@@ -127,11 +153,13 @@ def close_materials(pm, reviewer, customer, project, requirement, risk, *, confi
     return now, risk_proof, cost_proof
 
 
-def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
+@pytest.mark.parametrize('calibration', (False, True), ids=('existing', 'calibration'))
+def test_drafting_to_archive_without_model_or_stage_fixtures(live, team, calibration):
     pid, _, users, _ = team
     engine = live[0]
     pm, reviewer, customer, reconciler = (users[k] for k in ('pm', 'reviewer', 'client_representative', 'outsider'))
-    project, requirement, risk = execution_fixture(live, team)
+    grant_closure_roles(live, team)
+    project, requirement, risk = begin_execution(live, team, calibration=calibration)
     assert propose(pm, project, 'closed').json()['code'] == 'TRANSITION_NOT_ALLOWED'
     assert propose(pm, project, 'delivering').json()['code'] == 'MILESTONE_COMPLETION_REQUIRED'
     complete_milestones(pm, reviewer, project)
@@ -169,7 +197,31 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     assert data(retro_response)['costDiscussion'] == expected_discussion
     assert source in retro_response.json()['meta']['sourceRefs']
     assert propose(pm, project, 'archived').json()['code'] == 'RETROSPECTIVE_ANSWERS_REQUIRED'
-    data(pm.put(retro, headers=headers(data(pm.get(retro))['revision']), json={'answers': ANSWERS}))
+    answer_command = {'answers': ANSWERS}
+    if calibration:
+        def evaluate(dimension, command, revision=1, actor=reviewer):
+            return actor.put(project + f'/review-calibration/results/{dimension}', headers=headers(revision), json=command)
+
+        rationale = 'Compared actual signed source outcomes against the frozen charter expectation.'
+        evidence_refs = [cost_proof['evidenceRef']]
+        evaluated = {'status': 'evaluated', 'score': '3.00', 'reasoning': rationale, 'evidenceRefs': evidence_refs}
+        assert evaluate('strategicAlignment', evaluated, actor=pm).status_code == 403
+        assert evaluate('strategicAlignment', {**evaluated, 'evidenceRefs': []}).status_code == 422
+        assert evaluate('strategicAlignment', {**evaluated, 'evidenceRefs': [f'evidence:{uuid4()}']}).json()['code'] == (
+            'REVIEW_RESPONSE_EVIDENCE_INVALID')
+        result = data(evaluate('strategicAlignment', evaluated))['dimensions']['strategicAlignment']
+        assert (result['originalMean'], result['difference'], result['requiresRetrospective']) == ('4.00', '-1.00', True)
+        result = data(evaluate('customerAttractiveness', {**evaluated, 'score': '3.01'}))['dimensions']['customerAttractiveness']
+        assert (result['difference'], result['requiresRetrospective']) == ('-0.99', False)
+        pending = data(evaluate('financialResourceReturn', {'status': 'pending', 'reasoning': 'Await end-of-period report.',
+            'followUpBy': (datetime.now(TZ).date() + timedelta(days=7)).isoformat(), 'evidencePlan': 'Compare verified source ledger.'}))
+        assert pending['status'] == 'open' and 'difference' not in pending['dimensions']['financialResourceReturn']
+        data(evaluate('riskControllability', {'status': 'incomparable', 'reasoning': 'Operating context changed during delivery.'}))
+        assert pm.put(retro, headers=headers(), json=answer_command).json()['code'] == 'CALIBRATION_DEVIATION_REQUIRED'
+        answer_command['calibrationDeviations'] = {'strategicAlignment': {'resultRevision': 2,
+            'explanation': 'Actual contribution missed the baseline commitment.',
+            'improvement': 'Add an independent contribution check during feasibility.'}}
+    data(pm.put(retro, headers=headers(data(pm.get(retro))['revision']), json=answer_command))
     assert propose(pm, project, 'archived').json()['code'] == 'CONFIRMED_LESSON_REQUIRED'
     l = data(pm.post(project + '/lessons', headers=headers(), json={'category': 'governance',
         'what': 'Recovered trustworthy source data', 'rootCause': 'Source prepared independently', 'advice': 'Preserve evidence before review'}))
@@ -217,6 +269,18 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team):
     assert decide(reviewer, closing).json()['code'] == 'REVIEW_NOT_PENDING'
     assert bench(reviewer, closing)['decision'] == closing_receipt
     assert committed() == archive_state
+    if calibration:
+        original = data(pm.get(retro))
+        assert evaluate('financialResourceReturn', evaluated, revision=2).json()['code'] == 'CALIBRATION_DEVIATION_REQUIRED'
+        follow_up = {**evaluated, 'followUpDeviation': {'resultRevision': 3,
+            'explanation': 'Reconciled actual return was below the frozen expectation.',
+            'improvement': 'Validate committed value before setting the project target.'}}
+        updated = data(evaluate('financialResourceReturn', follow_up, revision=2))
+        assert [row['status'] for row in updated['dimensions']['financialResourceReturn']['history']] == ['pending', 'evaluated']
+        assert updated['status'] == 'open'
+        assert data(pm.get(retro)) == original
+        assert bench(reviewer, closing)['decision'] == closing_receipt
+        assert reviewer.post(f"approvals/{archive['requestId']}/decide", headers=key, json=command).json() == saved.json()
     with engine.connect() as c:
         steps = c.execute(sa.text('SELECT to_stage FROM project_stage_transitions WHERE project_id=:pid ORDER BY to_revision'),
                           {'pid': pid}).scalars().all()

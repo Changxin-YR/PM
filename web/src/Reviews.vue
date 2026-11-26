@@ -3,6 +3,7 @@ import {computed,nextTick,onMounted,ref,watch} from 'vue'
 import {ClipboardList,RefreshCw,RotateCcw,Send} from 'lucide-vue-next'
 import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 import ReviewWorkbench from './ReviewWorkbench.vue'
+import ReviewCalibration from './ReviewCalibration.vue'
 
 type Gate='charter'|'feasibility'|'closing'
 type Draft={gateCheck:{gate:Gate;eligible:boolean;missing:{code:string;message:string;sourceRefs:string[]}[]};draftMaterials:string[]}
@@ -110,6 +111,8 @@ watch(()=>props.focusReviewId,id=>{if(id)openWorkbench(id)},{immediate:true})
     </div>
     <el-alert v-if="notice" :title="notice" type="success" :closable="false" show-icon/>
     <el-alert v-if="error && !confirm" :title="error" type="error" :closable="false" show-icon/>
+    <ReviewCalibration v-if="gate==='charter'" :project-id="projectId" stage="drafting" :api="api"
+      :revision="projectRevision" @saved="refresh"/>
     <div v-if="gate && draft" class="gate-review">
       <h4>{{labels[gate]}}预检 · {{draft.gateCheck.eligible?'材料齐备':'存在缺口'}}</h4>
       <ul v-if="draft.gateCheck.missing.length" class="gate-gaps">

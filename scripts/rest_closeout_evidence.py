@@ -25,26 +25,26 @@ def operations(doc):
             if isinstance(info, dict) and 'operationId' in info}
 
 
-def endpoints(router):
+def endpoints(router, prefix=''):
     for route in router.routes:
         if isinstance(route, APIRoute):
-            yield route
+            yield prefix + route.path, route
         elif original := getattr(route, 'original_router', None):
-            yield from endpoints(original)
+            yield from endpoints(original, prefix + route.include_context.prefix)
 
 
 def bindings(observed):
     actual = operations(observed)
     expected = operations(yaml.safe_load(next((ROOT / 'docs/spec').glob('12_OpenAPI_*.yaml')).read_text(encoding='utf-8')))
-    code = {route.operation_id: route for route in endpoints(app) if route.operation_id}
+    code = {route.operation_id: (path, route) for path, route in endpoints(app) if route.operation_id}
     assert len(expected) == 95 and len(ROUTES) == 40
     assert set(actual) == set(code)
     assert {k: v[:2] for k, v in actual.items()} == {k: v[:2] for k, v in operations(app.openapi()).items()}
     for name, (_, _, _) in expected.items():
         assert actual[name][:2] == expected[name][:2], name
     for name, (method, path, _) in actual.items():
-        route = code[name]
-        assert route.path == path and method in route.methods, name
+        bound_path, route = code[name]
+        assert bound_path == path and method in route.methods, name
         if name in ROUTES:
             assert (method, path) == (ROUTES[name][0], '/api/v1' + ROUTES[name][1]), name
         if name not in BOOTSTRAP | PROBES:

@@ -10,6 +10,7 @@ from .contracts import RULE_VERSION, Result, Strict
 from .gates import ENTRY, REVIEW, Check, Gate, evaluate, lock_project, submitter
 from .identity import Failure
 from .materials import replay
+from .policy import freeze, review_action
 from .projects import fingerprint, meta, record_receipt, run
 
 SUBMIT = 'pmo_review_submit'
@@ -172,6 +173,9 @@ def submit_review(c, a, pid, gate: Gate, expected, key, rid):
     row = c.execute(reviews.insert().values(project_id=pid, created_by=a.person, round=round_no, type=gate,
                     status='pending', attendees=[], snapshot_hash=check.snapshotHash).returning(reviews)).mappings().one()
     review_id = row.id
+    freeze(c, p, review_action(gate), review_id)
+    if gate == 'feasibility' and 'categoryPlan' in materials.content:
+        freeze(c, p, 'cost.category', review_id)
     c.execute(snapshots.insert().values(review_id=review_id, rule_version=RULE_VERSION, snapshot_hash=check.snapshotHash,
                                        materials=materials.content, source_refs=refs(p, materials)))
     c.execute(db.approval_requests.insert().values(id=review_id, project_id=pid, action=APPROVAL_ACTION,

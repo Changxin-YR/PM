@@ -129,6 +129,34 @@ def test_report_scope_blocks_queue_and_preexisting_job(team, live, analysis_api,
         assert not calls
 
 
+def test_bound_pilot_report_queues_only_approved_revision(team, analysis_api, tmp_path, monkeypatch):
+    pm = team.users['pm']
+    unrelated = submit(pm, team.path, narrative='Separate unapproved synthetic source')
+    approved = submit(pm, team.path, narrative=NARRATIVE)
+    with session_at(pm, analysis_api) as client:
+        existing = data(request(client, unrelated))
+    assert existing['status'] == 'queued'
+    binding = f"{approved['reportId']}:{approved['revision']}:{approved['contentHash']}"
+    monkeypatch.setenv('PMO_REPORT_MODEL_SOURCE', binding)
+    with serve(team.engine.url, tmp_path, extra_env={'PMO_REPORT_ANALYSIS': '1'}) as scoped, \
+            session_at(pm, scoped.base_url) as client:
+        assert not history(client, unrelated)['modelEnabled']
+        assert history(client, approved)['modelEnabled']
+        queued = data(request(client, approved))
+    claimed = worker.claim(team.engine)
+    assert claimed and str(claimed.row.id) == queued['runId']
+    assert worker.claim(team.engine) is None
+    with team.engine.connect() as connection:
+        assert inspect_team(connection, existing).status == 'queued'
+    # Close the fixture jobs through the worker without reaching a provider.
+    worker.process(team.engine, claimed, None)
+    monkeypatch.setenv('PMO_REPORT_MODEL_SOURCE',
+                       f"{unrelated['reportId']}:{unrelated['revision']}:{unrelated['contentHash']}")
+    old_claim = worker.claim(team.engine)
+    assert old_claim and str(old_claim.row.id) == existing['runId']
+    worker.process(team.engine, old_claim, None)
+
+
 def test_model_off_author_scope_replay_and_atomic_fallback(team):
     pm, author, reviewer, outsider = (team.users[k] for k in ('pm','reporter','reviewer','outsider'))
     draft = data(author.post(team.path + '/drafts', headers=headers(), json=body()))

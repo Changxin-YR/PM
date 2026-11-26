@@ -6,7 +6,8 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Body, Query
-from pydantic import AfterValidator, Field, StringConstraints, ValidationError
+from pydantic import AfterValidator, Field, StringConstraints, ValidationError, model_serializer
+from sqlalchemy.dialects.postgresql import JSONB
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
@@ -17,6 +18,7 @@ from .identity import Failure, explicit_project_scope, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_member
+from .review_calibration import Deviation, DimensionKey, retrospective_basis
 
 GET = 'human_retrospective_get'
 SAVE = 'human_retrospective_save'
@@ -29,7 +31,10 @@ router = APIRouter(prefix='/api/v1', tags=['Retrospectives and lessons'])
 _entry = sa.table('project_stage_transitions', sa.column('project_id', sa.Uuid), sa.column('from_stage'),
                   sa.column('to_stage'), sa.column('to_revision', sa.BigInteger),
                   sa.column('transitioned_at', sa.DateTime(timezone=True)))
-_retro, _lessons, _projects = db.project_retrospectives, db.lessons, db.projects
+_retro = sa.table('project_retrospectives',
+    *(sa.column(column.name, column.type) for column in db.project_retrospectives.columns),
+    sa.column('calibration_deviations', JSONB))
+_lessons, _projects = db.lessons, db.projects
 _placeholders = frozenset({'todo', 'tbd', 'n/a', 'na', 'none', 'null', 'unknown', '待补', '待填写', '待定',
                            '未知', '无', '暂无', '不适用', '略'})
 Origin = Literal['closed', 'terminated']
@@ -67,6 +72,7 @@ QueryText = Annotated[str, AfterValidator(_plain)]
 class Save(Strict):
     answers: list[Answer] = Field(min_length=4, max_length=4, description=(
         'In order: target vs. actual; delivery performance and causes; reusable assets; lessons and advice.'))
+    calibrationDeviations: dict[DimensionKey, Deviation] = Field(default_factory=dict)
 
 
 class Draft(Strict):
@@ -102,6 +108,17 @@ class CostDiscussion(Strict):
 class RetrospectiveView(Retrospective):
     questions: Questions
     costDiscussion: list[CostDiscussion] = Field(default_factory=list, max_length=2)
+    calibrationDeviations: dict[DimensionKey, Deviation] | None = None
+    calibrationGap: str | None = None
+
+    @model_serializer(mode='wrap')
+    def omit_unset_calibration(self, serialize):
+        result = serialize(self)
+        if self.calibrationDeviations is None:
+            result.pop('calibrationDeviations', None)
+        if self.calibrationGap is None:
+            result.pop('calibrationGap', None)
+        return result
 
 
 class Lesson(Strict):
@@ -314,13 +331,21 @@ def archive_basis(c, a, p) -> tuple[dict[str, Any], list[str]]:
     proof = _lesson(witness).model_dump(mode='json', exclude={'canConfirm', 'createdAt', 'confirmedAt'})
     proof['createdAt'] = witness.created_at.astimezone(UTC).isoformat()
     proof['confirmedAt'] = witness.confirmed_at.astimezone(UTC).isoformat()
-    return {
+    content = {
         'projectId': str(p.id), 'kind': _kind(entry), 'fromStage': entry.from_stage,
         'entryRevision': entry.to_revision, 'enteredAt': entry.transitioned_at.astimezone(UTC).isoformat(),
         'retrospective': {'retrospectiveId': str(row.id), 'revision': row.revision, 'answers': answers,
                           'completedAt': row.completed_at.astimezone(UTC).isoformat()},
         'lessons': [proof],
-    }, [_entry_ref(entry), _retro_ref(row), _lesson_ref(witness)]
+    }
+    refs = [_entry_ref(entry), _retro_ref(row), _lesson_ref(witness)]
+    if _kind(entry) == 'normal':
+        deviations = {k: Deviation.model_validate(v) for k, v in row.calibration_deviations.items()}
+        details, calibration_refs = retrospective_basis(c, a, p, deviations, archive=True)
+        if details:
+            content['calibration'] = details
+            refs.extend(calibration_refs)
+    return content, refs
 
 
 @router.get('/projects/{projectId}/retrospective', operation_id=GET)
@@ -328,12 +353,22 @@ def get_retrospective(projectId: UUID, authorization: Auth) -> Result[Retrospect
     def query(c, a, _):
         p = _human_project(c, a, projectId)
         entry = _origin(c, p)
-        result = _retrospective_result(GET, p, _retrospective(c, p.id), entry,
+        row = _retrospective(c, p.id)
+        result = _retrospective_result(GET, p, row, entry,
                                        can_save=entry is not None and p.stage == 'retrospective' and _pm(c, a, p))
         discussions = _cost_discussion(c, p, entry)
         result.meta.sourceRefs = list(dict.fromkeys([*result.meta.sourceRefs, *(i.sourceRef for i in discussions)]))
+        gap = None
+        if row and p.stage == 'retrospective' and _kind(entry) == 'normal':
+            try:
+                deviations = {k: Deviation.model_validate(v) for k, v in row.calibration_deviations.items()}
+                _details, refs = retrospective_basis(c, a, p, deviations)
+                result.meta.sourceRefs = list(dict.fromkeys([*result.meta.sourceRefs, *refs]))
+            except Failure as failure:
+                gap = failure.code
         return Result[RetrospectiveView](data=RetrospectiveView(**result.data.model_dump(), questions=list(QUESTIONS),
-                                                               costDiscussion=discussions),
+            costDiscussion=discussions, calibrationDeviations=(row.calibration_deviations or None) if row else None,
+            calibrationGap=gap),
                                          meta=result.meta)
     return run(authorization, GET, query)
 
@@ -341,7 +376,8 @@ def get_retrospective(projectId: UUID, authorization: Auth) -> Result[Retrospect
 @router.put('/projects/{projectId}/retrospective', operation_id=SAVE)
 def save_retrospective(projectId: UUID, command: Save, authorization: Auth, key: Key, expected: Revision) -> Result[Retrospective]:
     revision = int(expected)
-    signature = fingerprint([str(projectId), revision, command.answers])
+    signature = fingerprint([str(projectId), revision, command.answers] + (
+        [command.model_dump(mode='json')['calibrationDeviations']] if command.calibrationDeviations else []))
 
     def write(c, a, rid):
         p = _human_project(c, a, projectId, write=True)
@@ -354,8 +390,11 @@ def save_retrospective(projectId: UUID, command: Save, authorization: Auth, key:
         old = _retrospective(c, p.id)
         if revision != (old.revision if old else 1):
             raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
+        if _kind(entry) == 'normal':
+            retrospective_basis(c, a, p, command.calibrationDeviations)
         values = {'answers': command.answers, 'revision': revision + 1, 'completed_at': sa.func.now(),
-                  'updated_at': sa.func.now()}
+                  'updated_at': sa.func.now(),
+                  'calibration_deviations': command.model_dump(mode='json')['calibrationDeviations']}
         stmt = _retro.update().where(_retro.c.id == old.id) if old else _retro.insert().values(project_id=p.id)
         row = c.execute(stmt.values(**values).returning(_retro)).mappings().one()
         result = _retrospective_result(SAVE, p, row, entry, can_save=True)

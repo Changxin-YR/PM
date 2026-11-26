@@ -100,7 +100,7 @@ def execute(authorization, pid, key, revision, command, authorize, collect) -> R
             created_at=basis.at, expires_at=basis.at + timedelta(days=90)).returning(i.id))
         if not model_gateway.previews_enabled():
             return complete(c, a, rid, receipt_id, basis, status='manual', code='MODEL_DISABLED')
-        if not model_gateway.in_project_scope('ASSISTANT', pid):
+        if not model_gateway.assistant_scope(pid, command.mode):
             return complete(c, a, rid, receipt_id, basis, status='manual', code='MODEL_SCOPE_BLOCKED')
         if gateway is None:
             return complete(c, a, rid, receipt_id, basis, status='manual', code='MODEL_UNAVAILABLE')

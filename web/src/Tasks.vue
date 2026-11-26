@@ -11,7 +11,8 @@ const reviewLabels:Record<string,string>={charter:'立项评审',feasibility:'�
 type Source=keyof typeof sourceLabels
 type Status=keyof typeof statusLabels
 type Task={taskId:string;projectId:string;title:string;status:Status;revision:number;sourceType:keyof typeof displaySources;sourceId:string;
-  assigneeId?:string;dueAt?:string;completedAt?:string;canUpdate:boolean}
+  assigneeId?:string;dueAt?:string;completedAt?:string;canUpdate:boolean;canRespond?:boolean;responseEvidenceRequired?:boolean;
+  writtenResponse?:{responseText:string;evidenceRefs:string[];submittedAt:string;submittedBy:string;revision:number}}
 type Page={items:Task[];page:number;pageSize:number;total:number;canCreate:boolean;projectRevision:number}
 type Member={personId:string;name:string}
 type SourceRow={reviewId?:string;riskId?:string;alertId?:string;type?:string;statement?:string;ruleId?:string;milestoneName?:string}
@@ -22,8 +23,9 @@ const path=computed(()=>
   'projects/'+props.projectId+'/tasks')
 const pageSize=20,rows=ref<Task[]>([]),page=ref(1),total=ref(0),canCreate=ref(false),projectRevision=ref(0)
 const loading=ref(false),busy=ref(false),error=ref(''),formError=ref(''),notice=ref('')
-const mode=ref<'create'|'update'|null>(null),editing=ref<Task|null>(null),createRevision=ref(0)
+const mode=ref<'create'|'update'|'respond'|null>(null),editing=ref<Task|null>(null),createRevision=ref(0)
 const title=ref(''),sourceType=ref<Source>('review'),sourceId=ref(''),assigneeId=ref(''),due=ref(''),status=ref<Status>('todo')
+const responseText=ref(''),responseRefs=ref('')
 const members=ref<Member[]>([]),membersLoading=ref(false),memberError=ref('')
 const sources=ref<Choice[]>([]),sourcesLoading=ref(false),sourceError=ref('')
 let loadId=0,sourceLoadId=0,memberLoadId=0,key='',lastRequest=''
@@ -89,15 +91,29 @@ function openForm(row:Task|null){
 function changeSource(value:Source){sourceType.value=value;sourceId.value='';void loadSources()}
 function refresh(){notice.value='';void load();void loadMembers()}
 
+function openResponse(row:Task){
+  mode.value='respond';editing.value=row;formError.value='';notice.value='';key='';lastRequest=''
+  responseText.value=row.writtenResponse?.responseText??''
+  responseRefs.value=row.writtenResponse?.evidenceRefs.join('\n')??''
+}
+
 async function save(){
   if(!mode.value||busy.value)return
   const row=editing.value,pid=props.projectId,revision=row?.revision??createRevision.value
-  const target=row?'tasks/'+row.taskId:path.value
+  const responding=mode.value==='respond'
+  const target=row?'tasks/'+row.taskId+(responding?'/written-response':''):path.value
   const dueChanged=due.value!==localDate(row?.dueAt),date=due.value?new Date(due.value):null
   formError.value=''
   if(date&&Number.isNaN(date.getTime())){formError.value='到期时间无效。';return}
   let command:object
-  if(row){
+  if(responding){
+    const refs=responseRefs.value.toLowerCase().split(/\s+/u).filter(Boolean)
+    if(responseText.value.trim().length<4||refs.some(ref=>!ref.startsWith('evidence:')||!uuid.test(ref.slice(9)))||
+      new Set(refs).size!==refs.length||refs.length>12||row?.responseEvidenceRequired&&!refs.length){
+      formError.value='请填写书面回应及所需的有效附件引用。';return
+    }
+    command={responseText:responseText.value.trim(),evidenceRefs:refs}
+  }else if(row){
     if(row.dueAt&&!due.value){formError.value='已有的到期时间不能清空。';return}
     const fieldsTask={...(status.value!==row.status?{status:status.value}:{}),...(date&&dueChanged?{dueAt:date.toISOString()}:{})}
     if(!Object.keys(fieldsTask).length){formError.value='没有需要保存的更改。';return}
@@ -112,8 +128,8 @@ async function save(){
   if(!key||signature!==lastRequest){key=crypto.randomUUID();lastRequest=signature}
   busy.value=true
   try{
-    await props.api(target,{method:row?'PATCH':'POST',headers:{'Idempotency-Key':key,'If-Match':String(revision)},body})
-    if(props.projectId===pid){closeForm();notice.value=row?'任务已更新。':'补强任务已创建。';await load(row?page.value:1)}
+    await props.api(target,{method:row&&!responding?'PATCH':'POST',headers:{'Idempotency-Key':key,'If-Match':String(revision)},body})
+    if(props.projectId===pid){closeForm();notice.value=responding?'书面回应已提交。':row?'任务已更新。':'补强任务已创建。';await load(row?page.value:1)}
   }catch(e){if(props.projectId===pid)formError.value=message(e)}
   finally{if(props.projectId===pid)busy.value=false}
 }
@@ -137,7 +153,14 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
     <form v-if="mode" class="task-form" @submit.prevent="save">
       <h3>{{editing?editing.title:'新建补强任务'}}</h3>
       <fieldset :disabled="busy">
-        <template v-if="mode==='create'">
+        <template v-if="mode==='respond'">
+          <label class="wide">书面回应<textarea v-model="responseText" rows="4" maxlength="6000" required
+            placeholder="说明采取的措施、结果和仍存在的限制"/></label>
+          <label class="wide">已核验附件引用{{editing?.responseEvidenceRequired?'（必填）':'（可选）'}}
+            <textarea v-model="responseRefs" rows="2" placeholder="每行填写一个 evidence:… 引用" :required="editing?.responseEvidenceRequired"/>
+          </label>
+        </template>
+        <template v-else-if="mode==='create'">
           <label class="wide">标题<input v-model="title" maxlength="200" required></label>
           <label>来源类型
             <el-select :model-value="sourceType" aria-label="来源类型" :disabled="busy" @change="changeSource">
@@ -164,17 +187,25 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
             <option v-for="(label,value) in statusLabels" :key="value" :value="value">{{label}}</option>
           </select>
         </label>
-        <label>到期时间<input v-model="due" type="datetime-local"></label>
+        <label v-if="mode!=='respond'">到期时间<input v-model="due" type="datetime-local"></label>
       </fieldset>
       <el-alert v-if="formError" :title="formError" type="error" :closable="false" show-icon/>
       <div class="task-actions">
         <el-button :disabled="busy" @click="closeForm">取消</el-button>
-        <el-button native-type="submit" type="primary" :loading="busy"><Save :size="15"/>保存任务</el-button>
+        <el-button native-type="submit" type="primary" :loading="busy"><Save :size="15"/>{{mode==='respond'?'提交书面回应':'保存任务'}}</el-button>
       </div>
     </form>
     <el-table :data="rows" row-key="taskId" v-loading="loading" :empty-text="error?'任务未读取':focusTaskId?'此任务已不可见':'暂无补强任务'">
       <el-table-column label="任务" min-width="170">
-        <template #default="{row}"><strong class="task-title">{{row.title}}</strong><small>版本 {{row.revision}}</small></template>
+        <template #default="{row}">
+          <strong class="task-title">{{row.title}}</strong><small>版本 {{row.revision}}</small>
+          <details v-if="row.writtenResponse">
+            <summary>回应版本 {{row.writtenResponse.revision}}</summary>
+            <p>{{row.writtenResponse.responseText}}</p>
+            <small>{{row.writtenResponse.submittedBy}} · {{dateFormat.format(new Date(row.writtenResponse.submittedAt))}}</small>
+            <small v-for="source in row.writtenResponse.evidenceRefs" :key="source"><code>{{source}}</code></small>
+          </details>
+        </template>
       </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="scope"><el-tag size="small" effect="plain" :type="statusTone[(scope.row as Task).status]">{{statusLabels[(scope.row as Task).status]}}</el-tag></template>
@@ -191,8 +222,9 @@ watch(()=>[props.projectId,props.focusTaskId],()=>{
       <el-table-column label="来源" min-width="158">
         <template #default="scope"><span>{{displaySources[(scope.row as Task).sourceType]}}<small>{{scope.row.sourceId}}</small></span></template>
       </el-table-column>
-      <el-table-column label="操作" width="64">
+      <el-table-column label="操作" min-width="120">
         <template #default="{row}">
+          <el-button v-if="row.canRespond" text :disabled="!!mode||busy||loading" @click="openResponse(row)">{{row.writtenResponse?'修改回应':'书面回应'}}</el-button>
           <el-button v-if="row.canUpdate" text title="编辑任务" aria-label="编辑任务" :disabled="!!mode||busy||loading" @click="openForm(row)"><Pencil :size="15"/></el-button>
         </template>
       </el-table-column>

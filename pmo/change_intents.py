@@ -5,6 +5,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from . import schema_v1 as db
 from .contracts import RULE_VERSION
+from .policy import freeze
 from .projects import fingerprint
 from .requirement_baselines import active_member
 
@@ -17,9 +18,11 @@ def payload(i):
     return fingerprint([str(i.id),str(i.project_id),str(i.requested_by),i.target_type,str(i.target_id),i.base_revision,i.before,i.after,i.reason])
 
 
-def capture(c,a,i,target):
+def capture(c,a,p,i,target,*,frozen=None):
+    freeze(c, p, f'change.{i.target_type}', i.id)
     c.execute(db.approval_requests.insert().values(id=i.id,project_id=i.project_id,action='baseline_change',status='pending',expected_revision=i.base_revision,
-        requested_by=a.person,delegated_by=a.person if a.kind=='agent' else None,payload_hash=payload(i),snapshot_hash=fingerprint(snapshot(target)),rule_version=RULE_VERSION))
+        requested_by=a.person,delegated_by=a.person if a.kind=='agent' else None,payload_hash=payload(i),
+        snapshot_hash=fingerprint(snapshot(target) if frozen is None else frozen),rule_version=RULE_VERSION))
 
 
 def lookup(c,pid,cid,*,lock=False):

@@ -15,7 +15,8 @@ from .identity import Failure, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment
-from .requirement_delivery import baseline_evidence_time, synthetic_confirmation
+from .policy import enabled as policy_enabled, guard, require
+from .requirement_delivery import baseline_evidence_time
 
 LIST = 'human_requirement_disputes_list'
 OPEN = 'human_requirement_dispute_open'
@@ -135,7 +136,7 @@ def listing(requirementId: UUID, authorization: Auth, page: int = Query(1, ge=1,
         total = c.scalar(sa.select(sa.func.count()).select_from(t).where(*filters))
         rows = c.execute(sa.select(t).where(*filters).order_by(t.c.opened_at.desc(), t.c.id.desc())
                          .limit(pageSize).offset(pg_offset(page,pageSize))).mappings().all()
-        enabled = p.stage in STAGES and synthetic_confirmation(c)
+        enabled = p.stage in STAGES and policy_enabled(c, p, 'requirement.dispute')
         can_open = bool(enabled and r.baseline_version and r.status != 'cancelled' and _authority(c, a, p, r)
                         and not c.scalar(open_query(r).where(t.c.customer_id == a.person).limit(1)))
         withdrawable = [row.id for row in rows if enabled and row.customer_id == a.person and row.withdrawn_at is None
@@ -157,11 +158,11 @@ def open_dispute(requirementId: UUID, command: Statement, authorization: Auth, k
         authority = _authority(c, a, p, r)
         if authority is None:
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
-        if not synthetic_confirmation(c):
-            raise Failure(403, 'POLICY_PENDING', project_id=p.id)
+        guard(c, p, 'requirement.dispute')
         prior = replay(c, a, OPEN, key, sig, Result[Dispute])
         if prior:
             return prior
+        require(c, p, 'requirement.dispute', rid)
         if p.stage not in STAGES or not r.baseline_version or r.status == 'cancelled':
             raise Failure(422, 'REQUIREMENT_DISPUTE_LOCKED', project_id=p.id)
         if r.revision != rev:
@@ -191,11 +192,11 @@ def withdraw(requirementId: UUID, disputeId: UUID, command: Statement, authoriza
         if (old.customer_id != a.person or _authority(c, a, p, r, stakeholder=old.stakeholder_id)
                 != (old.assignment_id, old.stakeholder_id)):
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
-        if not synthetic_confirmation(c):
-            raise Failure(403, 'POLICY_PENDING', project_id=p.id)
+        guard(c, p, 'requirement.dispute')
         prior = replay(c, a, WITHDRAW, key, sig, Result[Dispute])
         if prior:
             return prior
+        require(c, p, 'requirement.dispute', rid)
         if p.stage not in STAGES:
             raise Failure(422, 'REQUIREMENT_DISPUTE_LOCKED', project_id=p.id)
         if old.revision != rev:

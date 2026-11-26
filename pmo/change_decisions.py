@@ -18,8 +18,9 @@ from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import finish, replay
 from .milestone_forecasts import reconcile
+from .policy import guard, matches, require
 from .projects import fingerprint, meta, run
-from .requirement_delivery import baseline_evidence_time, synthetic_confirmation
+from .requirement_delivery import baseline_evidence_time
 from .scope_quality import scope_event
 
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
@@ -63,6 +64,8 @@ def apply(c,p,actor,i,old):
 
 
 def decide(auth,approve,cid,command,key,rev):
+    from .category_budget_changes import apply as apply_categories, categorized
+
     op='human_change_approve' if approve else 'human_change_reject'; reason=command.rationale.strip(); sig=fingerprint([str(cid),rev,command.rationale])
     def write(c,a,rid):
         ch,p,ar=db.change_entries,db.projects,db.approval_requests
@@ -71,7 +74,8 @@ def decide(auth,approve,cid,command,key,rev):
         i=c.execute(sa.select(ch).where(ch.c.id==cid).with_for_update()).mappings().one()
         grant=authority(c,a,project,i.target_type)
         if not grant or not independent(a,i,None): raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
-        if not synthetic_confirmation(c): raise Failure(403,'POLICY_PENDING')
+        action=f'change.{i.target_type}'
+        guard(c,project,action)
         intent=lookup(c,project.id,cid,lock=True)
         if not independent(a,i,intent): raise Failure(403,'INDEPENDENT_APPROVER_REQUIRED')
         prior=replay(c,a,op,key,sig,Result[Entry])
@@ -79,22 +83,38 @@ def decide(auth,approve,cid,command,key,rev):
         if len(reason)<3: raise Failure(422,'INVALID_REASON')
         if rev!=i.revision: raise Failure(409,'VERSION_CONFLICT')
         if i.status!='pending' or project.stage not in OPEN: raise Failure(422,'CHANGE_NOT_PENDING')
-        old,frozen=decision_target(c,project,i,lock=True)
-        result=None
+        if approve and not matches(c,project,action,i.id): raise Failure(409,'POLICY_SNAPSHOT_STALE',project_id=project.id)
+        require(c,project,action,rid)
+        category_change = categorized(i)
+        if approve and category_change:
+            require(c, project, 'cost.category', rid)
+            if not matches(c, project, 'cost.category', i.id):
+                raise Failure(409, 'POLICY_SNAPSHOT_STALE', project_id=project.id)
+        old,frozen = decision_target(c,project,i,lock=True) if approve or not category_change else (None, i.before)
+        new_state = None
+        refs = []
+        at = None
         if approve:
             check_frozen(c,project,i,intent,old,frozen)
             c.execute(ch.update().where(ch.c.id==cid).values(status='approved',approved_by=a.person,revision=rev+1))
-            result=apply(c,project,a,i,old)
+            if category_change:
+                new_state, refs, at = apply_categories(c, project, a, i)
+            else:
+                result = apply(c, project, a, i, old)
+                new_state = snapshot(result)
+                refs.append(f'{i.target_type}:{result.id}@{result.revision}')
+                if i.target_type == 'budget':
+                    at = result.updated_at
         status='applied' if approve else 'rejected'
-        at=result.updated_at if result is not None and i.target_type=='budget' else c.scalar(sa.select(sa.func.clock_timestamp()))
+        at = at or c.scalar(sa.select(sa.func.clock_timestamp()))
         saved=c.execute(ch.update().where(ch.c.id==cid).values(status=status,revision=rev+(2 if approve else 1),effective_at=at if approve else None,
             updated_at=at).returning(ch)).mappings().one()
         if intent: c.execute(ar.update().where(ar.c.id==cid).values(status='approved' if approve else 'rejected',decided_by=a.person,decided_at=at,reason=reason,updated_at=at))
         c.execute(sa.text('''INSERT INTO change_decision_records(change_id,approver_id,authority_ref,rationale,outcome,old_state,new_state,request_id,decided_at)
             VALUES(:id,:who,:grant,:reason,:outcome,CAST(:old AS jsonb),CAST(:new AS jsonb),:rid,:at)'''),dict(id=cid,who=a.person,grant=grant,reason=reason,
-            outcome=status,old=json.dumps(frozen),new=json.dumps(snapshot(result)) if result else None,rid=UUID(rid),at=at))
-        scope_event(c,saved,False); refs=[f'change:{cid}@{saved.revision}']
-        if result: refs.append(f'{i.target_type}:{result.id}@{result.revision}')
+            outcome=status,old=json.dumps(frozen),new=json.dumps(new_state) if new_state is not None else None,rid=UUID(rid),at=at))
+        scope_event(c,saved,False)
+        refs.insert(0, f'change:{cid}@{saved.revision}')
         receipt=entry(saved).model_copy(update={'decidedBy':a.person,'decisionReason':reason,'decidedAt':at})
         return finish(c,a,op,key,rid,project.id,sig,Result[Entry](data=receipt,meta=meta(op,refs)),
             fingerprint(entry(i).model_dump(mode='json', exclude={'legacySnapshot'})))

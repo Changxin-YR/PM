@@ -200,7 +200,7 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
     if(r.status===401&&session===csrf.value&&path!=='auth/login')clearSession()
     const body=await r.json().catch(()=>({}))
     const descriptions:Record<string,string>={
-      POLICY_PENDING:'该操作的业务策略尚待签核。',APPROVAL_STALE:'申请所依据的数据或授权已变化，请拒绝旧申请后重新提交。',
+      POLICY_PENDING:'该操作的业务策略尚待签核或生效。',POLICY_SNAPSHOT_STALE:'申请所依据的策略已变化，请重新提交。',APPROVAL_STALE:'申请所依据的数据或授权已变化，请拒绝旧申请后重新提交。',
       INDEPENDENT_APPROVER_REQUIRED:'需要有项目审批授权的独立人员裁决。',INVALID_REQUIREMENT_TRANSITION:'当前状态不允许此操作，请重新查询。',
       PENDING_SCOPE_CHANGE:'需求存在未决范围变更。',INDEPENDENT_CUSTOMER_REQUIRED:'须由未参与本需求交付或内部验收的客户代表确认。',
       VERSION_CONFLICT:'版本已变化，请重新读取后再保存。',PROJECT_CODE_CONFLICT:'项目编号已存在。',UNAUTHORIZED:'请重新登录或核对账号密码。',

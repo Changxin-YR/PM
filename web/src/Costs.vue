@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import {onMounted,ref} from 'vue'
 import {Pencil,RefreshCw,Save} from 'lucide-vue-next'
+import CategoryCosts from './CategoryCosts.vue'
 import CostReconciliation from './CostReconciliation.vue'
 import Postings from './Postings.vue'
 type Kind='money'|'effort'
 type Measure={budget:string;actual:string;forecastRemaining:string;projectedTotal:string;varianceRate?:string;color:string}
-type Summary={money:Measure;effort:Measure;plan:{revision:number;moneyBudget?:string;effortBudget?:string};canSaveBudget:boolean;canSaveForecast:boolean}
+type CategoryData=InstanceType<typeof CategoryCosts>['$props']['data']
+type Summary=Partial<Pick<CategoryData,'categories'|'categoryEditor'>>&{money:Measure;effort:Measure;plan:{revision:number;moneyBudget?:string;effortBudget?:string};canSaveBudget:boolean;canSaveForecast:boolean}
 const props=defineProps<{projectId:string;api:(p:string,o?:RequestInit)=>Promise<any>}>()
 const path=`projects/${props.projectId}/cost`,kinds:Kind[]=['money','effort'],labels={money:'金额（元）',effort:'人天'},colors:Record<string,string>={untrusted:'数据不可信',green:'绿',yellow:'黄',red:'红'}
 const data=ref<Summary|null>(null),busy=ref(false),error=ref(''),notice=ref(''),kind=ref<Kind>('money'),action=ref<''|'budget'|'forecast'>(''),value=ref(''),reason=ref('')
@@ -27,6 +29,7 @@ onMounted(refresh)
 <el-button v-if="data.canSaveBudget" :disabled="busy||!!action" @click="open(k,'budget')"><Pencil :size="14"/>修改预算草稿</el-button><el-button v-if="data.canSaveForecast" :disabled="busy||!!action" @click="open(k,'forecast')"><Pencil :size="14"/>修改预测</el-button></section></div>
 <form v-if="action" @submit.prevent="save"><label>{{labels[kind]}} · {{action==='budget'?'预算草稿':'剩余预测'}}<input v-model="value" inputmode="decimal" pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?" required></label>
 <label v-if="action==='forecast'">预测原因<textarea v-model="reason" minlength="3" maxlength="2000" required/></label><div class="actions"><el-button :disabled="busy" @click="action=''">取消</el-button><el-button type="primary" native-type="submit" :loading="busy"><Save :size="15"/>保存成本</el-button></div></form>
+<CategoryCosts v-if="data?.categories" :project-id="projectId" :api="api" :busy="busy||!!action" :data="{...data,categories:data.categories}" @changed="refresh"/>
 </section>
 <CostReconciliation :project-id="projectId" :api="api" :costs-busy="busy||!!action"/>
 <Postings :project-id="projectId" :api="api" @changed="refresh"/></template>

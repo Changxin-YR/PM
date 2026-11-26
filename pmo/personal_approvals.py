@@ -16,7 +16,6 @@ from .gates import REVIEW, Gate, lock_project
 from .identity import Failure, visible
 from .materials import project_access
 from .projects import meta, run, view
-from .requirement_delivery import synthetic_confirmation
 from .reviews import APPROVAL_ACTION
 
 OP = 'human_approval_queue'
@@ -66,7 +65,7 @@ class QueuePage(Strict):
     total: int
 
 
-def candidates(a, allow_stage_decisions):
+def candidates(a):
     p, q, r, i = db.projects, db.approval_requests, db.reviews, lifecycle.intents
     m, g = db.project_members.c, lifecycle.transition_grants.c
     # These are necessary conditions only. The original services make the eligibility decision.
@@ -78,9 +77,6 @@ def candidates(a, allow_stage_decisions):
         *scope, q.c.action == APPROVAL_ACTION, r.c.status == 'pending',
         sa.tuple_(r.c.type, p.c.stage).in_(tuple(REVIEW.items())),
         sa.or_(reviewer, p.c.initiator_id == a.person, p.c.sponsor_id == a.person))
-    if not allow_stage_decisions:
-        return gates.order_by(q.c.created_at.desc(), q.c.id)
-
     delegated = sa.exists(sa.select(g.id).where(g.org_id == a.org, g.project_id == p.c.id, g.person_id == a.person,
         g.from_stage == i.c.from_stage, g.to_stage == i.c.to_stage, g.revoked_at.is_(None),
         g.valid_from <= sa.func.statement_timestamp(), g.expires_at > sa.func.statement_timestamp()))
@@ -147,7 +143,7 @@ def queue(authorization: Auth, page: int = Query(1, ge=1), pageSize: int = Query
         matches: list[Pending] = []
         total = 0
         offset = (page - 1) * pageSize
-        for candidate in c.execute(candidates(a, synthetic_confirmation(c))).mappings().all():
+        for candidate in c.execute(candidates(a)).mappings().all():
             try:
                 handler = {'review': review_entry, 'transition': stage_entry, 'change': change_entry}[candidate.kind]
                 item = handler(c, a, candidate)

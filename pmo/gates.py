@@ -86,7 +86,7 @@ class Materials:
         return refs
 
 
-def charter_material(c, p, out):
+def charter_material(c, a, p, out):
     t = db.charters
     row = c.execute(sa.select(t).where(t.c.project_id == p.id)).mappings().one_or_none()
     refs = out.include('charter', 'charter', [row] if row else [])
@@ -102,6 +102,8 @@ def charter_material(c, p, out):
                 Fields.model_validate({key: value})
             except ValidationError:
                 out.reject('CHARTER_FIELD_REQUIRED', f'立项卡字段缺失或无效：{key}。', refs)
+    from .review_calibration import freeze
+    freeze(c, a, p, row, out)
 
 
 def rows_in(c, table, pid):
@@ -120,7 +122,12 @@ def signed_baseline(c, pid):
     return [pm, customer] if pm and pm.snapshot == customer.snapshot else []
 
 
-def charter_strengthening(c, p, out):
+def charter_strengthening(c, a, p, out):
+    from .policy import review_action, selection
+    from .review_responses import checked_evidence, latest, source_ref, view
+
+    policy = selection(c, p, review_action('feasibility'))
+    formal = bool(policy and 'synthetic' not in policy[0])
     rows = c.execute(sa.text('''WITH approved_charter AS (
         SELECT r.id, r.revision, s.transitioned_at FROM project_stage_transitions s
         JOIN reviews r ON r.id=s.review_id AND r.project_id=s.project_id
@@ -132,7 +139,7 @@ def charter_strengthening(c, p, out):
         ORDER BY s.to_revision DESC LIMIT 1
     )
     SELECT t.id,t.revision,t.title,t.status,t.completed_at,r.transitioned_at,r.id AS review_id,
-           r.revision AS review_revision
+           r.revision AS review_revision,b.item_key,b.evidence_required
     FROM approved_charter r JOIN review_strengthening_tasks b ON b.review_id=r.id
     JOIN tasks t ON t.id=b.task_id AND t.project_id=:pid AND t.source_type='review' AND t.source_id=r.id
     WHERE b.item_key LIKE 'dimension:%' OR b.item_key LIKE 'condition:%'
@@ -140,15 +147,28 @@ def charter_strengthening(c, p, out):
     for row in rows:
         refs = [f'task:{row.id}@{row.revision}', f'review:{row.review_id}@{row.review_revision}']
         out.refs.extend(refs)
-        # The reply is a live requirement. Existing feasibility material hashes remain replayable.
-        if row.status != 'done' or not row.completed_at or row.completed_at < row.transitioned_at:
+        valid = row.status == 'done' and row.completed_at and row.completed_at >= row.transitioned_at
+        if formal or row.evidence_required is not None:
+            response = latest(c, row.id)
+            try:
+                valid = valid and response and response.submitted_at == row.completed_at and (
+                    not row.evidence_required or bool(response.evidence))
+                valid = valid and checked_evidence(c, a, p, [item['ref'] for item in response.evidence],
+                    persisted=True) == response.evidence
+            except Failure:
+                valid = False
+            if valid:
+                material = view(response, row.review_id, row.item_key).model_dump(mode='json')
+                out.content.setdefault('reinforcementResponses', []).append(material | {'evidence': response.evidence})
+                out.refs.extend([source_ref(response), *material['evidenceRefs']])
+        if not valid:
             out.reject('CHARTER_STRENGTHENING_RESPONSE_REQUIRED',
-                       f'立项补强尚未处理完成：{row.title}。', refs)
+                       f'立项补强缺少当前有效的书面回应：{row.title}。', refs)
 
 
 def planning_material(c, a, p, gate, out):
     if gate == 'feasibility':
-        charter_strengthening(c, p, out)
+        charter_strengthening(c, a, p, out)
     milestones = [m for m in rows_in(c, db.milestones, p.id) if not m.is_cancelled]
     ms_refs = out.include('milestones', 'milestone', milestones)
     if gate == 'feasibility' and not 3 <= len(milestones) <= 8:
@@ -174,6 +194,24 @@ def planning_material(c, a, p, gate, out):
     risks = rows_in(c, db.risks, p.id)
     risk_refs = out.include('risks', 'risk', risks)
     if gate == 'feasibility':
+        from .category_costs import actual_refs, actuals, budget_ref, clock, forecast_ref, freeze_material, required_for_project
+
+        draft, forecast = freeze_material(c, p)
+        if draft is None and required_for_project(c, p):
+            out.reject('CATEGORY_BUDGET_REQUIRED', '按政策填写完整类别预算后再送审。', plan_ref)
+        if draft is not None:
+            category_refs = [budget_ref(p.id, draft)]
+            if forecast is not None:
+                category_refs.append(forecast_ref(p.id, forecast))
+            at = clock(c)
+            _, posted_refs = actuals(c, cost_basis(c, p.id, at), at)
+            active_refs = actual_refs(posted_refs)
+            out.refs.extend(category_refs)
+            out.refs.extend(active_refs)
+            out.content['categoryPlan'] = {'budget': snapshot(draft), 'forecast': snapshot(forecast) if forecast else None,
+                                           'actualSourceRefs': active_refs}
+            if forecast is None or forecast.budget_revision != draft.revision:
+                out.reject('CATEGORY_FORECAST_REQUIRED', '按当前类别预算填写完整剩余预测。', category_refs)
         for kind in ('money', 'effort'):
             if not plan or plan[kind + '_budget'] is None:
                 out.reject(f'{kind.upper()}_BUDGET_REQUIRED', '需填写金额和人天预算草稿。', plan_ref)
@@ -304,7 +342,7 @@ def evaluate(c, a, p, gate: Gate, *, pending=False):
     if not members:
         out.reject('INDEPENDENT_REVIEWER_REQUIRED', '缺少有效的独立评审人。')
     if gate == 'charter':
-        charter_material(c, p, out)
+        charter_material(c, a, p, out)
     else:
         planning_material(c, a, p, gate, out)
     if len(out.gaps) > 100:

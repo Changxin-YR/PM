@@ -3,6 +3,7 @@ import argparse
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from getpass import getpass
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ from uuid import UUID, uuid4
 
 import httpx
 import psycopg
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg import sql
 from sqlalchemy import URL
 
@@ -31,8 +34,7 @@ DB_PORT, WEB_PORT, API_PORT = (55443, 18778, 18779) if NATIVE else (55441, 18775
 API = f'http://127.0.0.1:{API_PORT}/api/v1/'
 WEB = f'http://127.0.0.1:{WEB_PORT}'
 DB_NAME = 'pmo_pilot'
-HEAD = '0038'
-UPGRADABLE_HEADS = {('0036',), ('0037',)}
+UPGRADABLE_HEADS = {('0036',), ('0037',), ('0038',), ('0039',), ('0040',)}
 STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
@@ -144,6 +146,14 @@ def verify_database(cfg):
         raise ValueError('Pilot DB ownership/loopback checks failed.')
 
 
+def migration_head():
+    config = Config(str(ROOT / 'alembic.ini'))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    if head is None:
+        raise ValueError('Expected a single Alembic migration head.')
+    return head
+
+
 def init(*, upgrade_existing=False):
     from pmo.database_roles import apply_roles
 
@@ -188,15 +198,16 @@ def init(*, upgrade_existing=False):
         if current is None or current[0] != schema(cfg):
             raise ValueError('Pilot search path mismatch.')
         version = conn.execute('SELECT version_num FROM alembic_version').fetchone() if current[1] else None
-    if version is None or (upgrade_existing and version in UPGRADABLE_HEADS):
-        subprocess.run([str(PYTHON), '-m', 'alembic', 'upgrade', HEAD], cwd=ROOT, check=True,
+    head = migration_head()
+    if version is None or (version != (head,) and upgrade_existing and version in UPGRADABLE_HEADS):
+        subprocess.run([str(PYTHON), '-m', 'alembic', 'upgrade', head], cwd=ROOT, check=True,
                        env=env_base() | {'DATABASE_URL': database(cfg, 'migrate')})
-    elif version != (HEAD,):
+    elif version != (head,):
         raise ValueError('Existing pilot schema is not the expected head; no upgrade attempted.')
     with db_connect(cfg, scoped=False) as conn:
         conn.autocommit = True
         apply_roles(conn, 'pmo_api', 'pmo_outbox', synthetic_schema=schema(cfg))
-    print(f'{project(cfg)} runtime={"native" if NATIVE else "docker"} database={DB_NAME} port={DB_PORT} schema={schema(cfg)} head={HEAD}')
+    print(f'{project(cfg)} runtime={"native" if NATIVE else "docker"} database={DB_NAME} port={DB_PORT} schema={schema(cfg)} head={head}')
 
 
 def bind(port):
@@ -321,7 +332,9 @@ def model_url(value, protocol):
         raise ModelConfigError(str(error)) from None
 
 
-def inspect_model(config, pilots):
+def inspect_model(config, pilots, *, name='assistant'):
+    from scripts.pilot_model_evidence import DRILL_CODES, registered_closing
+
     if not isinstance(config, dict):
         raise ModelConfigError('Saved configuration must be a JSON object.')
     protocol = config.get('protocol', 'pmo_json')
@@ -331,11 +344,14 @@ def inspect_model(config, pilots):
         raise ModelConfigError('Enter the gateway model ID or version, up to 160 printable characters.')
     if not isinstance(token, str) or not token.isascii() or any(c.isspace() or not c.isprintable() for c in token):
         raise ModelConfigError('Enter a valid bearer token, or leave it blank when the gateway requires none.')
-    if (not isinstance(codes, list) or not codes or any(not isinstance(code, str) or code not in PILOT_CODES for code in codes)
+    allowed = PILOT_CODES | DRILL_CODES if name == 'assistant' else PILOT_CODES
+    if (not isinstance(codes, list) or not codes or any(not isinstance(code, str) or code not in allowed for code in codes)
             or len(set(codes)) != len(codes)):
-        raise ModelConfigError('Select one or both unique synthetic pilot project codes.')
+        raise ModelConfigError('Select explicit, unique synthetic pilot project codes.')
     try:
-        projects = [str(UUID(pilots[code]['id'])) for code in codes]
+        projects = [registered_closing(code)['id'] if code in DRILL_CODES else str(UUID(pilots[code]['id'])) for code in codes]
+    except ModelConfigError:
+        raise
     except (KeyError, TypeError, ValueError, AttributeError):
         raise ModelConfigError('Seed the selected synthetic pilot projects before loading the configuration.') from None
     if len(set(projects)) != len(projects):
@@ -351,7 +367,7 @@ def load_model(name, pilots):
         config = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         raise ModelConfigError('Saved configuration could not be read as JSON.') from None
-    return inspect_model(config, pilots)
+    return inspect_model(config, pilots, name=name)
 
 
 def pilot_manifest():
@@ -405,6 +421,8 @@ def model_preflight():
 
 
 def configure_models():
+    from scripts.pilot_model_evidence import REPORT_CODE
+
     pilots = pilot_manifest()
     if not PILOT_CODES <= pilots.keys():
         raise ValueError('Create both pilot projects before setting the model scope.')
@@ -416,18 +434,19 @@ def configure_models():
         protocol = input('Protocol [pmo_json]: ').strip() or 'pmo_json'
         uri = model_url(input('Complete endpoint URL (no path will be appended): ').strip(), protocol)
         version = input('Actual model ID/version (for pmo_json select it at the gateway): ').strip()
-        raw = input('Project codes [SIM-EXEC-001,SIM-NEW-001]: ').strip()
-        codes = [code.strip() for code in raw.split(',')] if raw else sorted(PILOT_CODES)
+        default = [REPORT_CODE] if name == 'report' else sorted(PILOT_CODES)
+        raw = input(f"Project codes [{','.join(default)}]: ").strip()
+        codes = [code.strip() for code in raw.split(',')] if raw else default
         token = getpass('Gateway bearer token (blank if none): ')
         config = dict(url=str(uri), version=version, protocol=protocol, projects=codes, token=token)
-        checked = inspect_model(config, pilots)
+        checked = inspect_model(config, pilots, name=name)
         save(f'model-{name}.json', config)
         print(f'{name}: saved locally; not loaded or called.')
         if guidance := model_guidance(checked):
             print(guidance)
 
 
-def model_env(active):
+def model_env(active, *, closing_code=None):
     api = {flag: '0' for flag in CHANNELS.values()}
     worker = {'PMO_REPORT_ANALYSIS': '0'}
     loaded = {}
@@ -440,30 +459,75 @@ def model_env(active):
                 raise ModelConfigError(f'{name}: {error}') from None
             if not config:
                 continue
+            codes, projects = config.codes, config.projects
+            if name == 'assistant' and closing_code and closing_code not in codes:
+                from scripts.pilot_model_evidence import registered_closing
+                material = registered_closing(closing_code)
+                codes, projects = [*codes, closing_code], [*projects, material['id']]
             dest = api if name == 'assistant' else worker
             prefix = 'PMO_' + name.upper() + '_MODEL'
             dest[prefix + '_URL'] = str(config.url)
             dest[prefix + '_TOKEN'] = config.token
             dest[prefix + '_PROTOCOL'] = config.protocol
             dest[prefix + '_VERSION'] = config.version
-            dest[prefix + '_PROJECTS'] = api[prefix + '_PROJECTS'] = ','.join(config.projects)
+            dest[prefix + '_PROJECTS'] = api[prefix + '_PROJECTS'] = ','.join(projects)
+            if name == 'assistant':
+                scoped = [pid for code, pid in zip(codes, projects, strict=True) if code not in PILOT_CODES]
+                if scoped:
+                    api['PMO_ASSISTANT_CLOSING_ONLY_PROJECTS'] = ','.join(scoped)
             dest[flag] = api[flag] = '1'
-            loaded[name] = config.summary()
+            loaded[name] = config.summary() | {'projects': codes}
+        if closing_code and 'assistant' not in loaded:
+            raise ModelConfigError('Configure the assistant gateway before adding a closing preview scope.')
         if not loaded:
             raise ModelConfigError('No gateway configuration is saved. Run configure-models first.')
     return api, worker, loaded
 
 
+def activation_scope(api, worker, loaded):
+    from scripts.pilot_model_evidence import registered_closing, verify_report
+
+    summary = {}
+    for name, config in loaded.items():
+        values = api if name == 'assistant' else worker
+        summary[name] = config | {'gatewayHost': httpx.URL(values[f'PMO_{name.upper()}_MODEL_URL']).host}
+    if 'assistant' in loaded:
+        summary['assistant']['closingFixtures'] = [registered_closing(code) for code in loaded['assistant']['projects']
+                                                   if code not in PILOT_CODES]
+    if 'report' in loaded:
+        report = verify_report(loaded['report']['projects'], require_empty_queue=True)
+        row = report['receipt']
+        binding = f"{row['reportId']}:{row['revision']}:{row['contentHash']}"
+        api['PMO_REPORT_MODEL_SOURCE'] = worker['PMO_REPORT_MODEL_SOURCE'] = binding
+        summary['report']['approvedMaterial'] = {key: report[key] for key in ('projectId', 'receipt', 'input', 'activeQueue')}
+    permit = sha256(json.dumps([api, worker, summary], ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+    return summary, permit
+
+
+def web_artifact_digest():
+    return sha256((ROOT / 'web/dist/index.html').read_bytes()).hexdigest()
+
+
+def verify_runtime_database(cfg):
+    verify_database(cfg)
+    head = migration_head()
+    with db_connect(cfg, 'api') as connection:
+        identity = connection.execute('SELECT current_database(), current_schema(), current_user FROM alembic_version WHERE version_num=%s', (head,)).fetchone()
+        if identity != (DB_NAME, schema(cfg), 'pmo_api'):
+            raise ValueError('Pilot runtime DB revision or identity mismatch. Verify the recovery point and upgrade before activation.')
+    return head
+
+
 def serve(active):
     cfg = settings()
-    verify_database(cfg)
-    with db_connect(cfg, 'api') as connection:
-        identity = connection.execute('SELECT current_database(), current_schema(), current_user FROM alembic_version WHERE version_num=%s', (HEAD,)).fetchone()
-        if identity != (DB_NAME, schema(cfg), 'pmo_api'):
-            raise ValueError('Pilot runtime DB guard failed.')
+    head = verify_runtime_database(cfg)
     evidence = local_file('private-evidence')
     evidence.mkdir(exist_ok=True)
-    api_model, worker_model, loaded = model_env(active)
+    api_model, worker_model, loaded = model_env(active, closing_code=os.getenv('PMO_PILOT_CLOSING_CODE') if active else None)
+    if active:
+        _, permit = activation_scope(api_model, worker_model, loaded)
+        if not secrets.compare_digest(os.getenv('PMO_PILOT_MODEL_PERMIT', ''), permit):
+            raise ModelConfigError('Model scope changed or lacks operator confirmation; run activate-models.')
     base = env_base()
     separate = base | {'DATABASE_URL': database(cfg, 'api'), 'PMO_SYNTHETIC_POLICY_SCHEMA': schema(cfg)}
     with bind(WEB_PORT), bind(API_PORT):
@@ -495,7 +559,8 @@ def serve(active):
                     or any(p.poll() is not None for p in procs)):
                 raise RuntimeError('Pilot services could not start; see services.log.')
             sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-            save('runtime.json', dict(pids=ids, web=WEB, api=API, initialHead=sha, models=loaded, startedAt=datetime.now(UTC).isoformat()))
+            save('runtime.json', dict(pids=ids, web=WEB, api=API, initialHead=sha, databaseRevision=head,
+                webIndexSha256=web_artifact_digest(), models=loaded, startedAt=datetime.now(UTC).isoformat()))
             while not local_file('stop.request').exists() and all(p.poll() is None for p in procs):
                 sleep(.5)
         finally:
@@ -518,14 +583,15 @@ def stop():
             'Run status and see the protected supervisor.log and services.log. No process was stopped by PID.')
 
 
-def launch(active=False):
+def launch(active=False, *, permit='', closing_code=None):
     if local_file('runtime.json').is_file() and not clear_stale_runtime():
         raise RuntimeError('Pilot already owns the runtime; stop it before restarting.')
     if not (ROOT / 'web/dist/index.html').is_file():
         raise RuntimeError('Run npm.cmd --prefix web run build before starting the pilot.')
     with local_file('supervisor.log').open('a', encoding='utf-8') as log:
         child = subprocess.Popen([str(PYTHON), '-m', 'scripts.pilot_local', 'serve-models' if active else 'serve'], cwd=ROOT,
-                                env=env_base() | ({PROFILE: 'native'} if NATIVE else {}),
+                                env=env_base() | ({PROFILE: 'native'} if NATIVE else {}) | (
+                                    {'PMO_PILOT_MODEL_PERMIT': permit, 'PMO_PILOT_CLOSING_CODE': closing_code or ''} if active else {}),
                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
     if (not wait_for(lambda: local_file('runtime.json').is_file() or child.poll() is not None, seconds=STARTUP_SECONDS + 45)
@@ -537,12 +603,19 @@ def launch(active=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('init', 'start', 'stop', 'status', 'configure-models', 'activate-models',
-                                          'model-preflight', 'serve', 'serve-models'))
+                                          'model-preflight', 'prepare-model-report', 'register-model-closing', 'serve', 'serve-models'))
     parser.add_argument('--upgrade-existing', action='store_true',
-                        help='Allow a stopped, backed-up pilot schema at 0036 or 0037 to upgrade to 0038.')
+                        help='Upgrade a stopped, backed-up pilot from an explicitly supported legacy revision to the Alembic head.')
+    parser.add_argument('--code', help='Exact archived rehearsal code for model registration.')
+    parser.add_argument('--project-id', help='Exact archived rehearsal project UUID for model registration.')
+    parser.add_argument('--closing-code', help='Include an already registered archived project for closing preview in this activation.')
     args = parser.parse_args()
     if args.upgrade_existing and args.action != 'init':
         parser.error('--upgrade-existing is only valid with init')
+    if args.action == 'register-model-closing' and not (args.code and args.project_id):
+        parser.error('register-model-closing requires --code and --project-id')
+    if args.closing_code and args.action != 'activate-models':
+        parser.error('--closing-code is only valid with activate-models')
     private_home()
     if args.action == 'init':
         init(upgrade_existing=args.upgrade_existing)
@@ -559,14 +632,23 @@ def main():
             'saved': {name: local_file(f'model-{name}.json').is_file() for name in CHANNELS}}, ensure_ascii=False))
     elif args.action == 'configure-models':
         configure_models()
+    elif args.action == 'prepare-model-report':
+        from scripts.pilot_model_evidence import prepare_report
+        prepared = prepare_report()
+        print(json.dumps({key: prepared[key] for key in ('receipt', 'expected', 'input', 'requestId', 'activeQueue')},
+                         ensure_ascii=False))
+    elif args.action == 'register-model-closing':
+        from scripts.pilot_model_evidence import register_closing
+        print(json.dumps(register_closing(args.code, args.project_id), ensure_ascii=False))
     elif args.action == 'model-preflight':
         result = model_preflight()
         print(json.dumps(result, ensure_ascii=False))
         if any(channel['configuration'] == 'invalid' for channel in result['channels'].values()):
             raise SystemExit(1)
     elif args.action == 'activate-models':
-        _, _, configured = model_env(True)
-        print(json.dumps(configured, ensure_ascii=False))
+        summary, permit = activation_scope(*model_env(True, closing_code=args.closing_code))
+        verify_runtime_database(settings())
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
         for name, channel in model_preflight()['channels'].items():
             if channel.get('guidance'):
                 print(f"{name}: {channel['guidance']}")
@@ -574,7 +656,7 @@ def main():
             print('Not activated.')
             return
         stop()
-        launch(True)
+        launch(True, permit=permit, closing_code=args.closing_code)
     else:
         serve(args.action == 'serve-models')
 

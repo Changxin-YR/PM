@@ -19,9 +19,9 @@ from .evidence import verified_link
 from .gates import lock_project
 from .identity import Failure, visible
 from .materials import replay
+from .policy import enabled as policy_enabled, freeze, guard, matches as policy_matches, require, transition_action
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment, active_member
-from .requirement_delivery import synthetic_confirmation
 
 router = APIRouter(prefix='/api/v1', tags=['Project lifecycle'])
 REQUEST = 'pmo_transition_request'
@@ -311,6 +311,7 @@ def current(c, a, p, req, intent, *, contents=None):
     if (req.expected_revision != p.revision or req.rule_version != RULE_VERSION or p.stage != intent.from_stage
         or req.delegated_by != (req.requested_by if intent.actor_type == 'agent' else None)
         or not can_request(c, p, req.requested_by, edge)
+        or edge in APPROVED and not policy_matches(c, p, transition_action(edge), req.id)
         or fingerprint(payload(p, edge, req.requested_by, intent.actor_type, intent.reason, intent.basis)) != req.payload_hash):
         return False
     try:
@@ -349,6 +350,8 @@ def persist(c, a, p, edge, why, contents, refs):
         .returning(approval)).mappings().one()
     i = c.execute(intents.insert().values(approval_id=req.id, from_stage=edge[0], to_stage=edge[1], basis=contents,
         source_refs=refs, reason=why, actor_type=a.kind).returning(intents)).mappings().one()
+    if edge in APPROVED:
+        freeze(c, p, transition_action(edge), req.id)
     return req, i
 
 
@@ -378,7 +381,8 @@ def entry(c, a, p, req, intent):
     return Entry(requestId=req.id, projectId=p.id, fromStage=edge[0], toStage=edge[1], status=req.status,
         revision=req.expected_revision, requestedBy=req.requested_by, requestedAt=intent.requested_at, reason=intent.reason,
         canExecute=req.status == 'pending' and not stale and direct_actor(c, a, p, edge), stale=stale,
-        canDecide=req.status == 'pending' and not stale and bool(authority(c, a, p, edge, req)) and synthetic_confirmation(c),
+        canDecide=req.status == 'pending' and not stale and edge in APPROVED and bool(authority(c, a, p, edge, req))
+            and policy_enabled(c, p, transition_action(edge)),
         decisionId=outcome.id if outcome else None, decisionReason=outcome.rationale if outcome else None,
         authorityRef=evidence.get('authorityRef'), authoritySourceRef=evidence.get('authorityGrant', {}).get('source_ref'),
         holdUntil=evidence.get('holdUntil') or intent.basis.get('holdUntil'),
@@ -495,7 +499,7 @@ def permit_transition(c, a, p, destination, intent_id):
         return True
     decided = one(c, results, results.c.approval_id == req.id)
     grant = authority(c, a, p, edge, req)
-    return bool(synthetic_confirmation(c) and grant and decided and decided.payload['decision'] == 'approve'
+    return bool(policy_enabled(c, p, transition_action(edge)) and grant and decided and decided.payload['decision'] == 'approve'
                 and decided.payload['decidedBy'] == str(a.person) and decided.payload['authorityRef'] == grant.ref
                 and (edge != ('feasibility_review', 'terminated') or valid_termination_confirmation(c, req, i)))
 
@@ -512,8 +516,8 @@ def execute(auth, project_id, request_id, op, command, key, expected):
         grant = authority(c, a, p, edge, req)
         if (judge is not None and not grant) or (judge is None and not direct_actor(c, a, p, edge)):
             raise Failure(403, 'INDEPENDENT_APPROVER_REQUIRED' if judge is not None else 'TRANSITION_NOT_AUTHORIZED', project_id=p.id)
-        if judge and not synthetic_confirmation(c):
-            raise Failure(403, 'POLICY_PENDING', project_id=p.id)
+        if judge:
+            guard(c, p, transition_action(edge))
         old = replay(c, a, op, key, sig, Result[Entry])
         if old:
             return old
@@ -525,6 +529,8 @@ def execute(auth, project_id, request_id, op, command, key, expected):
             raise Failure(409, 'TRANSITION_NOT_PENDING', project_id=p.id)
         if not current(c, a, p, req, i):
             raise Failure(409, 'TRANSITION_STALE', project_id=p.id)
+        if judge:
+            require(c, p, transition_action(edge), rid)
         saved = record_transition(c, a, p, req, i, rid, judge=judge, grant=grant)
         return finish(c, a, p, saved, op, rid, key, sig, entry(c, a, p, saved, i), i.source_refs)
     return run(auth, op, write)
@@ -624,7 +630,10 @@ def inbox(authorization: Auth, projectId: UUID = Query(...), page: int = Query(1
         refs = stable_refs([f'project:{p.id}@{p.revision}', *(ref for item in items for ref in item.sourceRefs or [])])
         return Result[Page](data=Page(items=items, page=page, pageSize=pageSize, total=total, projectId=p.id,
                                    projectRevision=p.revision, stage=p.stage, requestable=choices,
-                                   canResubmit=can_resubmit, policyPending=not synthetic_confirmation(c)),
+                                   canResubmit=can_resubmit, policyPending=any(item.status == 'pending' and
+                                       (item.fromStage, item.toStage) in APPROVED and
+                                       not policy_enabled(c, p, transition_action((item.fromStage, item.toStage)))
+                                       for item in items)),
                             meta=meta(INBOX, refs))
     return run(authorization, INBOX, read)
 

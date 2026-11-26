@@ -112,8 +112,8 @@ class LedgerMode(Strict):
     previewEnabled: bool
 
 
-def _previews_enabled(project_id: UUID) -> bool:
-    return model_gateway.previews_enabled() and model_gateway.in_project_scope('ASSISTANT', project_id)
+def _previews_enabled(project_id: UUID, mode: str) -> bool:
+    return model_gateway.previews_enabled() and model_gateway.assistant_scope(project_id, mode)
 
 
 def _project_ref(project) -> str:
@@ -158,7 +158,8 @@ def _lesson_references(c, a, p, at, keyword, category, *, history_only=False, fo
                                               exclude_project=p.id if history_only else None, at=at)
         needle = term.strip().casefold() if term else ''
         for hit in hits:
-            if hit.lessonId in seen or (for_preview and not model_gateway.in_project_scope('ASSISTANT', hit.projectId)):
+            if hit.lessonId in seen or (for_preview and not model_gateway.assistant_scope(
+                    hit.projectId, 'charter' if history_only else 'ledger')):
                 continue
             text = next((field for field in (hit.what, hit.rootCause, hit.advice) if needle in field.casefold()), hit.what)
             items.append(LessonRef(lessonId=hit.lessonId, projectId=hit.projectId, category=hit.category,
@@ -249,7 +250,7 @@ def charter(projectId: UUID, authorization: Auth, keyword: Keyword = None, categ
                 *(ref for item in [*facts, *lessons] for ref in item.sourceRefs), *materials.refs]
         return Result[CharterMode](data=CharterMode(completeness=check, scoreSummary=score, weaknesses=weak,
             pendingScore=pending, pendingWeaknesses=pending_weak, charterFacts=facts, lessonRefs=lessons, reviewDraft=draft,
-            previewEnabled=_previews_enabled(p.id)), meta=_meta(CHARTER, p, at, refs))
+            previewEnabled=_previews_enabled(p.id, 'charter')), meta=_meta(CHARTER, p, at, refs))
     return _read(authorization, CHARTER, projectId, read)
 
 
@@ -298,7 +299,8 @@ def process(projectId: UUID, authorization: Auth) -> Result[ProcessMode]:
         preview = WeeklyDraft(period=period, structuredFields=draft.structuredFields, sourceHash=basis.sourceHash,
             verifiedPersonDays=basis.verifiedPeriodPersonDays if basis.verifiedPeriodPostingCount else None)
         return Result[ProcessMode](data=ProcessMode(reportId=report.id if report else None, analysis=analysis,
-            modelEnabled=model_gateway.enabled() and model_gateway.in_project_scope('REPORT', p.id),
+            modelEnabled=report is not None and model_gateway.enabled() and model_gateway.report_scope(
+                p.id, report.id, report.revision, report.content_hash),
             factCandidates=analysis.candidates if analysis and analysis.status == 'ready' else [],
             conflicts=conflicts, health=basis.health, alerts=alerts, weeklyDraft=preview),
             meta=_meta(PROCESS, p, at, [*refs, *basis.sourceRefs]))
@@ -321,7 +323,7 @@ def closing(projectId: UUID, authorization: Auth) -> Result[ClosingMode]:
             gateEligible=check.eligible if applicable else None, retrospectiveKind=kind,
             retrospectiveQuestions=list(retrospectives.QUESTIONS), lessonDrafts=drafts,
             canStartLessonDraft=bool(answers and p.stage == 'retrospective' and retrospectives._pm(c, a, p)),
-            previewEnabled=_previews_enabled(p.id)), meta=_meta(CLOSING, p, at, refs))
+            previewEnabled=_previews_enabled(p.id, 'closing')), meta=_meta(CLOSING, p, at, refs))
     return _read(authorization, CLOSING, projectId, read)
 
 
@@ -437,7 +439,7 @@ def _ledger(c, a, p, at, topic, keyword, category, *, for_preview=False):
         unknowns.append('没有匹配的可核验来源，无法回答。')
     info = _meta(LEDGER, p, at, [ref for item in answer for ref in item.sourceRefs])
     return Result[LedgerMode](data=LedgerMode(answer=answer, asOf=at, sourceRefs=info.sourceRefs, unknowns=unknowns,
-        previewEnabled=topic != 'forecast' and _previews_enabled(p.id)), meta=info)
+        previewEnabled=topic != 'forecast' and _previews_enabled(p.id, 'ledger')), meta=info)
 
 
 class CharterPreview(Strict):

@@ -15,10 +15,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 from . import evidence_storage, schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import RULE_VERSION, Result, Strict
-from .costs import DisplayedAmount, DisplayedNet, Kind, latest_plan, plans
+from .cost_categories import CATEGORY_KIND, Category
+from .costs import DisplayedAmount, DisplayedNet, Kind, cost_basis, latest_plan, plans
 from .identity import Failure, visible
 from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
+from .policy import guard, receipt_matches, require, selection, status
 from .requirement_baselines import active_member
 
 GET = 'human_cost_reconciliation_get'
@@ -42,22 +44,26 @@ Hash = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
 EvidenceRef = Annotated[str, Field(pattern=r'^evidence:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$')]
 Attribution = Literal['estimate', 'execution', 'scope']
 VarianceRate = Annotated[str, Field(pattern=r'^-?(0|[1-9][0-9]*)\.[0-9]{8}$')]
+Scope = Literal['totals', 'categories']
+CategoryActuals = dict[Category | Literal['historical_uncategorized'], DisplayedNet]
 
 
 class Create(Strict):
     costHash: Hash
     evidenceRefs: Annotated[list[EvidenceRef], Field(min_length=1, max_length=2)]
     overrunReasons: dict[Kind, Attribution] = Field(default_factory=dict)
+    scope: Scope = 'totals'
 
 
 class SourceLine(Strict):
     type: Kind
     sourceRef: str = Field(min_length=3, max_length=256, pattern=r'\S')
     netActual: str = Field(pattern=r'^(0|[1-9][0-9]{0,29})(\.[0-9]{1,2})?$')
+    categoryActuals: CategoryActuals | None = None
 
 
 class Source(Strict):
-    schemaVersion: int = Field(strict=True, ge=1, le=1)
+    schemaVersion: int = Field(strict=True, ge=1, le=2)
     projectId: UUID
     coveredThrough: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d:[0-5]\d'
                                       r'(\.\d{1,6})?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$')
@@ -93,6 +99,7 @@ class _Line(Strict):
     current: Variance
     proof: Proof
     overrunReason: Attribution | None = None
+    categoryActuals: CategoryActuals | None = None
 
 
 class MoneyLine(_Line):
@@ -117,7 +124,8 @@ class Receipt(Strict):
     costHash: Hash
     receiptHash: Hash
     lines: tuple[MoneyLine, EffortLine]
-    policyStatus: Literal['POLICY_PENDING'] = 'POLICY_PENDING'
+    policyStatus: Literal['POLICY_PENDING', 'POLICY_ACTIVE'] = 'POLICY_PENDING'
+    scope: Scope = 'totals'
 
 
 class State(Strict):
@@ -126,7 +134,8 @@ class State(Strict):
     costHash: Hash
     canCreate: bool
     current: Receipt | None
-    policyStatus: Literal['POLICY_PENDING'] = 'POLICY_PENDING'
+    policyStatus: Literal['POLICY_PENDING', 'POLICY_ACTIVE'] = 'POLICY_PENDING'
+    scope: Scope = 'totals'
 
 
 @dataclass(frozen=True)
@@ -157,7 +166,7 @@ def _initial_ref(row):
     return f"cost-baseline-history:{row['id']}@{row['historySeq']}"
 
 
-def _basis(c, p, now) -> Basis:
+def _basis(c, p, now, scope: Scope = 'totals') -> Basis:
     t = db.cost_entries
     current = [dict(id=str(r.id), revision=r.revision, baselineVersion=r.baseline_version, type=r.type,
                     category=r.category, periodStart=r.period_start.isoformat(), periodEnd=r.period_end.isoformat(),
@@ -207,6 +216,27 @@ def _basis(c, p, now) -> Basis:
     payload = dict(schemaVersion=1, ruleVersion=RULE_VERSION, policyVersion=POLICY_VERSION,
         orgId=str(p.org_id), projectId=str(p.id), initial=initial, current=current, plan=plan_input,
         forecasts=forecasts, postings=ledger)
+    if scope == 'categories':
+        from .category_costs import (UNCATEGORIZED, actual_refs, actuals, budget_ref, budgets, classifications,
+                                     forecast_ref, forecasts as versions, latest)
+
+        net, refs = actuals(c, cost_basis(c, p.id, now), now)
+        posting_refs = set(actual_refs(refs))
+        classification_times = [row.effective_at for row in classifications(c, p.id, now).values()
+                                if f'cost-classification:{row.id}' in posting_refs]
+        if classification_times:
+            latest_time = max([*classification_times, *([latest_time] if latest_time else [])])
+        approved = latest(c, budgets, p.id, now, phase='approved')
+        forecast = latest(c, versions, p.id, now)
+        payload['classification'] = {
+            'sourceRefs': [*sorted(posting_refs), *([budget_ref(p.id, approved)] if approved else []),
+                           *([forecast_ref(p.id, forecast)] if forecast else [])],
+            'actuals': {
+                kind: {category: _amount(net.get((kind, category), Decimal(0)))
+                       for category in [*(name for name, unit in CATEGORY_KIND.items() if unit == kind), UNCATEGORIZED]}
+                for kind in KINDS
+            },
+        }
     return Basis(payload, all(r['includedAtCutoff'] for r in ledger), latest_time, frozenset(participants))
 
 
@@ -219,11 +249,6 @@ def _variance(rows, actual, *, initial=False):
     return Variance(budget=_amount(budget), difference=_amount(difference),
                     rate=format(difference / budget, '.8f') if budget else None,
                     sourceRefs=[ref(row) for row in rows])
-
-
-def _synthetic(c):
-    from .requirement_delivery import synthetic_confirmation
-    return synthetic_confirmation(c)
 
 
 def _grant(c, p, person, now, grant_id=None, signed_at=None):
@@ -262,6 +287,8 @@ def _read_source(data: bytes):
     if len(data) > 16_384:
         raise ValueError('source exceeds size limit')
     sheet = Source.model_validate(json.loads(data.decode('utf-8'), object_pairs_hook=_unique_keys))
+    if any((line.categoryActuals is not None) != (sheet.schemaVersion == 2) for line in sheet.lines):
+        raise ValueError('classification source requires version 2 and a complete category statement')
     through = datetime.fromisoformat(sheet.coveredThrough).astimezone(UTC)
     return sheet, through
 
@@ -318,6 +345,10 @@ def _lines(c, a, p, signer, refs, reasons, basis, now):
             source_net = Decimal(source.netActual)
             if actual < 0 or actual != source_net:
                 raise fail('RECONCILIATION_TOTAL_MISMATCH')
+            classification = basis.payload.get('classification')
+            category_net = classification['actuals'][kind] if classification else None
+            if category_net is not None and source.categoryActuals != category_net:
+                raise fail('RECONCILIATION_CATEGORY_MISMATCH')
             initial = _variance([r for r in basis.payload['initial'] if r['type'] == kind], actual, initial=True)
             current = _variance([r for r in basis.payload['current'] if r['type'] == kind], actual)
             reason = reasons.get(kind)
@@ -326,7 +357,7 @@ def _lines(c, a, p, signer, refs, reasons, basis, now):
             forecast = basis.payload['forecasts'][kind]
             values = dict(actual=_amount(actual), sourceRef=source.sourceRef.strip(), sourceNetActual=_amount(source_net),
                 difference=_amount(actual - source_net), forecastRemaining=forecast['value'], forecastSourceRefs=forecast['sourceRefs'],
-                initial=initial, current=current, proof=proof, overrunReason=reason)
+                initial=initial, current=current, proof=proof, overrunReason=reason, categoryActuals=category_net)
             line = MoneyLine(type='money', unit='CNY', **values) if kind == 'money' else EffortLine(type='effort', unit='person_day', **values)
             lines.append(line.model_dump(mode='json', exclude_none=True))
     return cutoff, lines
@@ -339,9 +370,12 @@ def _receipt_hash(project_id, revision, signed_by, grant_id, signed_at, cutoff, 
         lines=lines, requestId=str(request_id)))
 
 
-def _latest(c, pid):
-    return c.execute(sa.select(receipts).where(receipts.c.project_id == pid)
-        .order_by(receipts.c.revision.desc()).limit(1)).mappings().one_or_none()
+def _latest(c, pid, scope: Scope | None = None):
+    query = sa.select(receipts).where(receipts.c.project_id == pid)
+    if scope is not None:
+        classified = receipts.c.basis.has_key('classification')
+        query = query.where(classified if scope == 'categories' else ~classified)
+    return c.execute(query.order_by(receipts.c.revision.desc()).limit(1)).mappings().one_or_none()
 
 
 def _refs(row):
@@ -350,13 +384,18 @@ def _refs(row):
         *(item['proof']['evidenceRef'] for item in row.lines),
         *(_initial_ref(item) for item in basis['initial']), *(_current_ref(item) for item in basis['current']),
         *(ref for forecast in basis['forecasts'].values() for ref in forecast['sourceRefs']),
-        *(f"cost-posting:{item['id']}@2" for item in basis['postings'])]))
+        *(f"cost-posting:{item['id']}@2" for item in basis['postings']),
+        *basis.get('classification', {}).get('sourceRefs', [])]))
 
 
 def _current(c, a, p, row, basis, now):
     if (row is None or not basis.complete or row.rule_version != RULE_VERSION or row.cost_hash != basis.digest
             or row.basis != basis.payload or row.signed_at > now
             or not _grant(c, p, row.signed_by, now, grant_id=row.grant_id, signed_at=row.signed_at)):
+        return None
+    if not receipt_matches(c, p, 'cost.reconciliation', row.request_id):
+        return None
+    if 'classification' in basis.payload and not receipt_matches(c, p, 'cost.category', row.request_id):
         return None
     try:
         saved = _view(row).lines
@@ -373,13 +412,13 @@ def _current(c, a, p, row, basis, now):
 
 def current_reconciliation(c, a, p):
     """Return (immutable receipt row, source refs) or None; caller holds the project lock."""
-    if not _synthetic(c):
-        return None
-    row = _latest(c, p.id)
-    if row is None:
-        return None
     now = c.scalar(sa.select(sa.func.clock_timestamp()))
-    return _current(c, a, p, row, _basis(c, p, now), now)
+    for scope in ('categories', 'totals'):
+        row = _latest(c, p.id, scope)
+        current = _current(c, a, p, row, _basis(c, p, now, scope), now) if row is not None else None
+        if current:
+            return current
+    return None
 
 
 def _project(c, a, pid, *, write):
@@ -396,22 +435,27 @@ def _project(c, a, pid, *, write):
 def _view(row):
     return Receipt(receiptId=row.id, projectId=row.project_id, revision=row.revision, signedBy=row.signed_by,
         signedAt=row.signed_at, grantId=row.grant_id, coveredThrough=row.covered_through, ruleVersion=row.rule_version,
-        costHash=row.cost_hash, receiptHash=row.receipt_hash, lines=row.lines)
+        costHash=row.cost_hash, receiptHash=row.receipt_hash, lines=row.lines,
+        scope='categories' if 'classification' in row.basis else 'totals')
 
 
 @router.get(PATH, operation_id=GET, openapi_extra=HUMAN)
-def get(projectId: UUID, authorization: Auth) -> Result[State]:
+def get(projectId: UUID, authorization: Auth, scope: Scope = 'totals') -> Result[State]:
     def read(c, a, _):
         p = _project(c, a, projectId, write=False)
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
-        basis = _basis(c, p, now)
-        enabled = _synthetic(c)
-        row = _latest(c, p.id) if enabled else None
-        current = _current(c, a, p, row, basis, now) if row else None
+        basis = _basis(c, p, now, scope)
+        enabled = (selection(c, p, 'cost.reconciliation') is not None
+                   and (scope == 'totals' or selection(c, p, 'cost.category') is not None))
+        row = _latest(c, p.id)
+        selected = _latest(c, p.id, scope) if row else None
+        current = _current(c, a, p, selected, basis, now) if selected else None
         can_create = (enabled and p.stage == 'delivering' and basis.complete and a.person not in basis.participants
                       and bool(_grant(c, p, a.person, now)))
+        current_status = status(c, p, 'cost.reconciliation') if enabled else 'POLICY_PENDING'
         data = State(projectId=p.id, revision=row.revision if row else 1, costHash=basis.digest, canCreate=can_create,
-                     current=_view(current[0]) if current else None)
+                     current=_view(current[0]).model_copy(update={'policyStatus': current_status}) if current else None,
+                     policyStatus=current_status, scope=scope)
         return Result[State](data=data, meta=meta(GET, current[1] if current else [f'project:{p.id}']))
     return run(authorization, GET, read)
 
@@ -419,12 +463,12 @@ def get(projectId: UUID, authorization: Auth) -> Result[State]:
 @router.post(PATH, operation_id=CREATE, openapi_extra=HUMAN)
 def create(projectId: UUID, command: Create, authorization: Auth, key: Key, expected: Revision) -> Result[Receipt]:
     revision = int(expected)
-    signature = fingerprint([str(projectId), revision, command.costHash, sorted(command.evidenceRefs), command.overrunReasons])
+    fields = [str(projectId), revision, command.costHash, sorted(command.evidenceRefs), command.overrunReasons]
+    signature = fingerprint(fields if command.scope == 'totals' else [*fields, command.scope])
 
     def write(c, a, rid):
         p = _project(c, a, projectId, write=True)
-        if not _synthetic(c):
-            raise Failure(403, 'POLICY_PENDING', project_id=p.id)
+        guard(c, p, 'cost.reconciliation')
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
         grant = _grant(c, p, a.person, now)
         if not grant:
@@ -434,12 +478,15 @@ def create(projectId: UUID, command: Create, authorization: Auth, key: Key, expe
             if not _grant(c, p, a.person, now, grant_id=old.data.grantId, signed_at=old.data.signedAt):
                 raise Failure(403, 'FORBIDDEN', project_id=p.id)
             return old
+        require(c, p, 'cost.reconciliation', rid)
+        if command.scope == 'categories':
+            require(c, p, 'cost.category', rid)
         if p.stage != 'delivering':
             raise Failure(422, 'RECONCILIATION_LOCKED', project_id=p.id)
         prior = _latest(c, p.id)
         if revision != (prior.revision if prior else 1):
             raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
-        basis = _basis(c, p, now)
+        basis = _basis(c, p, now, command.scope)
         if command.costHash != basis.digest:
             raise Failure(409, 'RECONCILIATION_STALE', project_id=p.id)
         cutoff, lines = _lines(c, a, p, a.person, command.evidenceRefs, command.overrunReasons, basis, now)
@@ -448,7 +495,8 @@ def create(projectId: UUID, command: Create, authorization: Auth, key: Key, expe
             grant_id=grant, signed_at=now, covered_through=cutoff, rule_version=RULE_VERSION,
             cost_hash=command.costHash, receipt_hash=digest, basis=basis.payload, lines=lines,
             request_id=UUID(rid)).returning(receipts)).mappings().one()
-        result = Result[Receipt](data=_view(row), meta=meta(CREATE, _refs(row)))
+        result = Result[Receipt](data=_view(row).model_copy(update={'policyStatus': status(c, p, 'cost.reconciliation')}),
+                                 meta=meta(CREATE, _refs(row)))
         body = result.model_dump(mode='json')
         record_receipt(c, a, key, CREATE, rid, row.id, p.id, signature, body, fingerprint(body),
                        prior.receipt_hash if prior else None)

@@ -25,6 +25,7 @@ FEASIBILITY_OVERDUE = 'feasibility_condition_overdue'
 SCAN_SOURCE_WRITES = frozenset({
     'pmo_review_submit', 'human_review_decide', 'human_review_withdraw', 'human_execute_transition',
     'human_decide_approval', 'pmo_milestone_forecast', 'human_milestone_complete', 'pmo_cost_forecast_save',
+    'human_category_cost_forecast',
     'human_verify_cost_posting', 'human_customer_confirm', 'human_requirement_baseline_sign',
     'human_requirement_dispute_open', 'human_requirement_dispute_withdraw',
     'pmo_change_propose', 'human_requirement_addition_propose', 'human_change_approve', 'human_change_reject', 'human_evidence_verify',

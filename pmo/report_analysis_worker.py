@@ -15,7 +15,7 @@ from .contracts import Strict
 from .db import engine
 from .fact_sources import CandidateFields, Quote, _leaves, quote_location, submitted
 from .identity import Failure, active_browser_session
-from .model_gateway import Gateway, Model, ModelFailure, enabled, in_project_scope
+from .model_gateway import Gateway, Model, ModelFailure, enabled, report_binding, report_scope
 from .report_analysis import Suggestion, finalize, permitted, r, runs
 from .reports import _ref, reports
 from .session_schema import SESSION_ID
@@ -39,10 +39,17 @@ class Claim:
 
 
 def claim(pool: Engine) -> Claim | None:
+    try:
+        binding = report_binding()
+    except ValueError:
+        return None
+    ready = sa.select(runs).where(sa.or_(r.status == 'queued',
+        sa.and_(r.status == 'running', r.leased_until <= sa.func.clock_timestamp())))
+    if binding:
+        ready = ready.where(r.report_id == binding[0], r.report_revision == binding[1], r.report_hash == binding[2])
     with pool.begin() as c:
-        row = c.execute(sa.select(runs).where(sa.or_(r.status == 'queued',
-            sa.and_(r.status == 'running', r.leased_until <= sa.func.clock_timestamp())))
-            .order_by(r.requested_at, r.id).limit(1).with_for_update(skip_locked=True)).mappings().one_or_none()
+        row = c.execute(ready.order_by(r.requested_at, r.id).limit(1)
+                        .with_for_update(skip_locked=True)).mappings().one_or_none()
         if row is None:
             return None
         lease = c.execute(runs.update().where(r.id == row.id).values(status='running', lease_id=uuid4(),
@@ -111,7 +118,8 @@ def process(pool: Engine, work: Claim, model: Model | None, *, disabled_code='MO
         if row is None:
             return
         code: str | None
-        if not in_project_scope('REPORT', p.id) and (model is not None or disabled_code != 'MODEL_DISABLED'):
+        if (not report_scope(p.id, report.id, report.revision, report.content_hash)
+                and (model is not None or disabled_code != 'MODEL_DISABLED')):
             code = 'MODEL_SCOPE_BLOCKED'
         else:
             code = 'MODEL_LEASE_EXHAUSTED' if work.exhausted else disabled_code if model is None else None

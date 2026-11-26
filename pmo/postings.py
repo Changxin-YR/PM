@@ -14,7 +14,7 @@ from . import reports as reports_service
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import Result, Strict
-from .costs import Kind
+from .cost_categories import CATEGORY_KIND, Category, Kind
 from .identity import Failure, visible
 from .materials import finish, replay
 from .pagination import pg_offset
@@ -27,12 +27,7 @@ SIGNED = r'^-?(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$'
 OPEN = ('drafting','charter_review','designing','feasibility_review','executing','on_hold','delivering','closing_review')
 
 
-Category = Literal['procurement', 'travel', 'cloud', 'allocation', 'development', 'implementation', 'management']
 PostingFilter = Category | Literal['uncategorized']
-CATEGORY_KIND: dict[str, Kind] = {
-    'procurement': 'money', 'travel': 'money', 'cloud': 'money', 'allocation': 'money',
-    'development': 'effort', 'implementation': 'effort', 'management': 'effort',
-}
 UNCATEGORIZED = 'posting_ledger'
 CATEGORIZED_PROPOSE = 'human_categorized_cost_posting_propose'
 HUMAN = {'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True}
@@ -94,6 +89,11 @@ class Detail(Posting):
     reportWeekEnd: date | None = None
     canVerify: bool
     canReverse: bool
+    classificationId: UUID | None = None
+    canClassify: bool | None = None
+    pendingClassificationId: UUID | None = None
+    pendingCategory: Category | None = None
+    pendingClassificationReason: str | None = None
 
 
 class Page(Strict):
@@ -327,21 +327,32 @@ def _check_weekly_verification(c, posting, when: datetime, now: datetime) -> Non
 @router.get('/projects/{projectId}/cost-postings',operation_id='human_cost_postings_list',response_model_exclude_none=True)
 def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int=Query(20,ge=1,le=100),
             category: PostingFilter | None = None)->Result[Page]:
+    from .category_postings import current_categories, pending
+    from .policy import enabled
+    from .requirement_delivery import can_deliver
+
     op='human_cost_postings_list'
     def read(c,a,_):
         p=project(c,a,projectId); allowed=finance(c,a) and p.stage in OPEN
         reverse=t.alias(); linked=sa.exists(sa.select(reverse.c.id).where(reverse.c.posting_of_id==t.c.id))
         e = db.cost_entries
         source = t.outerjoin(e, sa.and_(e.c.id == t.c.cost_entry_id, e.c.project_id == t.c.project_id))
+        assigned = current_categories(p.id)
+        source = source.outerjoin(assigned, assigned.c.posting_id == sa.func.coalesce(t.c.posting_of_id, t.c.id))
+        effective_category = sa.func.coalesce(assigned.c.category, e.c.category)
         conditions = [t.c.project_id == p.id]
         if category == 'uncategorized':
-            conditions.append(sa.or_(e.c.category.is_(None), e.c.category.not_in(CATEGORY_KIND)))
+            conditions.append(sa.or_(effective_category.is_(None), effective_category.not_in(CATEGORY_KIND)))
         elif category is not None:
-            conditions.append(e.c.category == category)
-        stmt=sa.select(t,linked.label('has_reversal'),e.c.category).select_from(source).where(*conditions)
+            conditions.append(effective_category == category)
+        stmt=sa.select(t,linked.label('has_reversal'),e.c.category.label('original_category'),
+            effective_category.label('category'), assigned.c.id.label('classification_id')).select_from(source).where(*conditions)
         total=c.scalar(sa.select(sa.func.count()).select_from(source).where(*conditions))
         rows = c.execute(stmt.order_by(t.c.created_at.desc(), t.c.id).offset(pg_offset(page, pageSize))
                          .limit(pageSize)).mappings().all()
+        can_classify = p.stage in OPEN and can_deliver(c, a, p)
+        can_verify_classification = allowed and enabled(c, p, 'cost.category')
+        candidates = pending(c, p.id, [row.id for row in rows]) if rows and can_verify_classification else {}
         report_versions = {row.id: _bound_report_version(row) for row in rows}
         wanted = {version for version in report_versions.values() if version is not None}
         r = reports_service.r
@@ -352,12 +363,20 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
         for row in rows:
             verified=row.status=='verified'
             report_version = report_versions[row.id]
+            proposed = candidates.get(row.id)
+            if proposed and a.person in (proposed.created_by, row.created_by):
+                proposed = None
             start, end = weeks.get(report_version, (None, None)) if report_version is not None else (None, None)
             items.append(Detail(**item(row).model_dump(),revision=2 if verified else 1,period=row.period,
                 category=row.category if row.category in CATEGORY_KIND else None,
                 occurredAt=row.occurred_at if verified or row.posting_of_id else None,verifiedAt=row.verified_at,postingOfId=row.posting_of_id,
                 reversalReason=row.reversal_reason,verificationNote=row.verification_note,
                 reportWeekStart=start,reportWeekEnd=end,
+                classificationId=row.classification_id,
+                canClassify=True if can_classify and verified and not row.posting_of_id and row.original_category not in CATEGORY_KIND else None,
+                pendingClassificationId=proposed.id if proposed else None,
+                pendingCategory=proposed.category if proposed else None,
+                pendingClassificationReason=proposed.reason if proposed else None,
                 canVerify=allowed and not verified and row.created_by!=a.person,
                 canReverse=allowed and verified and row.amount_signed>0 and not row.has_reversal))
         return Result[Page](data=Page(items=items,page=page,pageSize=pageSize,total=total,canPropose=p.stage in OPEN and can_manage(c,a,p)),

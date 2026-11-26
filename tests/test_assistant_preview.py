@@ -150,6 +150,11 @@ def test_scoped_modes_attach_server_citations_and_leave_business_tables_unchange
     assert len(calls) == 3
     assert [call['mode'] for call in calls] == ['charter_review_assistant', 'closing_review_assistant', 'ledger_qa']
     assert len({call['instruction'] for call in calls}) == len({json.dumps(call['outputSchema']) for call in calls}) == 3
+    assert 'test_success=s1' in calls[0]['instruction']
+    assert 'root_cause=s1,s2,s3,s4' in calls[1]['instruction']
+    assert 'follow_up=' not in calls[1]['instruction']
+    assert 'Allowed source IDs by lens' not in calls[2]['instruction']
+    assert ANSWERS[0] not in calls[1]['instruction']
     for item in calls:
         assert item['tools'] == [] and 'untrusted business data' in item['instruction']
         assert pid not in json.dumps(item['source']) and set(item['source']['excerpts'][0]) == {'sourceId', 'kind', 'text'}

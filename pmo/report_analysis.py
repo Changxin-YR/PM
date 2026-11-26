@@ -168,7 +168,7 @@ def analyze(reportId: UUID, command: Analyze, authorization: Auth, key: Key, exp
                 report_revision=rev, report_hash=report.content_hash, status='queued').returning(runs)).mappings().one()
             if not model_gateway.enabled():
                 row = finalize(c, p, row, status='manual', code='MODEL_DISABLED')
-            elif not model_gateway.in_project_scope('REPORT', p.id):
+            elif not model_gateway.report_scope(p.id, report.id, rev, report.content_hash):
                 row = finalize(c, p, row, status='manual', code='MODEL_SCOPE_BLOCKED')
             else:
                 _event(c, row, 'report.analysis.queued', rid)
@@ -192,7 +192,7 @@ def listing(reportId: UUID, authorization: Auth, page: int = Query(1, ge=1, le=1
         busy = active(c, report)
         payload = AnalysisPage(items=items, total=total, page=page, pageSize=pageSize, reportRevision=report.revision,
             activeRunId=busy.id if busy else None, canAnalyze=p.stage != 'archived' and submitted(report),
-            modelEnabled=model_gateway.enabled() and model_gateway.in_project_scope('REPORT', p.id))
+            modelEnabled=model_gateway.enabled() and model_gateway.report_scope(p.id, report.id, report.revision, report.content_hash))
         return Result[AnalysisPage](data=payload, meta=meta(LIST, [_ref(report), *(f'analysis:{item.runId}' for item in items)]))
 
     return run(authorization, LIST, read)

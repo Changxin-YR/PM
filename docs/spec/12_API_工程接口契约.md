@@ -155,3 +155,21 @@
 - **人工成本核验权限**：`finance_verifier` 是须明确赋予的能力而非新 PMO 治理层级；`system_admin` 不自动拥有其权力。凭证创建人、其委托人和本次核验人不能是同一责任主体。
 - **审批读写分离**：最终裁决 `/reviews/{id}/decisions`、客户确认、凭证核验、Lesson 确认、项目归档由 human-only API 强制拒绝 Agent Token；`Person.role` 描述性文本不能当作角色授权来源。
 - **MCP 返回**：`11_MCP_工具契约.json` 的 40 个 output data 已具最小类型；真实 FastAPI `OkResponse.data` 仍为基线占位，M0 按业务 DTO 构建并比对客户端接受的类型。
+
+## 九、类别成本扩展
+
+| 工程操作 | 入口及版本前置 |
+|---|---|
+| `human_category_cost_budget_draft` | `PUT /projects/{projectId}/cost-categories/budget-draft`。人工草稿负责人提交 `amounts`。 `If-Match` 为类别预算 revision。 |
+| `human_category_cost_forecast` | `PUT /projects/{projectId}/cost-categories/forecast`。人工 PM 提交 `amounts`、`reason`，可记录 `observedAt`。 `If-Match` 为独立类别预测 revision。 |
+| `human_category_budget_change_propose` | `POST /projects/{projectId}/changes/category-budget`。现任人工 PM 提交完整 `amounts`、`reason`，总额调整须填写 `reestimate`。 `If-Match` 为批准类别预算 revision。批准和拒绝沿用预算独立审批。 |
+| `human_cost_classification_propose` | `POST /projects/{projectId}/cost-postings/{postingId}/classification`。现任人工 PM 为已核验历史凭证提交 `category`、`reason`，`If-Match` 为流水 revision。 |
+| `human_cost_classification_verify` | `POST /projects/{projectId}/cost-postings/{postingId}/classification/{requestId}/verify`。不同的人工财务核验人提交 `reason`，`If-Match` 为流水 revision。通过后附加生效记录。 |
+
+所有写路由需要浏览器会话、CSRF 和 `Idempotency-Key`。每份 `amounts` 精确填写七类十进制字符串。单位由类别固定，金额属于 `procurement`、`travel`、`cloud`、`allocation`，人天属于 `development`、`implementation`、`management`。空版本从 revision 1 发起。现有合计写接口在项目采用类别计划后返回 `CATEGORY_ALLOCATION_REQUIRED`。历史项目的首次分配必须保持两种单位各自的获批总额。
+
+`pmo_cost_summary` 原有双口径和 `asOf` 保留。REST 与 MCP 可选返回 `categories`，包括状态、预算/预测 revision 和带有限来源引用的类别明细。类别字段依赖项目读取范围，MCP 不含草稿编辑器、原因、人员、附件或私有凭证内容。`categoryEditor` 为有权人工的现时查询字段。MCP 工具数量保持 40 项。
+
+`GET /projects/{projectId}/cost-reconciliations?scope=categories` 读取类别对账签署基础。使用 `scope=categories` 提交时，独立来源 JSON 应包含 `schemaVersion: 2`，在现有金额、人天两条来源行分别提供 `categoryActuals`。该对象包含对应单位的每一类及 `historical_uncategorized`，值为带两位小数的净实际字符串，合计与 `netActual` 相符。原 `schemaVersion: 1` 和默认 `scope=totals` 继续用于合计对账。类别对账校验分类版本及适用计划，合计对账保留原依赖。
+
+见 [ADR 0023](../adr/0023-category-cost-versions.md)。

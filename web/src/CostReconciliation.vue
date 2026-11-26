@@ -5,15 +5,16 @@ import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
 
 type Kind='money'|'effort'
+type Scope='totals'|'categories'
 type Attribution='estimate'|'execution'|'scope'
 type Variance={budget?:string|null;difference?:string|null;rate?:string|null;sourceRefs:string[]}
 type Proof={evidenceRef:string;linkedResourceType:'project';linkedResourceId:string;linkRevision:number;
   sha256:string;verifiedBy:string;verifiedAt:string}
 type Line={type:Kind;unit:'CNY'|'person_day';actual:string;sourceRef:string;sourceNetActual:string;difference:string;
-  forecastRemaining:string;forecastSourceRefs:string[];initial:Variance;current:Variance;proof:Proof;overrunReason?:Attribution|null}
+  forecastRemaining:string;forecastSourceRefs:string[];initial:Variance;current:Variance;proof:Proof;overrunReason?:Attribution|null;categoryActuals?:Record<string,string>|null}
 type Receipt={receiptId:string;projectId:string;revision:number;signedBy:string;signedAt:string;grantId:string;
-  coveredThrough:string;ruleVersion:string;costHash:string;receiptHash:string;lines:Line[];policyStatus:'POLICY_PENDING'}
-type State={projectId:string;revision:number;costHash:string;canCreate:boolean;current:Receipt|null;policyStatus:'POLICY_PENDING'}
+  coveredThrough:string;ruleVersion:string;costHash:string;receiptHash:string;lines:Line[];policyStatus:'POLICY_PENDING'|'POLICY_ACTIVE'}
+type State={projectId:string;revision:number;costHash:string;canCreate:boolean;current:Receipt|null;policyStatus:Receipt['policyStatus'];scope:Scope}
 type Attempt={revision:number;body:string;key:string}
 
 const props=defineProps<{projectId:string;api:(path:string,options?:RequestInit)=>Promise<any>;costsBusy:boolean}>()
@@ -21,8 +22,11 @@ const path=`projects/${props.projectId}/cost-reconciliations`
 const kinds:Kind[]=['money','effort'],labels={money:'金额（元）',effort:'人天'}
 const attributions:Record<Attribution,string>={estimate:'估算',execution:'执行',scope:'范围'}
 const baselines=[{key:'initial',label:'初始基线'},{key:'current',label:'当前基线'}] as const
+const categoryLabels:Record<string,string>={procurement:'外采',travel:'差旅',cloud:'云资源',allocation:'分摊',development:'研发',
+  implementation:'实施',management:'管理',historical_uncategorized:'历史未分类'}
 const state=ref<State|null>(null),loading=ref(false),saving=ref(false),open=ref(false)
-const signingBasis=ref<Pick<State,'revision'|'costHash'>|null>(null)
+const scope=ref<Scope>('totals')
+const signingBasis=ref<Pick<State,'revision'|'costHash'|'scope'>|null>(null)
 const error=ref(''),formError=ref(''),notice=ref(''),evidenceRefs=ref<string[]>([])
 const reasons=ref<Record<Kind,Attribution|''>>({money:'',effort:''})
 const retry=ref<Attempt|null>(null)
@@ -41,7 +45,7 @@ function percent(rate?:string|null){
 }
 function message(e:unknown){return e instanceof Error?e.message:'未能读取对账结果。'}
 async function read(){
-  const {data}:{data:State}=await props.api(path)
+  const {data}:{data:State}=await props.api(scope.value==='totals'?path:`${path}?scope=categories`)
   state.value=data
 }
 async function refresh(){
@@ -54,7 +58,7 @@ watch(()=>props.costsBusy,value=>{if(!value)void refresh()},{immediate:true})
 function begin(){
   const basis=state.value
   if(disabled.value||basis?.canCreate!==true)return
-  signingBasis.value={revision:basis.revision,costHash:basis.costHash}
+  signingBasis.value={revision:basis.revision,costHash:basis.costHash,scope:basis.scope}
   evidenceRefs.value=[];reasons.value={money:'',effort:''};formError.value='';notice.value=''
   open.value=true
 }
@@ -63,7 +67,8 @@ function save(){
   if(signDisabled.value||!basis||!evidenceRefs.value.length||evidenceRefs.value.length>2)return
   const overrunReasons:Partial<Record<Kind,Attribution>>={}
   for(const kind of kinds){const value=reasons.value[kind];if(value)overrunReasons[kind]=value}
-  const body=JSON.stringify({costHash:basis.costHash,evidenceRefs:[...evidenceRefs.value].sort(),overrunReasons})
+  const body=JSON.stringify({costHash:basis.costHash,evidenceRefs:[...evidenceRefs.value].sort(),overrunReasons,
+    ...(basis.scope==='categories'?{scope:basis.scope}:{})})
   void send({revision:basis.revision,body,key:crypto.randomUUID()})
 }
 async function send(attempt:Attempt){
@@ -95,6 +100,9 @@ async function send(attempt:Attempt){
       <h3>成本对账</h3>
       <el-tag v-if="state?.policyStatus==='POLICY_PENDING'" size="small" type="warning">策略待签核</el-tag>
       <div class="controls">
+        <label>对账范围<select v-model="scope" :disabled="disabled||open" @change="refresh">
+          <option value="totals">项目合计</option><option value="categories">类别与项目合计</option>
+        </select></label>
         <el-button v-if="state?.canCreate===true" type="primary" :disabled="disabled" @click="begin"><FileCheck2 :size="15"/> 签署对账</el-button>
         <el-button aria-label="刷新成本对账" title="刷新成本对账" :disabled="disabled" @click="refresh"><RefreshCw :size="15"/></el-button>
       </div>
@@ -115,6 +123,7 @@ async function send(attempt:Attempt){
             <dt>对账差额</dt><dd>{{line.difference}}</dd>
             <dt>剩余预测</dt><dd>{{line.forecastRemaining}}</dd>
             <template v-if="line.overrunReason"><dt>超支归因</dt><dd>{{attributions[line.overrunReason]}}</dd></template>
+            <template v-for="(amount,category) in line.categoryActuals" :key="category"><dt>{{categoryLabels[category]??category}}</dt><dd>{{amount}}</dd></template>
           </dl>
           <details class="sources">
             <summary>独立对账凭据与预测来源</summary>
@@ -154,6 +163,7 @@ async function send(attempt:Attempt){
   <el-dialog v-model="open" append-to-body destroy-on-close title="签署成本对账" width="min(560px,94vw)"
     :close-on-click-modal="false" :show-close="!saving&&!retry" :close-on-press-escape="!saving&&!retry">
     <form class="sign-form" @submit.prevent="save">
+      <p v-if="signingBasis?.scope==='categories'">使用第 2 版对账 JSON，分别提供金额和人天中各类别及历史未分类的已核验净实际。</p>
       <ScopedEvidencePicker v-model="evidenceRefs" :project-id="projectId" resource-type="project" :resource-id="projectId"
         label="已核验成本来源 JSON" mime-type="application/json" :max-bytes="16*1024" :limit="2" :api="api" :disabled="signDisabled"/>
       <fieldset class="reason-fields" :disabled="signDisabled">

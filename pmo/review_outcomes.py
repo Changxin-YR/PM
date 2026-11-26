@@ -15,11 +15,13 @@ from .evidence import lookup as evidence_lookup, lookup_for_integrity, require_v
 from .gates import ENTRY, REVIEW, evaluate, lock_project, submitter
 from .identity import Failure
 from .materials import replay
+from .policy import enabled as policy_enabled, lock as lock_policy, matches as policy_matches, require, review_action, selection
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment, active_member
-from .requirement_delivery import synthetic_confirmation
 from .requirement_exceptions import Receipt as RequirementException
-from .review_scores import Assessment, CharterDimensions, Dimension, FeasibilityDimensions, Reason, assess, rubric
+from .review_responses import Response as ReinforcementResponse
+from .review_scores import (ANCHOR_VERSION, Assessment, CharterDimensions, Dimension, FeasibilityDimensions,
+                            Reason, Warning, assess, judgment_warnings, rubric)
 from .reviews import (APPROVAL_ACTION, ReviewView, approval_hash, decision_stage, reviews,
                       snapshots, transition_project, transitions, view, withdrawal_stage)
 
@@ -58,6 +60,7 @@ class Condition(Strict):
     title: str = Field(min_length=4, max_length=180, pattern=r'\S')
     assigneeId: UUID
     dueAt: AwareDatetime
+    evidenceRequired: bool = False
 
 
 class Decide(Strict):
@@ -73,6 +76,8 @@ class Card(Strict):
     round: int
     dimensions: CharterDimensions | FeasibilityDimensions
     reviewedAt: datetime
+    anchorVersion: str | None = None
+    warnings: dict[str, list[Warning]] | None = None
 
 
 class Appeal(Strict):
@@ -145,6 +150,9 @@ class Workbench(Strict):
     policyPending: bool
     stale: bool
     scoreEvidenceStale: Literal[True] | None = None
+    requiredReviewerCount: int | None = None
+    submittedReviewerCount: int | None = None
+    reinforcementResponses: list[ReinforcementResponse] | None = None
 
 
 def one(c, table, *where):
@@ -193,6 +201,7 @@ def current(c, a, p, review, frozen, intent):
           or not submitter(c, p, intent.requested_by, review.type)
           or intent.payload_hash != approval_hash(review, entry.from_revision, entry.actor_type)
           or intent.snapshot_hash != frozen.snapshot_hash or review.snapshot_hash != frozen.snapshot_hash
+          or not policy_matches(c, p, review_action(review.type), review.id)
           or fingerprint(frozen.materials) != frozen.snapshot_hash):
         return False
     check, _ = evaluate(c, a, p, review.type, pending=True)
@@ -209,6 +218,20 @@ def effective(rows):
     # Reconsideration replaces only an opinion that the same reviewer actually re-files.
     latest = {r.reviewer_id: r for r in rows}
     return [latest[k] for k in sorted(latest)]
+
+
+def roster_progress(review, frozen, scored):
+    if review.type == 'closing' or not frozen:
+        return None, None
+    required = {UUID(row['person_id']) for row in frozen.materials['reviewers']}
+    filed = {row.reviewer_id for row in scored}
+    return len(required), len(required & filed)
+
+
+def require_complete_roster(p, review, frozen, scored):
+    required, submitted = roster_progress(review, frozen, scored)
+    if required is not None and (not required or required != submitted):
+        raise Failure(422, 'REVIEW_REQUIRED_SCORES_INCOMPLETE', project_id=p.id)
 
 
 def score_hash(frozen, round_no, scores):
@@ -253,6 +276,22 @@ def check_score_evidence(c, a, p, review, frozen, scores):
 
 def confirmation_eligible(c, a, p, role):
     return a.person == p[f'{role}_id'] and active_member(c, p, a.person, role)
+
+
+def structured_rationale(p, dims, evidence, *, required):
+    if not required and not any('judgments' in rating for rating in dims.values()):
+        return {'evidence': evidence}
+    warnings = {}
+    for key, rating in dims.items():
+        try:
+            found = judgment_warnings(key, rating)
+        except ValueError:
+            raise Failure(422, 'REVIEW_JUDGMENT_INVALID', project_id=p.id) from None
+        if found:
+            if not rating.get('retainedReason'):
+                raise Failure(422, 'REVIEW_JUDGMENT_DISPOSITION_REQUIRED', project_id=p.id)
+            warnings[key] = [item.model_dump(mode='json', exclude_none=True) for item in found]
+    return {'evidence': evidence, 'anchorVersion': ANCHOR_VERSION, 'warnings': warnings}
 
 
 def confirmation_rows(c, review):
@@ -349,12 +388,14 @@ def workbench(c, a, p, review, frozen):
     confirmations_found = [Confirmation(role=row.role, confirmedBy=row.confirmed_by, confirmedAt=row.confirmed_at,
         current=row.score_hash == digest) for row in confirmation_rows(c, review)]
     confirmed = {row.role for row in confirmations_found if row.current}
+    required, submitted = roster_progress(review, frozen, latest)
+    complete = required is None or (required > 0 and required == submitted)
     valid = pending and not stale
-    fast = bool(calculated and calculated.classification == 'fast_track' and valid)
-    no_policy = not synthetic_confirmation(c)
-    can_decide = valid and reviewer and not no_policy and (calculated is not None or review.type == 'closing')
-    can_confirm_sponsor = fast and sponsor and 'sponsor' not in confirmed
-    can_confirm_initiator = fast and initiator and 'initiator' not in confirmed
+    fast = bool(calculated and calculated.classification == 'fast_track' and valid and complete)
+    no_policy = not policy_enabled(c, p, review_action(review.type))
+    can_decide = valid and reviewer and not no_policy and complete and (calculated is not None or review.type == 'closing')
+    can_confirm_sponsor = fast and not no_policy and sponsor and 'sponsor' not in confirmed
+    can_confirm_initiator = fast and not no_policy and initiator and 'initiator' not in confirmed
     score_evidence_stale: Literal[True] | None = None
     if can_decide or can_confirm_sponsor or can_confirm_initiator:
         try:
@@ -374,14 +415,19 @@ def workbench(c, a, p, review, frozen):
     if record:
         refs, stage, _ = decision_history(c, p, review, record, stored)
         decision = Decision(**decision_public(record, refs).model_dump(), rationale=record.rationale, stage=stage)
+    reinforcement = frozen.materials.get('reinforcementResponses') if frozen and show_full_material else None
     return Workbench(review=view(review), round=round_no, approvalRequestId=intent.id if intent else None,
         dimensions=rubric(review.type), materialRefs=frozen.source_refs if frozen and show_full_material else [],
         scores=[Card(scorecardId=row.id, reviewerId=row.reviewer_id, round=row.round, dimensions=row.dimensions,
-                     reviewedAt=row.reviewed_at) for row in rows if not pending or row.reviewer_id == a.person],
+                     reviewedAt=row.reviewed_at, anchorVersion=row.rationale.get('anchorVersion'),
+                     warnings=row.rationale.get('warnings')) for row in rows if not pending or row.reviewer_id == a.person],
         appeal=appeal_view(reconsideration) if reconsideration else None, assessment=calculated if can_read_scores else None,
         confirmations=confirmations_found if can_read_scores else [], decision=decision,
         requirementException=RequirementException.model_validate(exception) if exception and show_full_material else None,
         tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy, scoreEvidenceStale=score_evidence_stale,
+        requiredReviewerCount=required, submittedReviewerCount=submitted,
+        reinforcementResponses=[ReinforcementResponse.model_validate({k: v for k, v in row.items() if k != 'evidence'})
+                                for row in reinforcement] if reinforcement else None,
         withdrawalReason=review.minutes if review.verdict == 'withdrawn' else None,
         canScore=valid and reviewer and bool(rubric(review.type)) and not any(r.reviewer_id == a.person and r.round == round_no for r in rows),
         canAppeal=valid and owner and bool(rows) and reconsideration is None,
@@ -408,14 +454,17 @@ def event(c, rid, kind, p, review, **data):
         payload={'projectId': str(p.id), 'reviewId': str(review.id), **data}))
 
 
-def strengthen(c, a, p, review, specs):
+def strengthen(c, a, p, review, specs, *, response_evidence=None):
+    from .review_responses import bindings
+
     created = []
     for item_key, title, who, due in specs:
         if one(c, task_refs, task_refs.c.review_id == review.id, task_refs.c.item_key == item_key):
             continue
         tid = c.scalar(db.tasks.insert().values(project_id=p.id, created_by=a.person, title=title, due_at=due,
             assignee_id=who, source_type='review', source_id=review.id, status='todo').returning(db.tasks.c.id))
-        c.execute(task_refs.insert().values(review_id=review.id, task_id=tid, item_key=item_key))
+        c.execute(bindings.insert().values(review_id=review.id, task_id=tid, item_key=item_key,
+            evidence_required=response_evidence[item_key] if response_evidence is not None else None))
         created.append(str(tid))
     return created
 
@@ -431,21 +480,24 @@ def make_tasks(c, a, p, review, verdict, conditions, calculated, now):
         raise Failure(422, 'CONDITIONS_REQUIRED_OR_NOT_ALLOWED', project_id=p.id)
     specs = {}
     for term in conditions:
+        if term.evidenceRequired and review.type != 'charter':
+            raise Failure(422, 'CHARTER_STRENGTHENING_TASK_REQUIRED', project_id=p.id)
         title = ' '.join(term.title.split())
         if len(title) < 4 or term.dueAt <= now or not valid_assignee(c, p, term.assigneeId):
             raise Failure(422, 'INVALID_STRENGTHENING_TASK', project_id=p.id)
         key = f'condition:{fingerprint([title.casefold(), str(term.assigneeId)])}'
-        if key in specs and specs[key][2] != term.dueAt:
+        if key in specs and specs[key][2:] != (term.dueAt, term.evidenceRequired):
             raise Failure(422, 'DUPLICATE_CONDITION', project_id=p.id)
-        specs[key] = (title, term.assigneeId, term.dueAt)
-    if calculated and (calculated.classification == 'normal' and verdict in PASS or calculated.classification == 'shortfall'):
+        specs[key] = (title, term.assigneeId, term.dueAt, term.evidenceRequired)
+    if calculated and (review.type == 'charter' and verdict in PASS or calculated.classification == 'shortfall'):
         labels = {d.key: d.label for d in rubric(review.type)}
         for dimension in calculated.weakDimensions:
-            specs[f'dimension:{dimension}:{p.pm_id}'] = (f'评审补强：{labels[dimension]}', p.pm_id, None)
-    strengthen(c, a, p, review, [(key, *spec) for key, spec in specs.items()])
+            specs[f'dimension:{dimension}:{p.pm_id}'] = (f'评审补强：{labels[dimension]}', p.pm_id, None, False)
+    response_evidence = {key: spec[3] for key, spec in specs.items()} if review.type == 'charter' else None
+    strengthen(c, a, p, review, [(key, *spec[:3]) for key, spec in specs.items()], response_evidence=response_evidence)
 
 
-def freeze_approved_baselines(c, a, p, review, decision_id):
+def freeze_approved_baselines(c, a, p, review, decision_id, rid):
     if review.type == 'charter':
         ch = db.charters
         row = c.execute(ch.update().where(ch.c.project_id == p.id, ~ch.c.is_frozen).values(
@@ -455,11 +507,22 @@ def freeze_approved_baselines(c, a, p, review, decision_id):
         return [f'charter:{row.id}@{row.revision}']
     if review.type != 'feasibility':
         return []
+    from .category_costs import allocation, freeze, freeze_material
     from .costs import latest_plan
+    from .policy import matches as policy_matches, require as require_policy
     t, m = db.cost_entries, db.milestones
     if c.scalar(sa.select(t.c.id).where(t.c.project_id == p.id, t.c.is_current_baseline).limit(1)):
         raise Failure(409, 'COST_BASELINE_ALREADY_ACTIVE', project_id=p.id)
     plan = c.execute(latest_plan(p.id)).mappings().one()
+    draft, category_forecast = freeze_material(c, p)
+    if draft is not None:
+        require_policy(c, p, 'cost.category', rid)
+        if not policy_matches(c, p, 'cost.category', review.id):
+            raise Failure(409, 'POLICY_SNAPSHOT_STALE', project_id=p.id)
+        _, totals = allocation(draft.amounts)
+        if (category_forecast is None or category_forecast.budget_revision != draft.revision
+                or any(plan[kind + '_budget'] != total for kind, total in totals.items())):
+            raise Failure(409, 'CATEGORY_PLAN_STALE', project_id=p.id)
     first, last = c.execute(sa.select(sa.func.min(m.c.planned_date), sa.func.max(m.c.planned_date)).where(
         m.c.project_id == p.id, ~m.c.is_cancelled)).one()
     rows = []
@@ -469,8 +532,12 @@ def freeze_approved_baselines(c, a, p, review, decision_id):
             period_start=first, period_end=last, budget=budget, actual=0,
             forecast_remaining=budget if forecast is None else forecast, baseline_version=1,
             source_ref=f'decision:{decision_id}'))
-    saved = c.execute(t.insert().values(rows).returning(t.c.id, t.c.revision)).all()
-    return [f'cost-entry:{row.id}@{row.revision}' for row in saved]
+    saved = c.execute(t.insert().values(rows).returning(
+        t.c.id, t.c.revision, sa.func.statement_timestamp().label('effective_at'))).all()
+    refs = [f'cost-entry:{row.id}@{row.revision}' for row in saved]
+    if draft is not None:
+        refs.append(freeze(c, p, a, draft, decision_id, saved[0].effective_at))
+    return refs
 
 
 def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid):
@@ -479,6 +546,7 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
     calculated = assess(review.type, scored)
     if review.type != 'closing' and calculated is None:
         raise Failure(422, 'REVIEW_SCORE_REQUIRED', project_id=p.id)
+    require_complete_roster(p, review, frozen, scored)
     digest = score_hash(frozen, round_no, scored)
     signoffs = [i for i in confirmation_rows(c, review) if i.score_hash == digest]
     if command.verdict in PASS and calculated:
@@ -507,7 +575,7 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
     decision_id = c.scalar(db.decisions.insert().values(review_id=review.id, project_id=p.id, created_by=a.person,
         decided_by=a.person, decided_at=now, subject=review.type, option=command.verdict, rationale=reason(command.rationale))
         .returning(db.decisions.c.id))
-    baselines = freeze_approved_baselines(c, a, p, review, decision_id) if command.verdict in PASS else []
+    baselines = freeze_approved_baselines(c, a, p, review, decision_id, rid) if command.verdict in PASS else []
     payload = {'stage': destination, 'verdict': command.verdict, 'rationale': reason(command.rationale),
         'materialHash': frozen.snapshot_hash, 'scoreHash': digest, 'scorecards': [snapshot(row) for row in scored],
         'round': round_no, 'assessment': calculated.model_dump(mode='json') if calculated else None,
@@ -538,7 +606,7 @@ def shortfall_after_denial(c, actor, failure, rid, review_id, expected):
     p, review, frozen = context(c, actor, review_id, write=True)
     intent = approval(c, review)
     if (review.status != 'pending' or review.revision != expected or not reviewer_assignment(c, actor, p, review, frozen)
-            or not current(c, actor, p, review, frozen, intent) or not synthetic_confirmation(c)):
+            or not current(c, actor, p, review, frozen, intent) or not policy_enabled(c, p, review_action(review.type))):
         return
     assessment = assess(review.type, effective(all_scores(c, review)))
     if not assessment or assessment.classification != 'shortfall':
@@ -554,7 +622,12 @@ def shortfall_after_denial(c, actor, failure, rid, review_id, expected):
 
 
 def write_action(auth, op, review_id, command, key, expected):
-    signature = fingerprint([str(review_id), expected, command.model_dump(mode='json')])
+    content = command.model_dump(mode='json', exclude_none=True)
+    if op == DECIDE:
+        for term in content['conditions']:
+            if not term['evidenceRequired']:
+                term.pop('evidenceRequired')
+    signature = fingerprint([str(review_id), expected, content])
 
     def write(c, a, rid):
         p, review, frozen = context(c, a, review_id, write=True)
@@ -584,6 +657,10 @@ def write_action(auth, op, review_id, command, key, expected):
                     decided_by=a.person, updated_at=sa.func.now()))
             saved = bump(c, review, status='decided', verdict='withdrawn', minutes=why)
         else:
+            action = review_action(review.type)
+            lock_policy(c, p.org_id)
+            if op in (DECIDE, CONFIRM) or policy_enabled(c, p, action):
+                require(c, p, action, rid)
             if not current(c, a, p, review, frozen, intent):
                 raise Failure(409, 'REVIEW_SNAPSHOT_STALE', project_id=p.id)
             rows = all_scores(c, review)
@@ -596,11 +673,14 @@ def write_action(auth, op, review_id, command, key, expected):
                     raise Failure(409, 'REVIEW_ROUND_CHANGED', project_id=p.id)
                 if any(row.round == round_no and row.reviewer_id == a.person for row in rows):
                     raise Failure(409, 'REVIEW_SCORE_ALREADY_SUBMITTED', project_id=p.id)
-                dims = command.dimensions.model_dump(mode='json')
+                policy = selection(c, p, action)
+                dims = command.dimensions.model_dump(mode='json', exclude_none=True)
                 evidence = proofs(c, a, p, review, frozen, dims)
+                versioned = 'calibrationPlan' in frozen.materials or bool(policy and 'synthetic' not in policy[0])
+                rationale = structured_rationale(p, dims, evidence, required=versioned)
                 c.execute(db.scorecards.insert().values(review_id=review.id, project_id=p.id, created_by=a.person,
                     reviewer_id=a.person, round=round_no, reviewed_at=sa.func.now(), type=review.type, rule_version=RULE_VERSION,
-                    dimensions=dims, rationale={'evidence': evidence}))
+                    dimensions=dims, rationale=rationale))
                 saved = bump(c, review)
             elif op == APPEAL:
                 if round_no != 1:
@@ -614,6 +694,7 @@ def write_action(auth, op, review_id, command, key, expected):
                 calculated = assess(review.type, scored)
                 if not calculated or calculated.classification != 'fast_track':
                     raise Failure(422, 'FAST_TRACK_NOT_AVAILABLE', project_id=p.id)
+                require_complete_roster(p, review, frozen, scored)
                 check_score_evidence(c, a, p, review, frozen, scored)
                 digest = score_hash(frozen, round_no, scored)
                 t = confirmations
@@ -623,8 +704,6 @@ def write_action(auth, op, review_id, command, key, expected):
                     score_hash=digest, request_id=UUID(rid)))
                 saved = bump(c, review)
             else:
-                if not synthetic_confirmation(c):
-                    raise Failure(403, 'POLICY_PENDING', project_id=p.id)
                 saved, destination = execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid)
         # Reload cannot apply a stage update of its own. The response and all writes share this transaction.
         project = lock_project(c, a, p.id, write=True) if destination != p.stage else p

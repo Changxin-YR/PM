@@ -115,6 +115,9 @@ async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) 
     await fields.getByLabel('评分理由',{exact:true}).fill(`独立复核合成材料：${dimension.label}。`)
     await fields.getByText(/^材料引用（至少一项）/).click()
     await fields.getByRole('checkbox',exact(state.materialRefs.find(ref=>ref.startsWith(kind+':')))).check()
+    if(dimension.criteria.some(item=>item.minimumScore<=Number(points))){
+      await fields.getByLabel('保留分数的理由',{exact:true}).fill('合成材料需后续补齐该判断的独立依据。')
+    }
   }
   await write(reviewer,'POST','/reviews/[^/]+/scores',button(workbench,'提交评分'))
   await button(workbench,'登记裁决').click()

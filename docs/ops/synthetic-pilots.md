@@ -4,7 +4,7 @@
 
 ## 启动和复跑
 
-原生持久试点入口为 Web `127.0.0.1:18778`、API `127.0.0.1:18779/api/v1/` 和 PostgreSQL `127.0.0.1:55443/pmo_pilot`，私有原件在 `.local/pmo-synthetic-pilot-native/private-evidence`。全部限本机，回归独用 `55444`。从 `0036` 或 `0037` 升级至 `0038` 前，先停止专用试点应用及 worker，准备并核验对应数据库和私有原件的本机恢复点，再用新候选执行 `& $py -m scripts.pilot_local init --upgrade-existing`。升级成功后启动同一候选。未设置 `PMO_PILOT_RUNTIME` 时使用独立 Docker 试点 Web `18775`、API `18776`、DB `55441`、回归 `55442`。
+原生持久试点入口为 Web `127.0.0.1:18778`、API `127.0.0.1:18779/api/v1/` 和 PostgreSQL `127.0.0.1:55443/pmo_pilot`，私有原件在 `.local/pmo-synthetic-pilot-native/private-evidence`。全部限本机，回归独用 `55444`，冷恢复副本独用 `55445`。从 `0036`、`0037`、`0038`、`0039` 或 `0040` 升级前，先停止专用试点应用及 worker，准备并核验对应数据库和私有原件的本机恢复点。`python -m scripts.pilot_restore_evidence <冷恢复点>` 在独立集群复验旧回执、附件字节和受限角色。随后用新候选执行 `& $py -m scripts.pilot_local init --upgrade-existing`，启动器校验实际 Alembic 唯一 head。升级成功后启动同一候选。未设置 `PMO_PILOT_RUNTIME` 时使用独立 Docker 试点 Web `18775`、API `18776`、DB `55441`、回归 `55442`。
 
 在 Windows PowerShell 7 的仓库根目录运行。每个新终端都显式选 `native`。如果 `status` 已就绪则无需重启；主机重启后按下列顺序恢复同一实例。原生运行器使用已准备的 PostgreSQL 16 二进制（此机为 16.14），位置 `.local/pmo-synthetic-pilot/pg16-runtime/pgsql/bin`。
 
@@ -50,7 +50,7 @@ npm.cmd --prefix web run build
 | `Protocol` | `pmo_json`：已有 [PMO 报告抽取](../adr/0013-report-analysis-jobs.md)或[助理预览](../adr/0018-source-bound-assistant-previews.md)专用网关，由网关选择模型；`chat_completions_json`：服务方确认支持 JSON 对象输出的 Chat Completions 兼容接口，使用填写的模型 ID。请求不会提供工具。 |
 | `Complete endpoint URL` | 由服务方提供的完整 HTTPS 请求地址，只有本机回环夹具可用 HTTP。客户端使用该地址原样 POST，禁止嵌入凭据、查询或片段，也不会跟随重定向。`chat_completions_json` 需填完整接口地址，如 `https://provider.example.invalid/v1/chat/completions`。仅有 `/v1` 一类服务基址时会被拒绝。旧的 `pmo_json` 配置使用基址形态时会提示确认该地址实际承接 PMO JSON 契约。 |
 | `Actual model ID/version` | 网关确切模型 ID/版本；不是产品名或 ChatGPT 登录名。 |
-| `Project codes` | 明确选择批准范围，例如只填 `SIM-EXEC-001`；回车会选两个合成试点。 |
+| `Project codes` | 按批准范围填写精确代码。报告验收只使用 `SIM-EXEC-001`，也是该通道默认值。助理回车选择两组合成主项目。 |
 | `Gateway bearer token` | 在不回显的终端提示输入，网关不要求认证时才留空。 |
 
 保存后，先运行 `& $py -m scripts.pilot_local model-preflight`。它只读取受保护的本地配置、回环服务就绪状态和报告 worker 进程状态。输出包含两个通道的状态与范围，令牌只显示是否已填，完整网关地址不进入诊断。任何已保存通道配置无效时退出码为 1。两个通道均未配置仍可正常运行人工工作台。
@@ -63,7 +63,11 @@ npm.cmd --prefix web run build
 | `worker` | 报告通道独有。`running` 表示已加载通道对应的 worker 进程存在，`unavailable` 表示报告通道加载但未找到对应进程，`not_loaded` 表示报告通道未加载。 |
 | `providerResult` | 离线预检固定为 `not_checked`。网关认证、协议兼容、实际模型及抽取质量需另取运行证据。 |
 
-确认网关可接收所选合成项目的必要片段后，由本人运行 `& $py -m scripts.pilot_local activate-models` 并输入 `SEND SYNTHETIC ONLY`。切换会重启进程加载配置，激活命令没有网关探针。报告 worker 启动后正常领取符合范围的既有作业。API 持助理认证，报告 worker 单独持报告认证，使用受限 API 角色，不持迁移或 Outbox 身份，也不挂载原件。范围之外的项目与历史 Lesson 不进入网关。模型只生成候选，核验、评分与裁决仍由有权人工完成。停用时执行 `stop` 后 `start`。
+报告仍关闭时运行 `& $py -m scripts.pilot_local prepare-model-report`。该命令用合成 PM 的真实会话提交一次日报，保留报告 ID、版本、摘要、原话和独立评审账号回读。日报含具体时点和 `2.50` 人天，报告分析只允许这一条的确切版本。激活前若存在排队或运行作业，先核对对应来源和处置，再重试激活。
+
+如需验证结项模式，使用已归档的独立演练副本。`& $py -m scripts.pilot_local register-model-closing --code SIM-EXEC-001-DRILL --project-id b8393630-db78-47b5-ae7c-c19699155adf` 在专用库核对种子回执、归档状态和四问原文。运行 `activate-models --closing-code SIM-EXEC-001-DRILL` 可在本次启动纳入该项目，使用范围限结项预览。此操作沿用已保存的助理凭据。
+
+由本人在 `& $py -m scripts.pilot_local activate-models` 显示的网关、报告版本、原文、队列和结项来源范围内输入 `SEND SYNTHETIC ONLY`。切换会重启进程加载配置。API 持助理认证，报告 worker 单独持报告认证，使用受限 API 角色。报告 worker 只领取与获准报告 ID、版本、内容摘要完全匹配的作业。模型生成候选后，仍由有权人工核验事实、评分和裁决。停用时执行 `stop` 后 `start`。
 
 加载后再用 `model-preflight` 核对实际加载通道与报告 worker。用范围内的合成项目按实际阶段验证立项、结项和问答的可用来源与结构化预览。过程管家选择现有合成报告，发起报告分析，观察独立 worker 从排队到完成并核对候选原文引用，再复验人工核对入口。保留草稿 B 和实施 A 的阶段。需要其他状态时使用已归档副本的只读来源或新隔离变体。每次记录通道、实际版本、模式、回执或审计编号、候选校验、范围外拒绝及降级状态。证据中省去报告正文和网关配置。
 

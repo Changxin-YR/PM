@@ -1,7 +1,7 @@
 from decimal import Decimal
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -12,6 +12,7 @@ from pydantic import AwareDatetime, Field
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import RULE_VERSION, Result, Strict
+from .cost_categories import Amount, CategoryEditor, CategorySummary, DisplayedAmount, DisplayedNet, DisplayedRate, Kind
 from .cost_math import CostLine, cost_line
 from .dto import UNAVAILABLE, Unavailable
 from .identity import Failure, visible
@@ -20,11 +21,6 @@ from .projects import fingerprint, meta, run
 from .risks import WRITABLE, can_manage
 
 router = APIRouter(prefix='/api/v1', tags=['Costs'])
-Amount = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$')]
-DisplayedAmount = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]*)\.[0-9]{2}$')]
-DisplayedNet = Annotated[str, Field(pattern=r'^-?(0|[1-9][0-9]*)\.[0-9]{2}$')]
-DisplayedRate = Annotated[str, Field(pattern=r'^-?(0|[1-9][0-9]*)\.[0-9]{4}$')]
-Kind = Literal['money', 'effort']
 FIELDS = ('money_budget', 'effort_budget', 'money_remaining', 'effort_remaining')
 plans = sa.table('cost_plan_versions', sa.column('project_id',sa.Uuid), sa.column('revision',sa.BigInteger),
     *(sa.column(k,sa.Numeric(18,2)) for k in FIELDS), sa.column('changed_field'), sa.column('reason'),
@@ -62,6 +58,8 @@ def latest_plan(pid):
 
 
 def save(auth,key,expected,pid,command):
+    from .category_costs import reject_aggregate_write
+
     budget = isinstance(command,Budget)
     op = 'pmo_cost_budget_draft_save' if budget else 'pmo_cost_forecast_save'
     sig = fingerprint([str(pid),expected,command.model_dump()])
@@ -73,6 +71,7 @@ def save(auth,key,expected,pid,command):
         prior = replay(c,a,op,key,sig,Result[Plan])
         if prior: return prior
         if project.stage not in (('drafting','designing') if budget else WRITABLE): raise Failure(422,'COST_PLAN_LOCKED')
+        reject_aggregate_write(c, project, budget=budget)
         last = c.execute(latest_plan(pid)).mappings().one_or_none()
         before = plan_view(pid,last)
         if before.revision!=expected: raise Failure(409,'VERSION_CONFLICT')
@@ -117,6 +116,8 @@ class Summary(Strict):
     plan: Plan | None = None  # REST editor only
     canSaveBudget: bool | None = None
     canSaveForecast: bool | None = None
+    categories: CategorySummary | None = None
+    categoryEditor: CategoryEditor | None = None
 
 
 @dataclass(frozen=True)
@@ -151,8 +152,10 @@ def cost_basis(c, pid: UUID, at: datetime) -> CostBasis:
         WHERE project_id=:pid AND effective_at<=:at ORDER BY entry_id,effective_at DESC,seq DESC) s
         WHERE is_current ORDER BY entry_id'''), {'pid': pid, 'at': at}).mappings().all()
     postings = db.cost_postings.c
+    e = db.cost_entries.c
     verified = c.execute(sa.select(postings.id, postings.type, postings.amount_signed, postings.verified_at,
-        postings.occurred_at).where(postings.project_id == pid, postings.status == 'verified',
+        postings.occurred_at, postings.posting_of_id, e.category).join(db.cost_entries, e.id == postings.cost_entry_id)
+        .where(postings.project_id == pid, postings.status == 'verified',
         postings.verified_at <= at, postings.occurred_at <= at).order_by(postings.id)).mappings().all()
     return CostBasis(pid, plan, list(rows), list(verified))
 
@@ -187,8 +190,14 @@ def summary_line(c, basis: CostBasis, kind: Kind, at: datetime) -> tuple[Line, l
 
 @router.get('/projects/{projectId}/costs',operation_id='pmo_cost_summary',response_model_exclude_none=True)
 def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Result[Summary]:
+    from .category_costs import required_for_project, summary as category_summary
+
     op = 'pmo_cost_summary'
     def query(c,a,_):
+        project_access(c,a,projectId)
+        # Freeze the view before selecting the cutoff. A write holding the project
+        # lock cannot become visible in only part of this multi-statement read.
+        c.execute(sa.select(db.projects.c.id).where(db.projects.c.id == projectId).with_for_update(read=True))
         project = project_access(c,a,projectId)
         now = c.scalar(sa.select(sa.func.clock_timestamp()))
         at = asOf or now
@@ -198,12 +207,15 @@ def summary(projectId:UUID,authorization:Auth,asOf:AwareDatetime|None=None)->Res
         plan = basis.plan
         money, money_refs = summary_line(c, basis, 'money', at)
         effort, effort_refs = summary_line(c, basis, 'effort', at)
-        refs = list(dict.fromkeys([f'project:{projectId}', *money_refs, *effort_refs]))
         editor = a.kind=='human' and asOf is None and can_manage(c,a,project)
+        categories, category_editor, category_refs = category_summary(c, a, project, basis, at, editor=editor)
+        refs = list(dict.fromkeys([f'project:{projectId}', *money_refs, *effort_refs, *category_refs]))
+        aggregate_editor = editor and (categories is None or categories.mode == 'legacy') and not required_for_project(c, project)
         data = Summary(projectId=projectId,money=money,effort=effort,asOf=at,ruleVersion=RULE_VERSION,
                        plan=plan_view(projectId,plan) if a.kind=='human' else None,
-                       canSaveBudget=editor and project.stage in ('drafting','designing') if a.kind=='human' else None,
-                       canSaveForecast=editor and project.stage in WRITABLE if a.kind=='human' else None)
+                       canSaveBudget=aggregate_editor and project.stage in ('drafting','designing') if a.kind=='human' else None,
+                       canSaveForecast=aggregate_editor and project.stage in WRITABLE if a.kind=='human' else None,
+                       categories=categories, categoryEditor=category_editor)
         info = meta(op,refs,project_id=project.id); info.asOf = at
         return Result[Summary](data=data,meta=info)
     return run(authorization,op,query)

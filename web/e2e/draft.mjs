@@ -260,7 +260,7 @@ try {
   const scoreForm=workbench.getByRole('form',{name:'填写评分',exact:true})
   const saveScore=scoreForm.getByRole('button',{name:'提交评分',exact:true})
   const dimensions={}
-  for(const [index,{key,label}] of pending.dimensions.entries()){
+  for(const [index,{key,label,criteria}] of pending.dimensions.entries()){
     const fields=scoreForm.getByRole('group',{name:label,exact:true})
     const rationale=`${label}：已按立项卡核对试点目标与交付依据。`
     await fields.getByLabel('评分',{exact:true}).selectOption('4')
@@ -276,7 +276,11 @@ try {
       await expect(saveScore).toBeDisabled()
     }else await anchor.selectOption('between_3_5')
     await source.check()
-    dimensions[key]={score:4,selectedAnchorCode:'between_3_5',rationale,evidenceRefs:[charterRef]}
+    const judgments=criteria.filter(item=>item.minimumScore<=4).map(item=>({criterion:item.key,value:'unknown'}))
+    const retainedReason='合成样例仍需取得本维度的独立依据。'
+    if(judgments.length)await fields.getByLabel('保留分数的理由',{exact:true}).fill(retainedReason)
+    dimensions[key]={score:4,selectedAnchorCode:'between_3_5',rationale,evidenceRefs:[charterRef],
+      ...(judgments.length?{judgments,retainedReason}:{})}
   }
   const retryScore=workbench.getByRole('button',{name:'重试上次提交',exact:true})
   const reviewerContext=gateReviewer.context()

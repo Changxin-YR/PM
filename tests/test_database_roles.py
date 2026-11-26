@@ -112,6 +112,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
             assert api_db.execute('SELECT project_id,rule_event_id,recipient_person_id,delivery_status,delivered_at FROM notifications').fetchall() == []
             assert api_db.execute('SELECT id FROM project_transition_grants FOR SHARE').fetchall() == []
             assert api_db.execute("SELECT has_table_privilege('requirement_exception_events', 'SELECT,INSERT')").fetchone() == (True,)
+            assert api_db.execute("SELECT has_table_privilege('policy_bindings', 'SELECT,INSERT')").fetchone() == (True,)
             denied(api_db, [
                 'CREATE TABLE public.unauthorized(id int)', 'CREATE TEMP TABLE unauthorized(id int)',
                 'ALTER TABLE audit_logs DISABLE TRIGGER USER', 'TRUNCATE audit_logs',
@@ -123,6 +124,10 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                 'UPDATE change_approval_grants SET project_id=project_id',
                 'INSERT INTO project_transition_grants DEFAULT VALUES',
                 'UPDATE project_transition_grants SET id=id', 'DELETE FROM project_transition_grants',
+                'SELECT * FROM policy_authority_grants', 'INSERT INTO policy_authority_revocations DEFAULT VALUES',
+                'INSERT INTO policy_versions DEFAULT VALUES', 'INSERT INTO policy_events DEFAULT VALUES',
+                'UPDATE policy_versions SET version=version', 'DELETE FROM policy_events',
+                'UPDATE policy_bindings SET basis=basis', 'TRUNCATE policy_bindings',
                 'UPDATE user_accounts SET password_hash=password_hash',
                 'UPDATE cost_entries SET actual=actual', 'UPDATE alembic_version SET version_num=version_num',
                 'UPDATE requirement_exception_events SET fingerprint=fingerprint', 'TRUNCATE requirement_exception_events',
@@ -144,6 +149,7 @@ def test_nonowner_application_and_worker_with_explicit_privileges(split_roles, t
                                'SELECT * FROM facts', 'SELECT * FROM fact_history',
                                'SELECT * FROM report_analysis_runs',
                                'SELECT * FROM requirement_disputes', 'SELECT * FROM project_transition_grants',
+                               'SELECT * FROM policy_versions', 'SELECT * FROM policy_events', 'SELECT * FROM policy_bindings',
                                'SELECT * FROM organization_user_invitations', 'SELECT * FROM account_status_changes',
                                'UPDATE outbox_events SET payload=payload', 'DELETE FROM outbox_events'])
 

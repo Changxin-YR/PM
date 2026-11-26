@@ -481,6 +481,10 @@ def test_charter_atomic_decision_acl_replay_and_concurrency(live, team):
     key = headers(state['review']['revision'])
     first = reviewer.post(path + '/scores', headers=key, json=body)
     assert first.json() == reviewer.post(path + '/scores', headers=key, json=body).json()
+    incomplete = data(first)
+    assert (incomplete['submittedReviewerCount'], incomplete['requiredReviewerCount']) == (1, 2)
+    assert not incomplete['canDecide']
+    assert decide(reviewer, path).json()['code'] == 'REVIEW_REQUIRED_SCORES_INCOMPLETE'
     assert 'assessment' not in bench(second, path) and not bench(second, path)['scores']
     final_state = score(second, path, [4, 3, 3, 3])
     assert final_state['assessment']['total'] == '3.20'
@@ -591,6 +595,7 @@ def test_review_expired_material_requires_withdraw_and_fresh_submission(live, te
     assert new_path != path and bench(owner, path)['review']['verdict'] == 'withdrawn'
     result = score(reviewer, new_path, [4, 4, 4, 4])
     assert result['assessment']['weakDimensions'] == []
+    score(outsider, new_path, [4, 4, 4, 4])
     assert data(decide(reviewer, new_path))['tasks'] == []
 
 
@@ -666,10 +671,34 @@ def test_feasibility_shortfall_and_conditional_pass_real_previous_gate(live, tea
     task = f"tasks/{strengthening['taskId']}"
     cancelled = data(pm.patch(task, headers=headers(strengthening['revision']), json={'fieldsTask': {'status': 'cancelled'}}))
     assert not data(pm.get(preflight))['gateCheck']['eligible']
-    completed = data(pm.patch(task, headers=headers(cancelled['revision']), json={'fieldsTask': {'status': 'done'}}))
+    assert pm.patch(task, headers=headers(cancelled['revision']), json={'fieldsTask': {'status': 'done'}}).json()['code'] == (
+        'CHARTER_STRENGTHENING_RESPONSE_REQUIRED')
+    endpoint = task + '/written-response'
+    reply = {'responseText': 'Revised the project charter contribution and documented the delivery constraints.'}
+    assert reviewer.post(endpoint, headers=headers(cancelled['revision']), json=reply).status_code == 403
+    assert pm.post(endpoint, headers=headers(cancelled['revision']), json={'responseText': '    '}).status_code == 422
+    assert pm.post(endpoint, headers=headers(cancelled['revision']),
+        json={**reply, 'evidenceRefs': [f'evidence:{uuid4()}']}).json()['code'] == 'REVIEW_RESPONSE_EVIDENCE_INVALID'
+    key = headers(cancelled['revision'])
+    first = pm.post(endpoint, headers=key, json=reply)
+    completed = data(first)
+    assert completed['writtenResponse']['responseText'] == reply['responseText']
+    assert completed['writtenResponse']['submittedBy'] == str(people['pm'])
+    assert completed['writtenResponse']['itemKey'].startswith('dimension:strategicAlignment:')
+    assert pm.post(endpoint, headers=key, json=reply).json() == first.json()
+    assert pm.post(endpoint, headers=headers(cancelled['revision']), json=reply).json()['code'] == 'VERSION_CONFLICT'
     ready_check = data(pm.get(preflight))
-    assert ready_check['gateCheck']['eligible'] and ready_check['gateCheck']['snapshotHash'] == blocked['snapshotHash']
+    assert ready_check['gateCheck']['eligible'] and ready_check['gateCheck']['snapshotHash'] != blocked['snapshotHash']
     assert completed['completedAt'] and f"task:{completed['taskId']}@{completed['revision']}" in ready_check['draftMaterials']
+
+    invalidated = submit()
+    assert bench(reviewer, invalidated)['reinforcementResponses'][0]['responseText'] == reply['responseText']
+    data(pm.post(endpoint, headers=headers(completed['revision']),
+        json={'responseText': 'Revised the response to include the remaining financial assumption.'}))
+    assert bench(reviewer, invalidated)['stale']
+    current = bench(pm, invalidated)
+    data(pm.post(invalidated + '/withdraw', headers=headers(current['review']['revision']),
+        json={'reason': 'Re-submit with the new response revision.'}))
 
     shortfall = submit()
     assert score(reviewer, shortfall, [2, 5, 5, 5, 5])['assessment']['classification'] == 'shortfall'
@@ -685,6 +714,54 @@ def test_feasibility_shortfall_and_conditional_pass_real_previous_gate(live, tea
     executed = data(decide(reviewer, ready, verdict='conditional_pass', conditions=conditions * 2))
     assert executed['decision']['stage'] == 'executing' and len(executed['tasks']) == 1
     assert executed['tasks'][0]['dueAt'] and executed['tasks'][0]['assigneeId'] == str(people['pm'])
+
+
+def test_fast_track_waits_for_frozen_roster_and_invalidates_on_assignment_loss(live, team):
+    engine = live[0]
+    pid, people, users, _ = team
+    reviewer, second, sponsor, owner = (users[role] for role in ('reviewer', 'outsider', 'sponsor', 'initiator'))
+    with engine.begin() as c:
+        second_assignment = member(c, pid, people['outsider'], people['initiator'], 'reviewer')
+    path = start_charter(pid, users)
+    state = score(reviewer, path, [5] * 4)
+    assert state['assessment']['classification'] == 'fast_track' and not state['canDecide']
+    assert not bench(sponsor, path)['canConfirmSponsor'] and not bench(owner, path)['canConfirmInitiator']
+    assert sponsor.post(path + '/confirmations', headers=headers(state['review']['revision']),
+        json={'role': 'sponsor'}).json()['code'] == 'REVIEW_REQUIRED_SCORES_INCOMPLETE'
+    command = score_command(bench(second, path), [5] * 4)
+    with ThreadPoolExecutor(2) as pool:
+        last_card = pool.submit(second.post, path + '/scores', headers=headers(state['review']['revision']), json=command)
+        verdict = pool.submit(reviewer.post, path + '/decisions', headers=headers(state['review']['revision']), json=outcome(state))
+        assert data(last_card.result())['submittedReviewerCount'] == 2
+        result = verdict.result()
+        assert result.status_code in (409, 422) and result.json()['code'] in (
+            'VERSION_CONFLICT', 'REVIEW_REQUIRED_SCORES_INCOMPLETE')
+    assert bench(sponsor, path)['canConfirmSponsor']
+    with engine.begin() as c:
+        c.execute(db.project_members.update().where(db.project_members.c.id == second_assignment).values(revoked_at=sa.func.now()))
+    assert bench(sponsor, path)['stale'] and not bench(sponsor, path)['canConfirmSponsor']
+    assert decide(reviewer, path).json()['code'] == 'REVIEW_SNAPSHOT_STALE'
+
+
+def test_structured_judgments_record_conflict_and_unknown_against_frozen_sources(live, team):
+    pid, _, users, _ = team
+    reviewer = users['reviewer']
+    path = start_charter(pid, users)
+    state = bench(reviewer, path)
+    command = score_command(state, [3, 4, 3, 3])
+    customer = command['dimensions']['customerAttractiveness']
+    ref = customer['evidenceRefs'][0]
+    customer['judgments'] = [{'criterion': 'customerKnown', 'value': 'yes', 'evidenceRef': ref},
+        {'criterion': 'demandVerified', 'value': 'unknown'},
+        {'criterion': 'willingnessVerified', 'value': 'no', 'evidenceRef': ref}]
+    assert reviewer.post(path + '/scores', headers=headers(), json=command).json()['code'] == 'REVIEW_JUDGMENT_DISPOSITION_REQUIRED'
+    customer['retainedReason'] = 'Reviewer recognizes the missing evidence and retained the proposed score for this exercise.'
+    card, = data(reviewer.post(path + '/scores', headers=headers(), json=command))['scores']
+    warnings = card['warnings']['customerAttractiveness']
+    assert [(item['criterion'], item['kind']) for item in warnings] == [
+        ('demandVerified', 'insufficient'), ('willingnessVerified', 'conflict')]
+    assert warnings[1]['evidenceRef'] == ref and card['dimensions']['customerAttractiveness']['score'] == 4
+    assert card['anchorVersion']
 
 
 def test_gate_compares_exact_values_before_display_rounding():

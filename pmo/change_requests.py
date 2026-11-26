@@ -18,9 +18,10 @@ from .costs import Amount
 from .identity import Failure, visible
 from .materials import finish, replay
 from .materials import project_access
+from .policy import enabled as policy_enabled, matches as policy_matches
 from .projects import fingerprint, meta, run
 from .requirement_baselines import active_member
-from .requirement_delivery import can_deliver, synthetic_confirmation
+from .requirement_delivery import can_deliver
 from .requirement_additions import Addition, Fields as AdditionFields, OP as ADD_REQUIREMENT, addition, initial_signature, origin, valid_origin
 
 router=APIRouter(prefix='/api/v1',tags=['Changes'])
@@ -94,7 +95,8 @@ def proposal_targets(projectId: UUID, kind: ProposalKind, authorization: Auth,
             raise Failure(403, 'FORBIDDEN', project_id=projectId)
         items: list[MilestoneTarget | BudgetTarget | CharterTarget] = []
         total = 0
-        if project.stage in OPEN and (kind != 'milestone' or project.stage != 'designing'):
+        if (project.stage in OPEN and (kind != 'milestone' or project.stage != 'designing')
+                and (kind != 'budget' or not categorized_baseline(c, projectId))):
             target = TARGETS[kind]
             query = sa.select(target).where(target.c.project_id == projectId)
             if kind == 'milestone':
@@ -139,14 +141,14 @@ def ledger(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:int
         rows=sa.select(matched).order_by(matched.c.created_at.desc(),matched.c.id.desc()).offset(pg_offset(page,pageSize)).limit(pageSize).subquery()
         records=c.execute(sa.select(total.c.total,rows).select_from(total.outerjoin(rows,sa.true())).order_by(rows.c.created_at.desc(),rows.c.id.desc())).mappings().all()
         items=[entry(r) for r in records if r.id]; info=meta(op,[f'change:{i.changeId}@{i.revision}' for i in items])
-        policy=synthetic_confirmation(c)
-        actions={r.id:decision_options(c,a,p,r) for r in records if r.id} if policy else {}
+        actions={r.id:decision_options(c,a,p,r) for r in records if r.id}
+        policy_pending=any(not policy_enabled(c,p,f'change.{r.target_type}') for r in records if r.id and r.status=='pending')
         permitted=p.stage in OPEN and can_deliver(c,a,p)
         can_add=permitted and a.kind=='human' and origin(p.id,initial_signature(c,p.id)) is not None
         return Result[Ledger](data=Ledger(items=items,page=page,pageSize=pageSize,total=records[0].total,asOf=info.asOf,canPropose=permitted,
             additionProjectRevision=p.revision if can_add else None,
             decidableIds=[cid for cid, options in actions.items() if options],
-            approvableIds=[cid for cid, options in actions.items() if 'approve_change' in options],policyPending=not policy),meta=info)
+            approvableIds=[cid for cid, options in actions.items() if 'approve_change' in options],policyPending=policy_pending),meta=info)
     return run(authorization,op,read)
 
 
@@ -173,7 +175,17 @@ def changes(kind,row,after):
     return {k:current[k] for k in after},data.model_dump(mode='json',exclude_unset=True)
 
 
+def categorized_baseline(c, pid):
+    from .category_costs import budgets, latest
+
+    return latest(c, budgets, pid, phase='approved') is not None
+
+
 def decision_target(c,p,i,*,lock=False):
+    from .category_budget_changes import approval_target, categorized
+
+    if categorized(i):
+        return approval_target(c, p, i)
     t=TARGETS[i.target_type]
     query=sa.select(t).where(t.c.id==i.target_id,t.c.project_id==p.id)
     old=c.execute(query.with_for_update() if lock else query).mappings().one_or_none()
@@ -183,9 +195,15 @@ def decision_target(c,p,i,*,lock=False):
 
 
 def check_frozen(c,p,i,intent,old,frozen):
+    from .category_budget_changes import categorized
+
     if (not intent or intent.status!='pending' or intent.rule_version!=RULE_VERSION or intent.expected_revision!=i.base_revision
         or intent.payload_hash!=payload(i) or intent.snapshot_hash!=fingerprint(frozen) or intent.requested_by!=p.pm_id
         or not active_member(c,p,i.requested_by,'pm')): raise Failure(409,'APPROVAL_STALE')
+    if categorized(i):
+        return
+    if i.target_type == 'budget' and categorized_baseline(c, p.id):
+        raise Failure(409, 'APPROVAL_STALE', project_id=p.id)
     try:
         if addition(i):
             stamp=origin(p.id,initial_signature(c,p.id))
@@ -203,13 +221,20 @@ ChangeAction = Literal['approve_change', 'reject_change']
 
 
 def decision_options(c,a,p,i) -> list[ChangeAction]:
+    from .category_budget_changes import categorized
+
     if i.status!='pending' or p.stage not in OPEN or not authority(c,a,p,i.target_type,lock=False): return []
+    action=f'change.{i.target_type}'
+    if not policy_enabled(c,p,action): return []
     intent=lookup(c,p.id,i.id)
     if not independent(a,i,intent): return []
+    if not policy_matches(c,p,action,i.id): return ['reject_change']
+    if categorized(i) and (not policy_enabled(c, p, 'cost.category') or not policy_matches(c, p, 'cost.category', i.id)):
+        return ['reject_change']
     try:
         old,frozen=decision_target(c,p,i)
     except Failure:
-        return []
+        return ['reject_change'] if categorized(i) else []
     try:
         check_frozen(c,p,i,intent,old,frozen)
     except Failure:
@@ -228,6 +253,8 @@ def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:
         prior=replay(c,a,op,key,sig,Result[Entry])
         if prior: return prior
         if project.stage not in OPEN or (command.targetType=='milestone' and project.stage=='designing'): raise Failure(422,'NO_ACTIVE_BASELINE')
+        if command.targetType == 'budget' and categorized_baseline(c, projectId):
+            raise Failure(422, 'CATEGORY_ALLOCATION_REQUIRED', project_id=projectId)
         row=c.execute(sa.select(t).where(t.c.id==command.targetId,t.c.project_id==projectId).with_for_update()).mappings().one_or_none()
         if not row: raise Failure(404,'RESOURCE_NOT_FOUND')
         if row.revision!=int(expected): raise Failure(409,'VERSION_CONFLICT')
@@ -241,7 +268,7 @@ def propose(projectId:UUID,command:Proposal,authorization:Auth,key:Key,expected:
                 ch.c.status.in_(('draft','pending','approved'))).limit(1)): raise Failure(409,'CHANGE_ALREADY_PENDING')
         i=c.execute(ch.insert().values(project_id=projectId,target_id=row.id,target_type=command.targetType,before=before,after=after,
             base_revision=row.revision,reason=command.reason.strip(),status='pending',requested_by=a.person,created_by=a.person).returning(ch)).mappings().one()
-        capture(c,a,i,row); scope_event(c,i,True); result=entry(i)
+        capture(c,a,project,i,row); scope_event(c,i,True); result=entry(i)
         return finish(c,a,op,key,rid,projectId,sig,Result[Entry](data=result,meta=meta(op,[f'change:{i.id}@{i.revision}'])))
     return run(authorization,op,write)
 
@@ -267,7 +294,7 @@ def propose_requirement_addition(projectId:UUID,command:Addition,authorization:A
         row=c.execute(ch.insert().values(project_id=p.id,target_id=uuid4(),target_type='requirement',before=before,after=after,
             base_revision=before['initialBaselineRevision'],reason=command.reason,status='pending',requested_by=a.person,
             created_by=a.person).returning(ch)).mappings().one()
-        capture(c,a,row,before); scope_event(c,row,True)
+        capture(c,a,p,row,before); scope_event(c,row,True)
         result=Result[Entry](data=entry(row),meta=meta(ADD_REQUIREMENT,[f'change:{row.id}@{row.revision}',
             f'requirement-baseline:{p.id}@{row.base_revision}']))
         return finish(c,a,ADD_REQUIREMENT,key,rid,p.id,sig,result)

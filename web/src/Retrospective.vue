@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import {computed,onMounted,ref,watch} from 'vue'
 import {FileCheck2,Pencil,Plus,RefreshCw,Save,Search} from 'lucide-vue-next'
+import ReviewCalibration,{calibrationLabels,type Calibration,type CalibrationKey,type Deviation} from './ReviewCalibration.vue'
 
 type CostDiscussion={type:'money'|'effort';attribution:'estimate'|'execution'|'scope';sourceRef:string}
 type State={projectId:string;stage:string;kind:'normal'|'terminated'|null;fromStage:'closed'|'terminated'|null;
   retrospectiveId:string|null;revision:number;answers:string[];questions:string[];completedAt:string|null;canSave:boolean;
-  costDiscussion?:CostDiscussion[]}
+  costDiscussion?:CostDiscussion[];calibrationDeviations?:Partial<Record<CalibrationKey,Deviation>>;calibrationGap?:string}
 const attributionLabels={estimate:'估算',execution:'执行',scope:'范围'}
 type LessonContent={category:string;what:string;rootCause:string;advice:string}
 type Lesson=LessonContent & {lessonId:string;projectId:string;revision:number;status:'draft'|'confirmed';
@@ -31,6 +32,13 @@ const keyword=ref(''),category=ref(''),searching=ref(false),searchError=ref(''),
 const criteria=ref<SearchCriteria|null>(null),pageSize=20
 const busy=computed(()=>loading.value||saving.value)
 const questions=computed(()=>state.value?.questions??[])
+const calibration=ref<Calibration>(),deviations=ref<Partial<Record<CalibrationKey,Deviation>>>({})
+const requiredDeviations=computed(()=>{
+  if(state.value?.kind!=='normal')return []
+  const rows=calibration.value?.dimensions??{}
+  return (Object.keys(rows) as CalibrationKey[]).filter(key=>rows[key]?.requiresRetrospective&&rows[key]?.current)
+    .map(key=>({key,revision:rows[key]!.current!.revision}))
+})
 const selectedLesson=computed(()=>{
   const action=intent.value
   return action?.kind==='confirm'?lessons.value?.items.find(item=>item.lessonId===action.lessonId):undefined
@@ -62,7 +70,13 @@ function begin(kind:Intent['kind'],lesson?:Lesson,fromAnswers=false){
     intent.value={kind,lessonId:lesson.lessonId,revision:lesson.revision}
   }else{
     if(retro.canSave!==true)return
-    if(kind==='answers'){intent.value={kind,revision:retro.revision};answers.value=retro.questions.map((_,i)=>retro.answers[i]??'')}
+    if(kind==='answers'){
+      intent.value={kind,revision:retro.revision};answers.value=retro.questions.map((_,i)=>retro.answers[i]??'')
+      deviations.value=Object.fromEntries(requiredDeviations.value.map(({key,revision})=>{
+        const previous=retro.calibrationDeviations?.[key]
+        return [key,previous?.resultRevision===revision?{...previous}:{resultRevision:revision,explanation:'',improvement:''}]
+      }))
+    }
     else{
       if(fromAnswers&&!retro.completedAt)return
       intent.value={kind}
@@ -90,7 +104,13 @@ const command=computed(()=>{
   if(retro.canSave!==true)return null
   if(action.kind==='answers'){
     if(retro.revision!==action.revision||!retro.questions.every((_,i)=>explicit(answers.value[i]??'')))return null
-    return {path:`${base()}/retrospective`,method:'PUT',revision:action.revision,payload:{answers:answers.value.map(value=>value.trim())}}
+    const rows=requiredDeviations.value
+    if(rows.some(({key,revision})=>{
+      const row=deviations.value[key]
+      return !row||row.resultRevision!==revision||row.explanation.trim().length<4||row.improvement.trim().length<4
+    }))return null
+    return {path:`${base()}/retrospective`,method:'PUT',revision:action.revision,payload:{answers:answers.value.map(value=>value.trim()),
+      ...(rows.length?{calibrationDeviations:deviations.value}:{})}}
   }
   const {category,what,rootCause,advice}=draft.value
   if(![category,what,rootCause,advice].every(plain)||Array.from(category.trim()).length>20)return null
@@ -151,10 +171,19 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
     <p v-if="loading" class="meta">正在读取复盘和教训…</p>
     <template v-if="state">
       <p v-if="state.completedAt" class="meta">复盘版本 {{state.revision}} · 完成于 <time :datetime="state.completedAt">{{time(state.completedAt)}}</time></p>
+      <el-alert v-if="state.calibrationGap" type="warning" title="评分结果或其证据已变化，请重核校准并更新复盘。" :closable="false"/>
       <dl v-if="state.answers.length" class="answers">
         <div v-for="(question,index) in questions" :key="question"><dt>{{question}}</dt><dd>{{state.answers[index]||'—'}}</dd></div>
       </dl>
       <p v-else class="meta">{{state.kind?'复盘答复尚未登记。':'暂无复盘记录。'}}</p>
+      <ReviewCalibration v-if="state.stage==='closed'||state.kind==='normal'" :project-id="projectId" :stage="state.stage"
+        :api="api" :revision="projectRevision" @loaded="calibration=$event" @saved="refresh"/>
+      <dl v-if="state.calibrationDeviations" class="answers">
+        <div v-for="(row,key) in state.calibrationDeviations" :key="key">
+          <dt>{{calibrationLabels[key]}} · 结果版本 {{row?.resultRevision}}</dt>
+          <dd>{{row?.explanation}}</dd><dd>{{row?.improvement}}</dd>
+        </div>
+      </dl>
       <section v-if="state.costDiscussion?.length" class="group" aria-label="结项超支归因">
         <h3>结项超支归因</h3>
         <p class="meta">来自结项审批绑定的正式对账回执，供复盘对照。</p>
@@ -215,6 +244,13 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
       <fieldset :disabled="busy">
         <template v-if="intent.kind==='answers'">
           <label v-for="(question,index) in questions" :key="question">{{question}}<textarea v-model="answers[index]" rows="2" required/></label>
+          <template v-for="{key,revision} in requiredDeviations" :key="key">
+            <fieldset v-if="deviations[key]">
+              <legend>{{calibrationLabels[key]}} · 结果版本 {{revision}}</legend>
+              <label>偏差解释<textarea v-model="deviations[key].explanation" rows="2" minlength="4" maxlength="6000" required/></label>
+              <label>改进措施<textarea v-model="deviations[key].improvement" rows="2" minlength="4" maxlength="6000" required/></label>
+            </fieldset>
+          </template>
         </template>
         <template v-else-if="intent.kind==='draft'">
           <p v-if="draftSource" class="meta">已引用复盘版本 {{draftSource}}，保存前请核对和编辑。</p>

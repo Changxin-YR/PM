@@ -1,5 +1,3 @@
-import os
-import re
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -12,6 +10,7 @@ from .contracts import Result, Strict
 from .evidence import verified_link
 from .identity import Failure, visible
 from .materials import finish, replay
+from .policy import enabled, require
 from .projects import fingerprint, meta, run
 from .requirement_additions import addition, applied_addition, initial_signature, origin
 from .requirement_baselines import active_member
@@ -42,13 +41,8 @@ def capabilities(c,a,p):
     actions=[]; pm=can_deliver(c,a,p)
     if pm: actions.append('deliver')
     if pm or active_member(c,p,a.person,'reviewer'): actions.append('accept')
-    if is_client(c,a,p): actions.append('customer-confirm' if synthetic_confirmation(c) else 'policy-pending')
+    if is_client(c,a,p): actions.append('customer-confirm' if enabled(c,p,'requirement.customer-confirm') else 'policy-pending')
     return actions
-
-
-def synthetic_confirmation(c):
-    schema=os.environ.get('PMO_SYNTHETIC_POLICY_SCHEMA','')
-    return bool(re.fullmatch('pmo_test_[0-9a-f]{32}',schema) and c.scalar(sa.text('SELECT current_schema()'))==schema)
 
 
 def baseline_evidence_time(c,pid,old):
@@ -93,7 +87,7 @@ def advance(auth,op,req,command,key,revision):
                 ch.c.status.not_in(('applied','rejected','withdrawn'))).limit(1)):
             raise Failure(422,'PENDING_SCOPE_CHANGE')
         if next_status=='customer_confirmed':
-            if not synthetic_confirmation(c): raise Failure(403,'POLICY_PENDING')
+            require(c,project,'requirement.customer-confirm',rid)
             if c.scalar(sa.text('SELECT EXISTS(SELECT FROM requirement_transitions WHERE requirement_id=:req AND baseline_version=:v AND actor_id=:actor)'),
                         dict(req=req,v=old.baseline_version,actor=a.person)): raise Failure(403,'INDEPENDENT_CUSTOMER_REQUIRED')
             from .requirement_disputes import open_query
