@@ -11,6 +11,7 @@ from pmo import schema_v1 as db
 from pmo.health_calculation import TZ, week_key
 from test_health import prepare, sample
 from test_cost_reassessment import 设置预测
+from test_facts import medium, post, proposal
 from test_reports import body, sections
 from test_reviews import data, headers, member, team as team
 from browser_case import browser_sessions, vite
@@ -22,7 +23,8 @@ def test_隔离工作台真实布局和页面截图(live, team):
     project, _ = prepare(live, team, priority='P0')
     设置预测(pm, project, '121.00')
     sample(pm, project)
-    today = datetime.now(TZ).date()
+    now = datetime.now(TZ)
+    today = now.date()
     for kind, period in [('daily', today.isoformat()), ('weekly', week_key(today))]:
         report = data(pm.post(project + '/reports', headers=headers(), json=body(
             reportType=kind, period=period, structuredFields=sections(),
@@ -30,6 +32,9 @@ def test_隔离工作台真实布局和页面截图(live, team):
         path = f"reports/{report['reportId']}"
         if kind == 'weekly':
             data(pm.post(path + '/confirm', headers=headers(report['revision']), json={}))
+        else:
+            fact = data(post(pm, report, proposal(report, subject='本期客户交付准备', asOf=now.isoformat())))
+            data(medium(users['reviewer'], fact))
     exception_project = data(pm.post('projects', headers=headers(), json={
         'code': 'R5-VIS-EXCEPTION', 'name': '需求例外布局演练（合成）'}))['projectId']
     with live[0].begin() as conn:
@@ -40,9 +45,13 @@ def test_隔离工作台真实布局和页面截图(live, team):
         account = conn.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people['initiator']))
         conn.execute(db.user_roles.insert().values(user_id=account, role='system_admin'))
     output = Path(os.environ.get('PMO_R5_VISUAL_OUTPUT', '.local/r5-visual')).resolve()
+    source_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD:web/src'], text=True).strip()
+    if subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'web/src'], check=False).returncode:
+        source_tree = 'WORKTREE_MODIFIED'
     with vite(live[2]) as (root, url):
         subprocess.run(['node', 'e2e/visual-r5.mjs'], cwd=root, check=True, timeout=600, env={
             **os.environ, 'PMO_BROWSER_URL': url, 'PMO_R5_VISUAL_OUTPUT': str(output),
+            'PMO_R5_VISUAL_FRONTEND_TREE': source_tree,
             'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm', 'initiator')),
             'PMO_R5_VISUAL_PROJECTS': json.dumps({'execution': pid, 'exceptions': exception_project}),
         })

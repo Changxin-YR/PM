@@ -20,14 +20,15 @@
 ```powershell
 node scripts/r5_feature_parity.cjs
 $env:PMO_PILOT_RUNTIME = 'native'
-$env:PMO_R5_VISUAL_OUTPUT = '.local/r5-visual-candidate'
-.venv/Scripts/python.exe -m scripts.pilot_regression -- tests/browser_visual_r5.py -q --junitxml=.local/r5-visual-candidate.xml
+$env:PMO_R5_VISUAL_OUTPUT = '.local/r5-visual-verified'
+.venv/Scripts/python.exe -m scripts.pilot_regression -- tests/browser_visual_r5.py -q --junitxml=.local/r5-visual-verified.xml
 ```
 
 截图脚本启动真正的 Microsoft Edge 并连接隔离 PostgreSQL `55444` 上临时建立的工作台。它使用角色有效的会话和真实页面导航，输出 PNG、`index.html` 与 `checks.json`。桌面检查 1440、1280、1024 CSS px，窄屏检查 820、390 CSS px，浏览器缩放由 Edge `chrome.tabs.setZoom` / `getZoom` 设置和核实，并从页面读取 `devicePixelRatio`。重放、权限撤销、A4 和真实模型交由业务回归和独立外部验收记录。
 
-已记录的 Edge `158` 预验为 248 项布局与导航断言通过，浏览器运行错误和 HTTP 5xx 均为 0。覆盖 UI-R4 全部 47 个编号、R5 的周报分类、超支重估、正式周报送达界面以及 390 px 移动导航焦点和宽表滚动。R5 评分锚点、快速立项和评分实际结果另用专门场景截图。截图与最终候选的对应关系见主验收记录。
+Edge `158` 上 283 项布局与导航断言全通过，耗时 160.83 秒。浏览器运行错误与 HTTP 5xx 均为 0，前端 Git 树为 `cfb74460a04edc6ae37899f474b483a9db29be3a`。覆盖 UI-R4 全部 47 个编号、R5 的周报分类、超支重估、正式周报送达界面以及 390 px 移动导航焦点和宽表滚动。响应式与原生缩放均覆盖登录、邀请、19 个项目入口和 12 个全局入口。评分锚点、快速立项和评分实际结果另有专门场景截图。
 
-- 全站截图浏览和尺寸明细在本机 `.local/r5-visual-candidate/index.html` 与 `checks.json`。
+- 全站截图浏览和尺寸明细在本机 `.local/r5-visual-verified/index.html` 与 `checks.json`，测试输出为 `.local/r5-visual-verified.log` 与 `.xml`。
 - 周报分类凭证差额、结构化 Fact 来源及隔离收件回执在 `.local/r5-reporting-visual/`。
 - 评分提示、快通前后和实际结果校准在 `.local/r5-review-screenshots/`。
+- 可解压检查的统一交付包为 `.local/PMO-R5-Edge-视觉截图与补充证据.zip`。

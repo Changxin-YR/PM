@@ -8,7 +8,8 @@ const output = process.env.PMO_R5_VISUAL_OUTPUT
 const sessions = JSON.parse(process.env.PMO_TEST_SESSIONS)
 const projects = JSON.parse(process.env.PMO_R5_VISUAL_PROJECTS)
 const options = { channel: 'msedge', locale: 'zh-CN', timezoneId: 'Asia/Shanghai' }
-const result = { url: url.origin, browser: 'Microsoft Edge', checks: [], browserErrors: [] }
+const result = { url: url.origin, browser: 'Microsoft Edge', frontendTree:process.env.PMO_R5_VISUAL_FRONTEND_TREE,
+  checks: [], browserErrors: [] }
 const button = (page, name) => page.getByRole('button', {name, exact:true}).first()
 const heading = (page, name) => page.getByRole('heading', {name, exact:true}).first()
 const projectNav = ['overview','charter','milestones','requirements','baseline','changes','evidence','risks','costs',
@@ -20,6 +21,7 @@ const personalNav = [
 ]
 const adminNav = [['44','audit','审计记录'], ['45','directory','组织人员'], ['46','org-tokens','组织令牌']]
 const currentProject = new WeakMap()
+const activeRequests = new WeakMap()
 
 await mkdir(output, {recursive:true})
 const browser = await chromium.launch({channel:options.channel})
@@ -32,7 +34,18 @@ async function authenticate(context, role) {
 }
 
 function watch(page) {
+  const requests = new Set()
+  activeRequests.set(page,requests)
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/')) requests.add(request)
+  })
+  page.on('requestfinished', request=>requests.delete(request))
+  page.on('requestfailed', request=>requests.delete(request))
   page.on('pageerror', e => result.browserErrors.push(e.message))
+  page.on('console', message => {
+    const detail=message.text()
+    if (message.type()==='error'&&!detail.startsWith('Failed to load resource:')) result.browserErrors.push(detail)
+  })
   page.on('response', r => {
     if (r.status() >= 500) result.browserErrors.push(`${r.status()} ${new URL(r.url()).pathname}`)
   })
@@ -85,7 +98,10 @@ async function capture(page, id, description, find, {file=true, zoom=100}={}) {
   try {
     const scope = await find()
     await expect(scope).toBeVisible()
+    await expect(page.locator('vite-error-overlay')).toHaveCount(0)
     await settled(scope)
+    await expect.poll(()=>activeRequests.get(page)?.size).toBe(0)
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
     Object.assign(check, await scope.evaluate(el => ({
       viewport: innerWidth,
       realScaling: devicePixelRatio,
@@ -96,7 +112,10 @@ async function capture(page, id, description, find, {file=true, zoom=100}={}) {
     })))
     if (file) {
       check.file = `${id}.png`
-      await page.screenshot({path:join(output, check.file), animations:'disabled', fullPage:true})
+      // The full-page screenshot API crops native zoom to CSS viewport dimensions.
+      const fullPage=!id.startsWith('zoom-')
+      if (fullPage) await page.evaluate(()=>window.scrollTo(0,0))
+      await page.screenshot({path:join(output, check.file), animations:'disabled', fullPage})
     }
     expect(check.bodyWidth).toBeLessThanOrEqual(check.viewport)
     expect(check.navigation).toBeLessThanOrEqual(1)
@@ -108,6 +127,24 @@ async function capture(page, id, description, find, {file=true, zoom=100}={}) {
     check.error = error.message.slice(0, 750)
   }
   result.checks.push(check)
+}
+
+async function authViews(page, prefix='', options={}) {
+  await page.goto(url.origin)
+  await page.reload()
+  await capture(page,`${prefix}13`,'登录',() => page.locator('.login'),options)
+  await capture(page,`${prefix}34`,'接受组织邀请',async () => {
+    await page.getByText('接受组织邀请',{exact:true}).click()
+    return page.locator('.login')
+  },options)
+}
+
+async function adminViews(page, prefix='', options={}) {
+  await page.goto(url.origin)
+  await page.reload()
+  currentProject.delete(page)
+  await expect(heading(page,'项目台账')).toBeVisible()
+  for (const [id,key,name] of adminNav) await capture(page,`${prefix}${id}`,name,()=>globalPage(page,key,name),options)
 }
 
 const project = (page, key, alternate) => () => projectPage(page, key, alternate)
@@ -134,12 +171,7 @@ async function report(page, kind) {
 async function main() {
   const auth = await browser.newContext({...options, viewport:{width:1440,height:930}})
   const anonymous = await visited(auth)
-  await anonymous.goto(url.origin)
-  await capture(anonymous,'13','登录',() => anonymous.locator('.login'))
-  await capture(anonymous,'34','接受组织邀请',async () => {
-    await anonymous.getByText('接受组织邀请',{exact:true}).click()
-    return anonymous.locator('.login')
-  })
+  await authViews(anonymous)
   await auth.close()
 
   const desktop = await browser.newContext({...options, viewport:{width:1440,height:930}})
@@ -171,7 +203,13 @@ async function main() {
   await capture(pm,'05','助理·过程管家',()=>assist(pm,'过程管家','过程核对'))
   await capture(pm,'04','助理·组合周报',()=>assist(pm,'过程管家','过程核对',true))
   await capture(pm,'06','助理·立项评审',()=>assist(pm,'立项评审','立项材料与评分'))
-  await capture(pm,'10','报告详情和事实核验',()=>report(pm,'日报'))
+  await capture(pm,'10','报告详情和事实核验',async () => {
+    const article=await report(pm,'日报')
+    await button(article,'Fact 证据与澄清').click()
+    await expect(article.getByText('已核验 · 中可信',{exact:true})).toBeVisible()
+    await button(article,'核验历史').click()
+    return article
+  })
   await capture(pm,'12','新建补强任务',click(pm,'tasks','新建补强任务'))
   await capture(pm,'17','修改里程碑预测',click(pm,'milestones','修改预测'))
   await capture(pm,'19','需求变更历史',click(pm,'requirements','需求变更历史','.el-dialog'))
@@ -217,8 +255,7 @@ async function main() {
 
   const adminContext=await browser.newContext({...options, viewport:{width:1440,height:930}})
   const admin=await visited(adminContext,'initiator')
-  await admin.goto(url.origin)
-  for (const [id,key,name] of adminNav) await capture(admin,id,name,()=>globalPage(admin,key,name))
+  await adminViews(admin)
   await adminContext.close()
 
   for (const width of [1280,1024,820,390]) {
@@ -254,6 +291,13 @@ async function main() {
       await capture(page,`${width}-${key}`,name,()=>globalPage(page,key,name),{file:width===390})
     }
     await context.close()
+
+    const supporting=await browser.newContext({...options,viewport:{width,height:900}})
+    const supportingPage=await visited(supporting)
+    await authViews(supportingPage,`${width}-`,{file:width===390})
+    await authenticate(supporting,'initiator')
+    await adminViews(supportingPage,`${width}-`,{file:width===390})
+    await supporting.close()
   }
 }
 
@@ -267,7 +311,6 @@ async function zoomChecks() {
   const context=await chromium.launchPersistentContext(profile,{...options,headless:true,
     viewport:{width:1440,height:930},args:[`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]})
   try {
-    await authenticate(context,'pm')
     const worker=context.serviceWorkers()[0]??await context.waitForEvent('serviceworker',{timeout:12000})
     const page=context.pages()[0]
     watch(page)
@@ -280,6 +323,12 @@ async function zoomChecks() {
       },{zoom,origin:url.origin})
       expect(actual).toBe(zoom)
       await expect.poll(()=>page.evaluate(()=>devicePixelRatio)).toBe(zoom)
+      const prefix=`zoom-${zoom*100}-`
+      await context.clearCookies()
+      await authViews(page,prefix,{file:false,zoom:zoom*100})
+      await authenticate(context,'initiator')
+      await adminViews(page,prefix,{file:false,zoom:zoom*100})
+      await authenticate(context,'pm')
       for (const key of projectNav) {
         await capture(page,`zoom-${zoom*100}-${key}`,key,project(page,key),{file:key==='costs',zoom:zoom*100})
       }
