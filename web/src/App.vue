@@ -114,6 +114,7 @@ function backToLedger(){
   if(resumeProject)void openLinkedWorkbench()
 }
 const uuid=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+const {VITE_PMO_WORKBENCH_ORIGIN,VITE_PMO_WORKBENCH_ACCOUNT_ID,VITE_PMO_WORKBENCH_PROJECT_ID}=import.meta.env
 function materials(row:Project){
   if(!showMaterials.value&&entry.value==='ledger')rememberLedger()
   materialEpoch++
@@ -241,20 +242,24 @@ async function load(){
   }catch(e){if(id===sequence){error.value=message(e);rows.value=[];total.value=0;listReadAt.value=''}}
   finally{if(id===sequence)loading.value=false}
 }
-async function openLinkedWorkbench(){
+async function openLinkedWorkbench(defaultProject=''){
   const link=new URLSearchParams(location.hash.slice(1))
-  const project=link.get('project')??'',tab=link.get('tab')??'overview',report=link.get('report')??''
+  const linkedProject=link.get('project')
+  const implicit=linkedProject===null&&!!defaultProject
+  const project=linkedProject??defaultProject,tab=link.get('tab')??'overview',report=link.get('report')??''
   if(!uuid.test(project)||!['overview','assistant','reports'].includes(tab))return
   const session=csrf.value
+  const epoch=materialEpoch
   try{
     const {data}=await api('project-overview/'+project)
-    if(!user.value||session!==csrf.value||showMaterials.value||entry.value!=='ledger')return
+    if(!user.value||session!==csrf.value||epoch!==materialEpoch||showMaterials.value||entry.value!=='ledger')return
+    if(implicit&&!data.materialsVisible)return
     materials(data.project)
     if(data.materialsVisible){
       focusReportId.value=tab==='reports'&&uuid.test(report)?report:undefined
       materialTab.value=tab
     }
-  }catch(e){if(user.value&&session===csrf.value)error.value=message(e)}
+  }catch(e){if(!implicit&&user.value&&session===csrf.value)error.value=message(e)}
 }
 async function openAssignedProject(projectId:string){
   await openProjectFromEntry(projectId,'appointments')
@@ -290,7 +295,9 @@ async function startSession(){
   }
   user.value=true
   await load()
-  if(entry.value!=='agent-tokens')await openLinkedWorkbench()
+  const defaultProject=!location.hash&&location.origin===VITE_PMO_WORKBENCH_ORIGIN&&account.accountId===VITE_PMO_WORKBENCH_ACCOUNT_ID
+    ? VITE_PMO_WORKBENCH_PROJECT_ID : ''
+  if(entry.value!=='agent-tokens')await openLinkedWorkbench(defaultProject)
 }
 function enrollment(show:boolean){
   acceptingInvite.value=show;password.value='';error.value='';loginNotice.value=''

@@ -1,5 +1,10 @@
 # 进度与续接索引
 
+## 2026-11-26 工作台设计基线（北京时间）
+
+- 后续界面开发从 `codex/workbench-baseline` 继续。基线取自周三 11:38 恢复版 `d02a625`，以 `SIM-EXEC-001`「项目资料 → 概览」的原布局为界面参照。UI-R3 的尝试可在 `codex/backup-before-20261125-1138` 查阅。
+- 本机 `18778` 的 `sim-pm-a` 从首页登录时进入该概览。入口由 `web/.env` 的 `VITE_PMO_WORKBENCH_ORIGIN`、`VITE_PMO_WORKBENCH_ACCOUNT_ID` 和 `VITE_PMO_WORKBENCH_PROJECT_ID` 配置，Vite 构建时读取。三个值为本机地址和合成身份、项目编号，显式链接优先，项目权限沿用服务端核验。
+
 ## 2026-11-25 续接检查（北京时间）
 
 - 报告通道配置已保存，本地预检确认模型 `deepseek-v4.1-flash-1017`、词易 Chat Completions 网关及 `SIM-EXEC-001` 范围，与昨日终端显示一致。令牌由私密向导提交。
