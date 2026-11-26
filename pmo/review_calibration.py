@@ -17,7 +17,7 @@ from .materials import replay
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_member
 from .review_responses import EvidenceRef, Text, checked_evidence
-from .review_scores import ANCHOR_VERSION, WEIGHTS
+from .review_scores import ANCHOR_VERSION, ANCHORS, WEIGHTS, Anchor, Dimension, rubric
 
 GET = 'human_review_calibration_get'
 PLAN = 'human_review_calibration_plan'
@@ -69,6 +69,7 @@ class Evaluation(Strict):
     status: Literal['evaluated', 'pending', 'incomparable']
     reasoning: Text
     score: Score | None = None
+    actualAnchorCode: Anchor | None = None
     evidenceRefs: list[EvidenceRef] = Field(default_factory=list, max_length=12, json_schema_extra={'uniqueItems': True})
     followUpBy: date | None = None
     evidencePlan: Text | None = None
@@ -79,7 +80,9 @@ class Evaluation(Strict):
         if self.status == 'evaluated':
             if self.score is None or not self.evidenceRefs or self.followUpBy or self.evidencePlan:
                 raise ValueError('A result score requires verified evidence and no observation plan')
-        elif self.score is not None or self.followUpDeviation is not None:
+            if self.actualAnchorCode is not None and Decimal(self.score) != ANCHORS.index(self.actualAnchorCode) + 1:
+                raise ValueError('The selected outcome anchor must match its score')
+        elif self.score is not None or self.actualAnchorCode is not None or self.followUpDeviation is not None:
             raise ValueError('A result score requires comparable evidence')
         if self.status == 'pending' and (self.followUpBy is None or self.evidencePlan is None):
             raise ValueError('A pending observation requires a deadline and an evidence plan')
@@ -93,6 +96,15 @@ class ResultView(Evaluation):
     revision: int
     reviewerId: UUID
     evaluatedAt: datetime
+    closingDecisionRef: str | None = None
+
+
+class OriginalRating(Strict):
+    score: int
+    round: int
+    anchor: Anchor
+    scorecardRef: str
+    evidenceRefs: list[str]
 
 
 class DimensionView(Strict):
@@ -102,6 +114,8 @@ class DimensionView(Strict):
     difference: str | None = None
     requiresRetrospective: bool = False
     canEvaluate: bool = False
+    anchors: dict[Anchor, str] | None = None
+    originalScores: list[OriginalRating] | None = None
 
 
 class State(Strict):
@@ -208,7 +222,25 @@ def display(value):
 
 def result_view(row):
     return ResultView.model_validate({**row.evaluation['command'], 'resultId': row.id, 'revision': row.revision,
-                                     'reviewerId': row.submitted_by, 'evaluatedAt': row.submitted_at})
+                                     'reviewerId': row.submitted_by, 'evaluatedAt': row.submitted_at,
+                                     'closingDecisionRef': row.evaluation.get('closingDecisionRef')})
+
+
+def closing_decision_ref(c, pid):
+    from .review_outcomes import outcomes
+    from .reviews import transitions
+    d, x, t = db.decisions.c, outcomes.c, transitions.c
+    row = c.execute(sa.select(d.id, d.revision).join(outcomes, x.decision_id == d.id)
+        .join(transitions, sa.and_(t.review_id == d.review_id, t.request_id == x.request_id))
+        .where(d.project_id == pid, t.project_id == pid, t.from_stage == 'closing_review', t.to_stage == 'closed')
+        .order_by(t.to_revision.desc()).limit(1)).mappings().one_or_none()
+    return f'decision:{row.id}@{row.revision}' if row else None
+
+
+def original_ratings(approved, key):
+    return [OriginalRating(score=row['dimensions'][key]['score'], round=row['round'],
+        anchor=row['dimensions'][key]['selectedAnchorCode'], scorecardRef=f"scorecard:{row['id']}",
+        evidenceRefs=row['dimensions'][key]['evidenceRefs']) for row in approved.payload['scorecards']]
 
 
 def state(c, a, p, op):
@@ -224,6 +256,9 @@ def state(c, a, p, op):
         values.anchorVersion = frozen['anchorVersion']
         values.plan = Plan(dimensions={key: raw['expectation'] for key, raw in frozen['dimensions'].items()})
         refs.extend([f"calibration-plan:{frozen['id']}@{frozen['revision']}", f'review-snapshot:{approved.review_id}'])
+        original_rubric = {item['key']: Dimension.model_validate(item) for item in approved.payload.get('ratingRubric', [])}
+        if not original_rubric and frozen['anchorVersion'] == ANCHOR_VERSION:
+            original_rubric = {item.key: item for item in rubric('charter')}
         for key, rows in records(c, approved.review_id).items():
             current = result_view(rows[-1]) if rows else None
             mean, difference = comparison(approved, key, current.score if current else None)
@@ -236,9 +271,13 @@ def state(c, a, p, op):
             values.dimensions[key] = DimensionView(originalMean=display(mean) or '', current=current,
                 history=[result_view(row) for row in rows], difference=display(difference),
                 requiresRetrospective=difference is not None and abs(difference) >= 1,
-                canEvaluate=can_evaluate and assignee == a.person and is_reviewer(c, p, a.person))
+                canEvaluate=can_evaluate and assignee == a.person and is_reviewer(c, p, a.person),
+                anchors=original_rubric[key].anchors if key in original_rubric else None,
+                originalScores=original_ratings(approved, key))
             if rows:
                 refs.append(result_ref(rows[-1]))
+            if current and current.closingDecisionRef:
+                refs.append(current.closingDecisionRef)
         values.status = 'complete' if all(item.current is not None and item.current.status == 'evaluated'
                                           for item in values.dimensions.values()) else 'open'
     elif draft and not approved:
@@ -341,9 +380,13 @@ def write_result(auth, pid, dimension, command, key, expected):
         from .policy import require
         require(c, p, POLICY, rid)
         evidence = checked_evidence(c, a, p, command.evidenceRefs)
+        serialized = command.model_dump(mode='json', exclude_none=True)
+        result_data = {'command': serialized, 'evidence': evidence, 'anchorVersion': plan['anchorVersion']}
+        closing_ref = closing_decision_ref(c, p.id)
+        if closing_ref:
+            result_data['closingDecisionRef'] = closing_ref
         row = c.execute(results.insert().values(review_id=charter.review_id, dimension=dimension, revision=revised,
-            submitted_by=a.person, evaluation={'command': command.model_dump(mode='json', exclude_none=True),
-                'evidence': evidence, 'anchorVersion': plan['anchorVersion']}).returning(results)).mappings().one()
+            submitted_by=a.person, evaluation=result_data).returning(results)).mappings().one()
         return save(c, a, p, OUTCOME, rid, key, signature, row, previous)
 
     return run(auth, OUTCOME, write)

@@ -10,7 +10,7 @@ from .contracts import RULE_VERSION, Result, Strict
 from .gates import ENTRY, REVIEW, Check, Gate, evaluate, lock_project, submitter
 from .identity import Failure
 from .materials import replay
-from .policy import freeze, review_action
+from .policy import FAST_CHARTER, enabled as policy_enabled, freeze, review_action
 from .projects import fingerprint, meta, record_receipt, run
 
 SUBMIT = 'pmo_review_submit'
@@ -112,13 +112,14 @@ def transition_project(c, a, p, review, destination, rid, *, verdict=None, inten
     elif p.stage == ENTRY[gate] and destination == REVIEW[gate]:
         allowed = SUBMIT in a.actions and submitter(c, p, a.person, gate)
     elif p.stage == REVIEW[gate] and review.status == 'pending' and a.kind == 'human':
-        from .review_outcomes import reviewer_assignment
+        from .review_outcomes import fast_filing_allows_transition, reviewer_assignment
         if verdict == 'withdrawn':
             allowed = destination == withdrawal_stage(gate) and submitter(c, p, a.person, gate)
         else:
             recorded = c.scalar(sa.select(db.decisions.c.id).where(db.decisions.c.review_id == review.id,
                 db.decisions.c.project_id == p.id, db.decisions.c.decided_by == a.person, db.decisions.c.option == verdict))
-            allowed = bool(recorded and destination == decision_stage(gate, verdict) and reviewer_assignment(c, a, p, review))
+            allowed = bool(recorded and destination == decision_stage(gate, verdict) and (
+                reviewer_assignment(c, a, p, review) or fast_filing_allows_transition(c, a, p, review, recorded, rid)))
     else:
         allowed = False
     if not allowed or (review is not None and (review.project_id != p.id or intent_id is not None)):
@@ -174,6 +175,8 @@ def submit_review(c, a, pid, gate: Gate, expected, key, rid):
                     status='pending', attendees=[], snapshot_hash=check.snapshotHash).returning(reviews)).mappings().one()
     review_id = row.id
     freeze(c, p, review_action(gate), review_id)
+    if gate == 'charter' and policy_enabled(c, p, FAST_CHARTER):
+        freeze(c, p, FAST_CHARTER, review_id)
     if gate == 'feasibility' and 'categoryPlan' in materials.content:
         freeze(c, p, 'cost.category', review_id)
     c.execute(snapshots.insert().values(review_id=review_id, rule_version=RULE_VERSION, snapshot_hash=check.snapshotHash,

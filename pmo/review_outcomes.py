@@ -15,18 +15,20 @@ from .evidence import lookup as evidence_lookup, lookup_for_integrity, require_v
 from .gates import ENTRY, REVIEW, evaluate, lock_project, submitter
 from .identity import Failure
 from .materials import replay
-from .policy import enabled as policy_enabled, lock as lock_policy, matches as policy_matches, require, review_action, selection
+from .policy import (FAST_CHARTER, FAST_CHARTER_VERSION, enabled as policy_enabled, frozen_basis, guard,
+                     lock as lock_policy, matches as policy_matches, receipt_matches, require, review_action, selection)
 from .projects import fingerprint, meta, record_receipt, run
 from .requirement_baselines import active_assignment, active_member
 from .requirement_exceptions import Receipt as RequirementException
 from .review_responses import Response as ReinforcementResponse
 from .review_scores import (ANCHOR_VERSION, Assessment, CharterDimensions, Dimension, FeasibilityDimensions,
-                            Reason, Warning, assess, judgment_warnings, rubric)
+                            RationaleCheck, Reason, Warning, assess, check_rationale, judgment_warnings, rubric)
 from .reviews import (APPROVAL_ACTION, ReviewView, approval_hash, decision_stage, reviews,
                       snapshots, transition_project, transitions, view, withdrawal_stage)
 
 WORKBENCH = 'human_review_workbench'
 SCORE = 'human_review_score'
+SCORE_CHECK = 'human_review_score_check'
 APPEAL = 'human_review_appeal'
 CONFIRM = 'human_review_confirm'
 DECIDE = 'human_review_decide'
@@ -54,6 +56,7 @@ class ReasonCommand(Strict):
 
 class ConfirmationCommand(Strict):
     role: ConfirmationRole
+    fastTrackReason: Reason | None = None
 
 
 class Condition(Strict):
@@ -78,6 +81,12 @@ class Card(Strict):
     reviewedAt: datetime
     anchorVersion: str | None = None
     warnings: dict[str, list[Warning]] | None = None
+    rationaleChecks: dict[str, RationaleCheck] | None = None
+
+
+class ScoreCheck(Strict):
+    anchorVersion: str
+    dimensions: dict[str, RationaleCheck]
 
 
 class Appeal(Strict):
@@ -103,9 +112,18 @@ class DecisionPublic(Strict):
     sourceRefs: list[str]
 
 
+class FastTrackFiling(Strict):
+    ruleVersion: str
+    materialHash: str
+    scoreHash: str
+    filedBy: UUID
+    filedAt: datetime
+
+
 class Decision(DecisionPublic):
     rationale: str
     stage: str | None = None
+    fastTrackFiling: FastTrackFiling | None = None
 
 
 class Decisions(Strict):
@@ -150,6 +168,8 @@ class Workbench(Strict):
     policyPending: bool
     stale: bool
     scoreEvidenceStale: Literal[True] | None = None
+    fastTrackInitiatorFiling: Literal[True] | None = None
+    fastTrackSynthetic: Literal[True] | None = None
     requiredReviewerCount: int | None = None
     submittedReviewerCount: int | None = None
     reinforcementResponses: list[ReinforcementResponse] | None = None
@@ -202,6 +222,7 @@ def current(c, a, p, review, frozen, intent):
           or intent.payload_hash != approval_hash(review, entry.from_revision, entry.actor_type)
           or intent.snapshot_hash != frozen.snapshot_hash or review.snapshot_hash != frozen.snapshot_hash
           or not policy_matches(c, p, review_action(review.type), review.id)
+          or (review.type == 'charter' and not policy_matches(c, p, FAST_CHARTER, review.id, exact=True))
           or fingerprint(frozen.materials) != frozen.snapshot_hash):
         return False
     check, _ = evaluate(c, a, p, review.type, pending=True)
@@ -278,6 +299,16 @@ def confirmation_eligible(c, a, p, role):
     return a.person == p[f'{role}_id'] and active_member(c, p, a.person, role)
 
 
+def fast_filing_allows_transition(c, a, p, review, decision_id, rid):
+    if (review.type != 'charter' or CONFIRM not in a.actions or not confirmation_eligible(c, a, p, 'initiator')
+            or not receipt_matches(c, p, FAST_CHARTER, rid)):
+        return False
+    x = outcomes.c
+    filing = c.scalar(sa.select(x.payload['fastTrackFiling']).where(
+        x.review_id == review.id, x.decision_id == decision_id, x.request_id == UUID(rid)))
+    return bool(filing and filing['filedBy'] == str(a.person) and filing['ruleVersion'] == FAST_CHARTER_VERSION)
+
+
 def structured_rationale(p, dims, evidence, *, required):
     if not required and not any('judgments' in rating for rating in dims.values()):
         return {'evidence': evidence}
@@ -292,6 +323,36 @@ def structured_rationale(p, dims, evidence, *, required):
                 raise Failure(422, 'REVIEW_JUDGMENT_DISPOSITION_REQUIRED', project_id=p.id)
             warnings[key] = [item.model_dump(mode='json', exclude_none=True) for item in found]
     return {'evidence': evidence, 'anchorVersion': ANCHOR_VERSION, 'warnings': warnings}
+
+
+def score_checks(review, frozen, dimensions) -> dict[str, RationaleCheck]:
+    material = next(iter(frozen.materials.get('charter', [])), None) if review.type == 'charter' else None
+    return {key: check_rationale(key, rating, material) for key, rating in dimensions.items()}
+
+
+def preview_score(auth, review_id, command, expected):
+    def read(c, a, _):
+        p, review, frozen = context(c, a, review_id)
+        intent = approval(c, review)
+        authorized_reviewer(c, a, p, review, frozen, intent)
+        if review.revision != expected:
+            raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
+        if review.status != 'pending' or p.stage != REVIEW[review.type]:
+            raise Failure(409, 'REVIEW_NOT_PENDING', project_id=p.id)
+        lock_policy(c, p.org_id)
+        if not current(c, a, p, review, frozen, intent):
+            raise Failure(409, 'REVIEW_SNAPSHOT_STALE', project_id=p.id)
+        if review.type != command.reviewType:
+            raise Failure(422, 'REVIEW_TYPE_MISMATCH', project_id=p.id)
+        round_no = 2 if one(c, appeals, appeals.c.review_id == review.id) else 1
+        if command.round != round_no:
+            raise Failure(409, 'REVIEW_ROUND_CHANGED', project_id=p.id)
+        dims = command.dimensions.model_dump(mode='json', exclude_none=True)
+        proofs(c, a, p, review, frozen, dims)
+        return Result[ScoreCheck](data=ScoreCheck(anchorVersion=ANCHOR_VERSION,
+            dimensions=score_checks(review, frozen, dims)),
+            meta=meta(SCORE_CHECK, [f'review:{review.id}@{review.revision}', f'review-snapshot:{review.id}'], project_id=p.id))
+    return run(auth, SCORE_CHECK, read)
 
 
 def confirmation_rows(c, review):
@@ -332,6 +393,8 @@ def decision_history(c, p, review, record, stored):
         refs.extend((f'review-snapshot:{review.id}', f'review-decision-snapshot:{record.id}', f'approval:{stored.approval_request_id}'))
         transition = one(c, transitions, t.project_id == p.id, t.review_id == review.id,
                          t.request_id == stored.request_id, t.from_stage == REVIEW[review.type], t.to_stage == stage)
+        if stored.payload.get('fastTrackFiling'):
+            refs.append(f'review-filing:{record.id}')
     elif review.verdict == 'terminated':
         # Review termination is an independent stage approval, not a gate verdict.
         from .project_lifecycle import ACTION, results
@@ -393,8 +456,10 @@ def workbench(c, a, p, review, frozen):
     valid = pending and not stale
     fast = bool(calculated and calculated.classification == 'fast_track' and valid and complete)
     no_policy = not policy_enabled(c, p, review_action(review.type))
+    fast_basis = frozen_basis(c, p, FAST_CHARTER, review.id) if review.type == 'charter' else []
+    initiator_filing = bool(fast_basis)
     can_decide = valid and reviewer and not no_policy and complete and (calculated is not None or review.type == 'closing')
-    can_confirm_sponsor = fast and not no_policy and sponsor and 'sponsor' not in confirmed
+    can_confirm_sponsor = fast and not no_policy and not initiator_filing and sponsor and 'sponsor' not in confirmed
     can_confirm_initiator = fast and not no_policy and initiator and 'initiator' not in confirmed
     score_evidence_stale: Literal[True] | None = None
     if can_decide or can_confirm_sponsor or can_confirm_initiator:
@@ -414,17 +479,24 @@ def workbench(c, a, p, review, frozen):
     decision = None
     if record:
         refs, stage, _ = decision_history(c, p, review, record, stored)
-        decision = Decision(**decision_public(record, refs).model_dump(), rationale=record.rationale, stage=stage)
+        filing = stored.payload.get('fastTrackFiling') if stored else None
+        decision = Decision(**decision_public(record, refs).model_dump(), rationale=record.rationale, stage=stage,
+                            fastTrackFiling=FastTrackFiling.model_validate(filing) if filing else None)
     reinforcement = frozen.materials.get('reinforcementResponses') if frozen and show_full_material else None
+    stored_rubric = stored.payload.get('ratingRubric') if stored else None
     return Workbench(review=view(review), round=round_no, approvalRequestId=intent.id if intent else None,
-        dimensions=rubric(review.type), materialRefs=frozen.source_refs if frozen and show_full_material else [],
+        dimensions=[Dimension.model_validate(item) for item in stored_rubric] if stored_rubric else rubric(review.type),
+        materialRefs=frozen.source_refs if frozen and show_full_material else [],
         scores=[Card(scorecardId=row.id, reviewerId=row.reviewer_id, round=row.round, dimensions=row.dimensions,
                      reviewedAt=row.reviewed_at, anchorVersion=row.rationale.get('anchorVersion'),
-                     warnings=row.rationale.get('warnings')) for row in rows if not pending or row.reviewer_id == a.person],
+                     warnings=row.rationale.get('warnings'), rationaleChecks=row.rationale.get('rationaleChecks'))
+                for row in rows if not pending or row.reviewer_id == a.person],
         appeal=appeal_view(reconsideration) if reconsideration else None, assessment=calculated if can_read_scores else None,
         confirmations=confirmations_found if can_read_scores else [], decision=decision,
         requirementException=RequirementException.model_validate(exception) if exception and show_full_material else None,
         tasks=[task_view(row) for row in task_rows], stale=stale, policyPending=no_policy, scoreEvidenceStale=score_evidence_stale,
+        fastTrackInitiatorFiling=True if initiator_filing else None,
+        fastTrackSynthetic=True if fast_basis and 'synthetic' in fast_basis[0] else None,
         requiredReviewerCount=required, submittedReviewerCount=submitted,
         reinforcementResponses=[ReinforcementResponse.model_validate({k: v for k, v in row.items() if k != 'evidence'})
                                 for row in reinforcement] if reinforcement else None,
@@ -540,7 +612,7 @@ def freeze_approved_baselines(c, a, p, review, decision_id, rid):
     return refs
 
 
-def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid):
+def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid, *, initiator_filing=False):
     if command.approvalRequestId != intent.id:
         raise Failure(409, 'REVIEW_APPROVAL_MISMATCH', project_id=p.id)
     calculated = assess(review.type, scored)
@@ -558,7 +630,9 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
             raise Failure(422, reject[calculated.classification], project_id=p.id)
         if command.verdict in PASS and calculated.classification == 'fast_track':
             by_role = {i.role: i.confirmed_by for i in signoffs}
-            if by_role.get('sponsor') != p.sponsor_id:
+            if not initiator_filing and frozen_basis(c, p, FAST_CHARTER, review.id):
+                raise Failure(422, 'FAST_TRACK_INITIATOR_FILING_REQUIRED', project_id=p.id)
+            if not initiator_filing and by_role.get('sponsor') != p.sponsor_id:
                 raise Failure(422, 'SPONSOR_CONFIRMATION_REQUIRED', project_id=p.id)
             if by_role.get('initiator') != p.initiator_id or not active_member(c, p, p.initiator_id, 'initiator'):
                 raise Failure(422, 'INITIATOR_CONFIRMATION_REQUIRED', project_id=p.id)
@@ -584,8 +658,14 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
         'round': round_no, 'assessment': calculated.model_dump(mode='json') if calculated else None,
         'confirmations': [snapshot(row) for row in signoffs], 'approvalRequestId': str(intent.id),
         'submittedBy': str(intent.requested_by), 'delegatedBy': str(intent.delegated_by) if intent.delegated_by else None,
-        'reviewerAssignment': snapshot(reviewer_assignment(c, a, p, review, frozen)), 'sourceRefs': frozen.source_refs,
+        'reviewerAssignment': None if initiator_filing else snapshot(reviewer_assignment(c, a, p, review, frozen)),
+        'sourceRefs': frozen.source_refs,
         'conditions': [term.model_dump(mode='json') for term in command.conditions], 'approvedBaselines': baselines}
+    if initiator_filing:
+        payload['fastTrackFiling'] = FastTrackFiling(ruleVersion=FAST_CHARTER_VERSION, materialHash=frozen.snapshot_hash,
+            scoreHash=digest, filedBy=a.person, filedAt=now).model_dump(mode='json')
+    if review.type == 'charter':
+        payload['ratingRubric'] = [dimension.model_dump(mode='json') for dimension in rubric(review.type)]
     if exception and command.verdict == 'conditional_pass':
         payload['requirementException'] = exception
     c.execute(outcomes.insert().values(decision_id=decision_id, review_id=review.id, approval_request_id=intent.id,
@@ -594,11 +674,12 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
     t = db.approval_requests
     c.execute(t.update().where(t.c.id == intent.id).values(status='approved' if command.verdict in PASS else 'rejected',
         decided_at=now, decided_by=a.person, reason=payload['rationale'], updated_at=now))
-    return bump(c, review, status='decided', verdict=command.verdict), destination
+    meeting_minutes = {'minutes': f'快速立项备案：{payload["rationale"]}'} if initiator_filing else {}
+    return bump(c, review, status='decided', verdict=command.verdict, **meeting_minutes), destination
 
 
 def reason(text):
-    if len(text.strip()) < 4:
+    if len(text.strip()) < 4 or '\x00' in text:
         raise Failure(422, 'INVALID_REASON')
     return text.strip()
 
@@ -642,6 +723,12 @@ def write_action(auth, op, review_id, command, key, expected):
                 raise Failure(403, 'CONFIRMATION_ROLE_REQUIRED', project_id=p.id)
         elif not submitter(c, p, a.person, review.type):
             raise Failure(403, 'FORBIDDEN', project_id=p.id)
+        initiator_filing = op == CONFIRM and command.fastTrackReason is not None
+        if initiator_filing:
+            if review.type != 'charter' or command.role != 'initiator':
+                raise Failure(403, 'FAST_TRACK_INITIATOR_REQUIRED', project_id=p.id)
+            guard(c, p, review_action(review.type))
+            guard(c, p, FAST_CHARTER)
         prior = replay(c, a, op, key, signature, Result[Workbench])
         if prior:
             return prior
@@ -681,6 +768,9 @@ def write_action(auth, op, review_id, command, key, expected):
                 evidence = proofs(c, a, p, review, frozen, dims)
                 versioned = 'calibrationPlan' in frozen.materials or bool(policy and 'synthetic' not in policy[0])
                 rationale = structured_rationale(p, dims, evidence, required=versioned)
+                rationale['anchorVersion'] = ANCHOR_VERSION
+                rationale['rationaleChecks'] = {name: check.model_dump(mode='json') for name, check in
+                                                 score_checks(review, frozen, dims).items()}
                 c.execute(db.scorecards.insert().values(review_id=review.id, project_id=p.id, created_by=a.person,
                     reviewer_id=a.person, round=round_no, reviewed_at=sa.func.now(), type=review.type, rule_version=RULE_VERSION,
                     dimensions=dims, rationale=rationale))
@@ -694,6 +784,8 @@ def write_action(auth, op, review_id, command, key, expected):
                     before_hash=score_hash(frozen, round_no, scored), prior_scorecards=[snapshot(row) for row in scored], request_id=UUID(rid)))
                 saved = bump(c, review)
             elif op == CONFIRM:
+                if bool(frozen_basis(c, p, FAST_CHARTER, review.id)) != initiator_filing:
+                    raise Failure(422, 'FAST_TRACK_INITIATOR_FILING_REQUIRED', project_id=p.id)
                 calculated = assess(review.type, scored)
                 if not calculated or calculated.classification != 'fast_track':
                     raise Failure(422, 'FAST_TRACK_NOT_AVAILABLE', project_id=p.id)
@@ -705,7 +797,13 @@ def write_action(auth, op, review_id, command, key, expected):
                     raise Failure(409, 'REVIEW_CONFIRMATION_EXISTS', project_id=p.id)
                 c.execute(t.insert().values(review_id=review.id, role=command.role, confirmed_by=a.person,
                     score_hash=digest, request_id=UUID(rid)))
-                saved = bump(c, review)
+                if initiator_filing:
+                    require(c, p, FAST_CHARTER, rid)
+                    command_decide = Decide(verdict='pass', rationale=command.fastTrackReason, approvalRequestId=intent.id)
+                    saved, destination = execute_decision(c, a, p, review, frozen, intent, command_decide, scored, round_no, rid,
+                                                          initiator_filing=True)
+                else:
+                    saved = bump(c, review)
             else:
                 saved, destination = execute_decision(c, a, p, review, frozen, intent, command, scored, round_no, rid)
         # Reload cannot apply a stage update of its own. The response and all writes share this transaction.
@@ -714,7 +812,7 @@ def write_action(auth, op, review_id, command, key, expected):
         refs = [f'review:{review_id}@{saved.revision}']
         event_data = {}
         decision_id = None
-        if op == DECIDE:
+        if op == DECIDE or initiator_filing:
             assert state.decision is not None
             decision_id = state.decision.decisionId
             refs.extend(state.decision.sourceRefs)

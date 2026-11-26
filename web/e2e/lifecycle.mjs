@@ -1,4 +1,6 @@
 import {chromium, expect} from '@playwright/test'
+import path from 'node:path'
+import {fileURLToPath} from 'node:url'
 import {recoverWrite} from './write-recovery.mjs'
 
 const url = process.env.PMO_BROWSER_URL
@@ -112,12 +114,25 @@ async function reviewGate(sender, reviewer, label, stage, points, anchor, kind) 
     const fields = workbench.getByRole('group',exact(dimension.label))
     await fields.getByLabel('评分',{exact:true}).selectOption(points)
     await fields.getByLabel('评分锚点',{exact:true}).selectOption(anchor)
-    await fields.getByLabel('评分理由',{exact:true}).fill(`独立复核合成材料：${dimension.label}。`)
+    await fields.getByLabel('评分理由',{exact:true}).fill(dimension.key==='customerAttractiveness'?
+      '尚无意向。仍需人工核对其他吸引力依据。':`独立复核合成材料：${dimension.label}。`)
     await fields.getByText(/^材料引用（至少一项）/).click()
     await fields.getByRole('checkbox',exact(state.materialRefs.find(ref=>ref.startsWith(kind+':')))).check()
     if(dimension.criteria.some(item=>item.minimumScore<=Number(points))){
       await fields.getByLabel('保留分数的理由',{exact:true}).fill('合成材料需后续补齐该判断的独立依据。')
     }
+  }
+  if(kind==='charter'){
+    const customer=workbench.getByRole('group',exact('客户/市场吸引力'))
+    await button(workbench,'核对评分理由').click()
+    const conflict=customer.getByText('理由与锚点存在明确冲突',{exact:true})
+    await expect(conflict).toBeVisible()
+    await expect(customer.getByText('材料原话「尚无意向」',{exact:true})).toBeVisible()
+    await reviewer.evaluate(()=>window.scrollTo(0,0))
+    const screenshots=process.env.PMO_R5_REVIEW_SCREENSHOTS??fileURLToPath(new URL('../../.local/r5-review-screenshots/',import.meta.url))
+    await reviewer.screenshot({
+      path:path.join(screenshots,'02-评分锚点核对.png'),fullPage:true,
+    })
   }
   await write(reviewer,'POST','/reviews/[^/]+/scores',button(workbench,'提交评分'))
   await button(workbench,'登记裁决').click()
@@ -135,7 +150,7 @@ async function launch(pm) {
   const initiator = await actor('initiator'), reviewer = await actor('reviewer')
   const charter = (await open(initiator,'立项卡')).getByRole('tabpanel',exact('立项卡'))
   for (const [name, value] of Object.entries({'价值主张':'交付完整归档清单','目标客户':'合成验收客户',
-    '客户或市场吸引力':'已确认演练范围','预期收益':'交付可独立核验','成功标准':'导出包含来源编号',
+    '客户或市场吸引力':'已确认演练范围。尚无意向','预期收益':'交付可独立核验','成功标准':'导出包含来源编号',
     '粗估金额（元）':'100','粗估人天':'10','预计工期（天）':'12'})) {
     await charter.getByLabel(name,{exact:true}).fill(value)
   }

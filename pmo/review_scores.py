@@ -1,4 +1,5 @@
 """Score DTOs, original anchors and deterministic gate arithmetic."""
+import re
 from decimal import Decimal, localcontext
 from typing import Annotated, Literal
 
@@ -36,6 +37,22 @@ class Warning(Strict):
     label: str
     kind: Literal['conflict', 'insufficient']
     evidenceRef: Source | None = None
+
+
+class RationaleFinding(Strict):
+    criterion: str
+    label: str
+    kind: Literal['conflict', 'supports']
+    rationaleQuote: str
+    sourceRef: Source
+    sourceQuote: str
+
+
+class RationaleCheck(Strict):
+    kind: Literal['conflict', 'consistent', 'unknown']
+    method: Literal['frozen-charter-claims-r5-v1'] = 'frozen-charter-claims-r5-v1'
+    selectedAnchorCode: Anchor
+    findings: list[RationaleFinding]
 
 
 class DimensionScore(Strict):
@@ -191,6 +208,61 @@ def judgment_warnings(key, rating):
             warnings.append(Warning(criterion=code, label=criterion.label,
                 kind='conflict' if item.get('value') == 'no' else 'insufficient', evidenceRef=item.get('evidenceRef')))
     return warnings
+
+
+# Only entire, affirmative or negative current-state clauses can match. The
+# quoted source must express the same proposition in the relevant charter field.
+# Everything outside this finite vocabulary is left to the independent reviewer.
+_ASSERTIONS = {
+    'directContribution': ('value_prop', ('直接支撑明确主线', '直接支撑公司主线'), ('与任何主线无明确关联', '与公司主线没有关联')),
+    'criticalContribution': ('value_prop', ('缺少该成果会形成明确缺口',), ('缺少该成果不会形成缺口',)),
+    'customerKnown': ('target_client', ('客户明确', '客户身份已确认'), ('客户是谁尚不清楚', '客户是谁说不清', '尚未确定客户')),
+    'demandVerified': ('attractiveness', ('客户真实需求已核验', '客户真实需求已验证'), ('客户没有该需求', '客户明确否认存在该需求')),
+    'willingnessVerified': ('attractiveness', ('付费意愿已验证', '立项意愿已验证', '付费或立项意愿已验证'),
+                            ('客户明确无付费或立项意愿', '尚无意向', '客户确认不会付费或立项')),
+    'replicableValue': ('attractiveness', ('已验证示范效应', '已验证复制效应'), ('没有示范或复制效应',)),
+    'quantifiedReturn': ('expected_benefit', ('回报与投入均已量化',), ('回报无法量化', '无回报路径')),
+    'returnConditionsVerified': ('expected_benefit', ('关键兑现条件已有依据',), ('关键兑现条件明确不成立',)),
+}
+_NON_ASSERTIONS = ('“', '”', '「', '」', '『', '』', '《', '》', '"', "'", '如果', '假设', '目标是', '例如', '仅供示例',
+                   '曾经', '此前', '过去', '未来', '计划', '调研样例')
+
+
+def _assertion(text, positive, negative):
+    if not text or any(marker in text for marker in _NON_ASSERTIONS):
+        return None
+    parts = [part.strip() for part in re.split(r'[，,；;。\n]', text)]
+    matches = [(polarity, part) for part in parts for polarity, phrases in ((True, positive), (False, negative))
+               if part in phrases]
+    if len({polarity for polarity, _part in matches}) != 1:
+        return None
+    return matches[0]
+
+
+def check_rationale(key, rating, material):
+    findings = []
+    relevant = [criterion for criterion in criteria(key) if criterion.minimumScore <= rating['score']]
+    if material is not None:
+        ref = f"charter:{material['id']}@{material['revision']}"
+        if ref in rating['evidenceRefs']:
+            for criterion in relevant:
+                spec = _ASSERTIONS.get(criterion.key)
+                if not spec:
+                    continue
+                field, positive, negative = spec
+                quoted_reason = _assertion(rating['rationale'], positive, negative)
+                quoted_source = _assertion(material.get(field), positive, negative)
+                if quoted_reason is None or quoted_source is None or quoted_reason[0] != quoted_source[0]:
+                    continue
+                findings.append(RationaleFinding(criterion=criterion.key, label=criterion.label,
+                    kind='supports' if quoted_source[0] else 'conflict', rationaleQuote=quoted_reason[1],
+                    sourceRef=ref, sourceQuote=quoted_source[1]))
+    kind: Literal['conflict', 'consistent', 'unknown'] = 'unknown'
+    if any(finding.kind == 'conflict' for finding in findings):
+        kind = 'conflict'
+    elif relevant and len(findings) == len(relevant):
+        kind = 'consistent'
+    return RationaleCheck(kind=kind, selectedAnchorCode=rating['selectedAnchorCode'], findings=findings)
 
 
 Classification = Literal['veto', 'below_threshold', 'normal', 'fast_track', 'shortfall', 'feasible']

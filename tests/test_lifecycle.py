@@ -53,7 +53,8 @@ def upload(pm, reviewer, project, kind, resource, content=None):
         json={'reason': 'Reviewed original synthetic evidence bytes', 'sha256': proof['sha256']}))
 
 
-def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), first_day=None, calibration=False):
+def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), first_day=None, calibration=False,
+                    calibration_scores=(4, 4, 4, 4)):
     engine, _, _, _ = live
     pid, people, users, _ = team
     reviewer = users['reviewer']
@@ -73,11 +74,11 @@ def begin_execution(live, team, *, effort_budget='10', extra_priorities=(), firs
         charter = start_charter(pid, users)
     if calibration:
         workbench = bench(reviewer, charter)
-        command = score_command(workbench, [4] * 4)
+        command = score_command(workbench, calibration_scores)
         for dimension in workbench['dimensions']:
             rating = command['dimensions'][dimension['key']]
             rating['judgments'] = [{'criterion': item['key'], 'value': 'unknown'} for item in dimension['criteria']
-                                   if item['minimumScore'] <= 4]
+                                   if item['minimumScore'] <= rating['score']]
             rating['retainedReason'] = 'Unresolved evidence noted for independent recheck at the observation date.'
         saved = data(reviewer.post(charter + '/scores', headers=headers(workbench['review']['revision']), json=command))
         assert saved['scores'][0]['anchorVersion']
@@ -159,7 +160,7 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team, calibra
     engine = live[0]
     pm, reviewer, customer, reconciler = (users[k] for k in ('pm', 'reviewer', 'client_representative', 'outsider'))
     grant_closure_roles(live, team)
-    project, requirement, risk = begin_execution(live, team, calibration=calibration)
+    project, requirement, risk = begin_execution(live, team, calibration=calibration, calibration_scores=(5, 3, 4, 4))
     assert propose(pm, project, 'closed').json()['code'] == 'TRANSITION_NOT_ALLOWED'
     assert propose(pm, project, 'delivering').json()['code'] == 'MILESTONE_COMPLETION_REQUIRED'
     complete_milestones(pm, reviewer, project)
@@ -209,10 +210,20 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team, calibra
         assert evaluate('strategicAlignment', {**evaluated, 'evidenceRefs': []}).status_code == 422
         assert evaluate('strategicAlignment', {**evaluated, 'evidenceRefs': [f'evidence:{uuid4()}']}).json()['code'] == (
             'REVIEW_RESPONSE_EVIDENCE_INVALID')
-        result = data(evaluate('strategicAlignment', evaluated))['dimensions']['strategicAlignment']
-        assert (result['originalMean'], result['difference'], result['requiresRetrospective']) == ('4.00', '-1.00', True)
-        result = data(evaluate('customerAttractiveness', {**evaluated, 'score': '3.01'}))['dimensions']['customerAttractiveness']
-        assert (result['difference'], result['requiresRetrospective']) == ('-0.99', False)
+        assert evaluate('strategicAlignment', {**evaluated, 'actualAnchorCode': 'score_5'}).status_code == 422
+        result = data(evaluate('strategicAlignment', {**evaluated, 'actualAnchorCode': 'score_3',
+            'reasoning': '以已核验的材料对照批准立项时冻结的战略锚点，登记实际观察结果。'}))['dimensions']['strategicAlignment']
+        assert (result['originalMean'], result['difference'], result['requiresRetrospective']) == ('5.00', '-2.00', True)
+        assert result['anchors']['score_3'] == '与某条主线相关，但贡献方式牵强'
+        original_score, = result['originalScores']
+        assert original_score['score'] == 5 and original_score['anchor'] == 'score_5'
+        assert result['current']['actualAnchorCode'] == 'score_3'
+        assert result['current']['closingDecisionRef'] == f"decision:{closing_receipt['decisionId']}@1"
+        result = data(evaluate('customerAttractiveness', {**evaluated, 'score': '3.99'}))['dimensions']['customerAttractiveness']
+        assert (result['difference'], result['requiresRetrospective']) == ('0.99', False)
+        result = data(evaluate('customerAttractiveness', {**evaluated, 'score': '4.00', 'actualAnchorCode': 'between_3_5',
+            'reasoning': '已对照同版客户吸引力锚点复核实际结果。'}, revision=2))['dimensions']['customerAttractiveness']
+        assert (result['difference'], result['requiresRetrospective']) == ('1.00', True)
         pending = data(evaluate('financialResourceReturn', {'status': 'pending', 'reasoning': 'Await end-of-period report.',
             'followUpBy': (datetime.now(TZ).date() + timedelta(days=7)).isoformat(), 'evidencePlan': 'Compare verified source ledger.'}))
         assert pending['status'] == 'open' and 'difference' not in pending['dimensions']['financialResourceReturn']
@@ -220,7 +231,9 @@ def test_drafting_to_archive_without_model_or_stage_fixtures(live, team, calibra
         assert pm.put(retro, headers=headers(), json=answer_command).json()['code'] == 'CALIBRATION_DEVIATION_REQUIRED'
         answer_command['calibrationDeviations'] = {'strategicAlignment': {'resultRevision': 2,
             'explanation': 'Actual contribution missed the baseline commitment.',
-            'improvement': 'Add an independent contribution check during feasibility.'}}
+            'improvement': 'Add an independent contribution check during feasibility.'},
+            'customerAttractiveness': {'resultRevision': 3, 'explanation': '实际测试范围比立项预期多一个客户场景。',
+                                      'improvement': '在立项阶段分开记录已核验意向和复用预期。'}}
     data(pm.put(retro, headers=headers(data(pm.get(retro))['revision']), json=answer_command))
     assert propose(pm, project, 'archived').json()['code'] == 'CONFIRMED_LESSON_REQUIRED'
     l = data(pm.post(project + '/lessons', headers=headers(), json={'category': 'governance',

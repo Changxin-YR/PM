@@ -74,6 +74,11 @@ def score(reviewId: UUID, command: Score, authorization: Auth, key: Key, expecte
     return outcomes.write_action(authorization, outcomes.SCORE, reviewId, command, key, int(expected))
 
 
+@router.post('/reviews/{reviewId}/scores/check', operation_id=outcomes.SCORE_CHECK, openapi_extra=calibration.HUMAN)
+def check_score(reviewId: UUID, command: Score, authorization: Auth, expected: Revision) -> Result[outcomes.ScoreCheck]:
+    return outcomes.preview_score(authorization, reviewId, command, int(expected))
+
+
 @router.post('/reviews/{reviewId}/appeals', operation_id=outcomes.APPEAL, response_model_exclude_none=True)
 def appeal(reviewId: UUID, command: outcomes.ReasonCommand, authorization: Auth, key: Key, expected: Revision) -> Result[outcomes.Workbench]:
     return outcomes.write_action(authorization, outcomes.APPEAL, reviewId, command, key, int(expected))

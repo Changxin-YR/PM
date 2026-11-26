@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import {isRejectedWrite,isUnconfirmedWrite} from './api-error'
+import {isRejectedWrite,isUnconfirmedWrite,PmoHttpError} from './api-error'
 import {computed,nextTick,ref,watch} from 'vue'
 import ReviewMeeting from './ReviewMeeting.vue'
+import ReviewRationaleCheck, {type RationaleCheck} from './ReviewRationaleCheck.vue'
 import {ArrowLeft,Check,ClipboardPenLine,Gavel,Plus,RefreshCw,RotateCcw,Send,Trash2} from 'lucide-vue-next'
 import RequirementExceptionReceipt, {type RequirementException} from './RequirementExceptionReceipt.vue'
 
@@ -26,16 +27,19 @@ type Workbench={
   review:{reviewId:string;projectId:string;type:keyof typeof gates;status:keyof typeof statuses;revision:number;verdict?:string}
   round:number;approvalRequestId?:string;dimensions:Dimension[];materialRefs:string[]
   scores:{scorecardId:string;reviewerId:string;round:number;dimensions:Record<string,Rating>;reviewedAt:string;anchorVersion?:string;
-    warnings?:Record<string,ScoreWarning[]>}[]
+    warnings?:Record<string,ScoreWarning[]>;rationaleChecks?:Record<string,RationaleCheck>}[]
   appeal?:{reason:string;requestedAt:string;requestedBy:string}
   assessment?:{classification:keyof typeof classifications;total?:string;means:Record<string,string>;weakDimensions:string[]}
   confirmations:{role:Role;confirmedAt:string;confirmedBy:string;current:boolean}[]
-  decision?:{decisionId:string;option:string;rationale:string;decidedAt:string;decidedBy:string;stage?:string;sourceRefs:string[]}
+  decision?:{decisionId:string;option:string;rationale:string;decidedAt:string;decidedBy:string;stage?:string;sourceRefs:string[];
+    fastTrackFiling?:{ruleVersion:string;materialHash:string;scoreHash:string;filedBy:string;filedAt:string}}
   withdrawalReason?:string
   requirementException?:RequirementException
   tasks:{taskId:string;title:string;assigneeId?:string;dueAt?:string;sourceType:string;sourceId:string;status:string;revision:number}[]
   canScore:boolean;canAppeal:boolean;canDecide:boolean;canWithdraw:boolean;canConfirmSponsor:boolean;canConfirmInitiator:boolean
   policyPending:boolean;stale:boolean;scoreEvidenceStale?:true
+  fastTrackInitiatorFiling?:true
+  fastTrackSynthetic?:true
   requiredReviewerCount?:number;submittedReviewerCount?:number
   reinforcementResponses?:{responseId:string;taskId:string;itemKey:string;revision:number;responseText:string;
     evidenceRefs:string[];submittedBy:string;submittedAt:string}[]
@@ -64,23 +68,35 @@ const heading=ref<HTMLElement|null>(null)
 const meeting=ref<InstanceType<typeof ReviewMeeting>|null>(null)
 const selected=ref<Action['id']|''>(''),scoreDraft=ref<Record<string,ScoreDraft>>({})
 const reason=ref(''),verdict=ref<keyof typeof verdicts|''>(''),conditions=ref<Condition[]>([])
+const checking=ref(false),checkError=ref('')
+const checkResult=ref<{request:string;dimensions:Record<string,RationaleCheck>}|null>(null)
 let conditionId=0,lastAttempt:Attempt|undefined
 
-const busy=computed(()=>loading.value||saving.value)
+const busy=computed(()=>loading.value||saving.value||checking.value)
 const available=computed(()=>actions.filter(action=>view.value?.[action.flag]))
 const current=computed(()=>available.value.find(action=>action.id===selected.value))
 const charterRejectOnly=computed(()=>view.value?.review.type==='charter'&&
   (view.value.assessment?.classification==='veto'||view.value.assessment?.classification==='below_threshold'))
+const fastFiling=computed(()=>view.value?.fastTrackInitiatorFiling&&view.value.assessment?.classification==='fast_track')
 const materialRefs=computed(()=>Array.from(new Set(view.value?.materialRefs??[])))
 const workDisabled=computed(()=>busy.value||readFailed.value||!!retry.value||!!meeting.value?.navigationLocked)
-const navigationLocked=computed(()=>saving.value||!!retry.value||!!meeting.value?.navigationLocked)
+const navigationLocked=computed(()=>saving.value||checking.value||!!retry.value||!!meeting.value?.navigationLocked)
 defineExpose({navigationLocked})
 
 function close(){
   if(!navigationLocked.value)open.value=false
 }
 
-function message(e:unknown,fallback:string){return e instanceof Error?e.message:fallback}
+const reviewErrors:Record<string,string>={
+  FAST_TRACK_INITIATOR_REQUIRED:'快速立项须由有权发起人确认。',
+  FAST_TRACK_INITIATOR_FILING_REQUIRED:'请使用冻结版本的发起人确认与备案操作。',
+  FAST_TRACK_NOT_AVAILABLE:'本轮评分未达到快速立项条件。',
+  REVIEW_REQUIRED_SCORES_INCOMPLETE:'须先收齐冻结名单中的独立评分。',
+  REVIEW_SOURCE_NOT_FROZEN:'该引用未包含在本次冻结的送审材料中。',
+}
+function message(e:unknown,fallback:string){
+  return e instanceof PmoHttpError?reviewErrors[e.code]??e.message:e instanceof Error?e.message:fallback
+}
 function textLength(value:string){return Array.from(value.trim()).length}
 function validReason(value:string){const n=textLength(value);return n>=4&&n<=1500}
 function validAttachment(ref:string){return ref.startsWith('evidence:')&&uuidPattern.test(ref.slice(9))}
@@ -104,6 +120,7 @@ function needsDisposition(dimension:Dimension){
 }
 function selectAction(id:Action['id']){
   selected.value=id;reason.value='';verdict.value='';conditions.value=[];error.value='';notice.value=''
+  checkResult.value=null;checkError.value=''
 }
 function changeVerdict(){if(verdict.value==='conditional_pass'&&view.value?.review.type!=='closing'&&!conditions.value.length)addCondition()}
 
@@ -132,10 +149,7 @@ watch(open,value=>{
   void nextTick(()=>heading.value?.focus())
 },{immediate:true})
 
-const command=computed(()=>{
-  const data=view.value,action=current.value
-  if(!data||!action)return null
-  if(action.id==='score'){
+function scoreCommand(data:Workbench, preview=false){
     const dimensions:Record<string,Rating>={}
     if(!data.dimensions.length)return null
     for(const dimension of data.dimensions){
@@ -154,18 +168,48 @@ const command=computed(()=>{
       }
       if(criteria.length){
         const retained=needsDisposition(dimension)
-        if(retained&&!validReason(line.retainedReason))return null
+        if(retained&&!preview&&!validReason(line.retainedReason))return null
         dimensions[dimension.key].judgments=judgments
-        if(retained)dimensions[dimension.key].retainedReason=line.retainedReason.trim()
       }
+      if(!preview&&validReason(line.retainedReason))dimensions[dimension.key].retainedReason=line.retainedReason.trim()
     }
     return {reviewType:data.review.type,round:data.round,dimensions}
+}
+
+const checkRequest=computed(()=>{
+  const data=view.value,payload=data&&scoreCommand(data,true)
+  if(!payload||!data||current.value?.id!=='score')return null
+  const revision=String(data.review.revision),body=JSON.stringify(payload)
+  return {revision,body,signature:JSON.stringify([revision,body])}
+})
+const currentChecks=computed(()=>checkResult.value&&checkResult.value.request===checkRequest.value?.signature?
+  checkResult.value.dimensions:null)
+
+async function checkDraft(){
+  const request=checkRequest.value
+  if(!request||workDisabled.value)return
+  checking.value=true;checkError.value=''
+  try{
+    const {data}=await props.api(`${path}/scores/check`,{method:'POST',body:request.body,headers:{'If-Match':request.revision}})
+    checkResult.value={request:request.signature,dimensions:data.dimensions}
+  }catch(error){
+    checkResult.value=null;checkError.value=message(error,'理由与锚点无法核对，请人工判断。')
+  }finally{checking.value=false}
+}
+
+const command=computed(()=>{
+  const data=view.value,action=current.value
+  if(!data||!action)return null
+  if(action.id==='score')return scoreCommand(data)
+  if(action.id==='initiator'&&fastFiling.value){
+    return validReason(reason.value)?{role:action.id,fastTrackReason:reason.value.trim()}:null
   }
   if(action.id==='sponsor'||action.id==='initiator')return {role:action.id}
   if(!validReason(reason.value))return null
   if(action.id!=='decide')return {reason:reason.value.trim()}
   if(!verdict.value||!data.approvalRequestId)return null
   if(charterRejectOnly.value&&verdict.value!=='reject')return null
+  if(fastFiling.value&&(verdict.value==='pass'||verdict.value==='conditional_pass'))return null
   const base={verdict:verdict.value,rationale:reason.value.trim(),approvalRequestId:data.approvalRequestId}
   if(data.review.type==='closing'){
     if(verdict.value==='conditional_pass'&&!data.requirementException||verdict.value==='pass'&&data.requirementException)return null
@@ -198,7 +242,8 @@ async function submit(previous?:Attempt){
   try{
     if(previous)sent=previous
     else if(data&&action&&payload){
-      const {endpoint,success}=action,revision=data.review.revision,body=JSON.stringify(payload)
+      const {endpoint}=action,revision=data.review.revision,body=JSON.stringify(payload)
+      const success=action.id==='initiator'&&fastFiling.value?'快速立项已备案，项目已进入方案细化。':action.success
       if(lastAttempt?.endpoint===endpoint&&lastAttempt.revision===revision&&lastAttempt.body===body)sent=lastAttempt
       else{
         if(action.id==='score')await checkAttachments(data)
@@ -230,7 +275,7 @@ async function submit(previous?:Attempt){
 </script>
 
 <template>
-  <section v-if="open" class="panel workbench" aria-label="关口人工工作台" :aria-busy="loading||saving"
+  <section v-if="open" class="panel workbench" aria-label="关口人工工作台" :aria-busy="busy"
     @keydown.esc.stop.prevent="close">
     <div class="workbench-title">
       <h2 ref="heading" tabindex="-1">评审工作台</h2>
@@ -251,6 +296,8 @@ async function submit(previous?:Attempt){
         <ReviewMeeting ref="meeting" :review-id="reviewId" :revision="view.review.revision" :api="api"
           :disabled="busy||readFailed||!!retry"/>
         <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" :closable="false" show-icon/>
+        <el-alert v-if="view.fastTrackSynthetic" type="info" title="本项目使用隔离演练的快速立项规则。正式规则待签核。"
+          :closable="false" show-icon/>
         <p v-if="view.requiredReviewerCount!==undefined && view.review.status==='pending'" class="meta">
           必需评审名单已交卡 {{view.submittedReviewerCount}} / {{view.requiredReviewerCount}}。
           <span v-if="view.submittedReviewerCount!==view.requiredReviewerCount">评分齐备后可确认快速立项或登记裁决。</span>
@@ -262,8 +309,15 @@ async function submit(previous?:Attempt){
         <section v-if="view.assessment" class="group" aria-label="评分评定">
           <h4>评分评定 · {{classifications[view.assessment.classification]}}</h4>
           <p v-if="view.assessment.total!=null">总分：{{view.assessment.total}}</p>
-          <ul v-if="Object.keys(view.assessment.means).length" class="compact-list">
-            <li v-for="(mean,key) in view.assessment.means" :key="key">{{dimensionLabel(key)}}：{{mean}}</li>
+          <p v-if="view.assessment.total!=null" class="meta">展示到小数点后两位。阈值按未舍入结果判定。</p>
+          <ul v-if="Object.keys(view.assessment.means).length" class="assessment-dimensions">
+            <li v-for="dimension in view.dimensions" :key="dimension.key">
+              <span>{{dimension.label}}</span>
+              <meter :aria-label="dimension.label" min="0" max="5" :value="Number(view.assessment.means[dimension.key])">
+                {{view.assessment.means[dimension.key]}} / 5
+              </meter>
+              <span class="assessment-score">{{view.assessment.means[dimension.key]}} / 5</span>
+            </li>
           </ul>
           <p v-if="view.assessment.weakDimensions.length">薄弱维度：{{view.assessment.weakDimensions.map(dimensionLabel).join('、')}}</p>
         </section>
@@ -274,7 +328,7 @@ async function submit(previous?:Attempt){
         <div v-if="available.length" class="toolbar workbench-actions" role="group" aria-label="评审操作">
           <el-button v-for="action in available" :key="action.id" :type="current?.id===action.id?'primary':undefined"
             :aria-pressed="current?.id===action.id" :disabled="workDisabled" @click="selectAction(action.id)">
-            <component :is="action.icon" :size="15"/>{{action.label}}
+            <component :is="action.icon" :size="15"/>{{action.id==='initiator'&&fastFiling?'确认快速立项并备案':action.label}}
           </el-button>
         </div>
         <form v-if="current" :aria-label="current.label" @submit.prevent="submit()">
@@ -320,8 +374,10 @@ async function submit(previous?:Attempt){
                     {{scoreDraft[dimension.key].answers[criterion.key]==='no'?'此判断与选定锚点冲突。':'该判断的证据不足。'}}
                   </p>
                 </div>
-                <label v-if="needsDisposition(dimension)">保留分数的理由
-                  <textarea v-model="scoreDraft[dimension.key].retainedReason" rows="2" required minlength="4" maxlength="1500"/>
+                <ReviewRationaleCheck v-if="currentChecks?.[dimension.key]" :check="currentChecks[dimension.key]!"
+                  :anchor="dimension.anchors[scoreDraft[dimension.key].selectedAnchorCode]"/>
+                <label v-if="needsDisposition(dimension)||currentChecks?.[dimension.key]?.kind==='conflict'||currentChecks?.[dimension.key]?.kind==='unknown'">保留分数的理由
+                  <textarea v-model="scoreDraft[dimension.key].retainedReason" rows="2" :required="needsDisposition(dimension)" minlength="4" maxlength="1500"/>
                 </label>
               </fieldset>
             </template>
@@ -329,10 +385,11 @@ async function submit(previous?:Attempt){
               <label>裁决<select v-model="verdict" aria-label="裁决" required @change="changeVerdict">
                 <option value="" disabled>请选择裁决</option>
                 <option v-for="(label,option) in verdicts" :key="option" :value="option"
-                  :disabled="(charterRejectOnly&&option!=='reject')||
+                  :disabled="(charterRejectOnly&&option!=='reject')||(fastFiling&&(option==='pass'||option==='conditional_pass'))||
                     (view.review.type==='closing'&&((option==='conditional_pass'&&!view.requirementException)||(option==='pass'&&!!view.requirementException)))">{{label}}</option>
               </select></label>
               <p v-if="charterRejectOnly" class="meta">当前评分触发否决或低于 3.2。请选择拒绝，发起人可按规定重提修订后的立项卡。</p>
+              <p v-if="fastFiling" class="meta">本次冻结版本的快速立项通过由发起人确认并备案。</p>
               <label>裁决理由<textarea v-model="reason" rows="3" required minlength="4" maxlength="1500"/></label>
               <template v-if="verdict==='conditional_pass'&&view.review.type!=='closing'">
                 <fieldset v-for="(condition,index) in conditions" :key="condition.id" class="form-block">
@@ -350,12 +407,19 @@ async function submit(previous?:Attempt){
                 <el-button class="add-condition" :disabled="workDisabled||conditions.length>=maxConditions" @click="addCondition"><Plus :size="14"/> 添加条件</el-button>
               </template>
             </template>
+            <template v-else-if="current.id==='initiator'&&fastFiling">
+              <p>确认本轮冻结的评分和材料后，系统登记正式裁决与评审会备案，项目进入方案细化。</p>
+              <label>确认与备案说明<textarea v-model="reason" rows="3" required minlength="4" maxlength="1500"/></label>
+            </template>
             <p v-else-if="current.id==='sponsor'||current.id==='initiator'">以{{roles[current.id]}}身份确认本轮评分。</p>
             <label v-else>{{current.id==='appeal'?'复审原因':'撤回原因'}}<textarea v-model="reason" rows="3" required minlength="4" maxlength="1500"/></label>
           </fieldset>
+          <p v-if="current.id==='score'&&checkError" role="status">{{checkError}}</p>
           <div class="actions">
+            <el-button v-if="current.id==='score'" native-type="button" :disabled="workDisabled||!checkRequest" :loading="checking"
+              @click="checkDraft">核对评分理由</el-button>
             <el-button :disabled="saving || !!retry" @click="selected=''">取消</el-button>
-            <el-button type="primary" native-type="submit" :disabled="workDisabled||!command" :loading="saving"><Send :size="14"/>{{current.submit}}</el-button>
+            <el-button type="primary" native-type="submit" :disabled="workDisabled||!command" :loading="saving"><Send :size="14"/>{{current.id==='initiator'&&fastFiling?'确认并备案':current.submit}}</el-button>
           </div>
         </form>
         <section v-if="view.decision||view.review.verdict" class="group" aria-label="裁决记录">
@@ -364,6 +428,13 @@ async function submit(previous?:Attempt){
             <p class="reason">{{view.decision.rationale}}</p>
             <p class="meta"><time :datetime="view.decision.decidedAt">{{localTime(view.decision.decidedAt)}}</time> · 裁决人 {{view.decision.decidedBy}}</p>
             <p v-if="view.decision.stage">流转阶段：{{stages[view.decision.stage]??view.decision.stage}}</p>
+            <details v-if="view.decision.fastTrackFiling" class="meta">
+              <summary>快速立项备案</summary>
+              <p>备案人 {{view.decision.fastTrackFiling.filedBy}} · {{localTime(view.decision.fastTrackFiling.filedAt)}}</p>
+              <p>规则版本 <code>{{view.decision.fastTrackFiling.ruleVersion}}</code></p>
+              <p>材料快照 <code>{{view.decision.fastTrackFiling.materialHash}}</code></p>
+              <p>评分快照 <code>{{view.decision.fastTrackFiling.scoreHash}}</code></p>
+            </details>
             <details v-if="view.decision.sourceRefs.length" class="meta">
               <summary>裁决来源</summary>
               <ul class="refs"><li v-for="source in view.decision.sourceRefs" :key="source">{{source}}</li></ul>
@@ -384,7 +455,9 @@ async function submit(previous?:Attempt){
         </section>
         <section class="group" aria-label="评分历史">
           <h4>评分历史 · {{view.scores.length}}</h4>
-          <p v-if="!view.scores.length" class="meta">暂无评分记录</p>
+          <p v-if="!view.scores.length" class="meta">
+            {{view.review.status==='pending'&&view.submittedReviewerCount?'已提交的独立评分将在裁决后显示。':'暂无评分记录'}}
+          </p>
           <details v-for="card in view.scores" :key="card.scorecardId" class="history-item" open>
             <summary>第 {{card.round}} 轮 · <time :datetime="card.reviewedAt">{{localTime(card.reviewedAt)}}</time><span class="meta"> · 评审人 {{card.reviewerId}}</span></summary>
             <dl v-for="(rating,key) in card.dimensions" :key="key">
@@ -395,6 +468,7 @@ async function submit(previous?:Attempt){
               <dd v-for="warning in card.warnings?.[key]" :key="warning.criterion">
                 {{warning.kind==='conflict'?'事实冲突':'证据不足'}} · {{warning.label}} <code v-if="warning.evidenceRef">{{warning.evidenceRef}}</code>
               </dd>
+              <dd v-if="card.rationaleChecks?.[key]"><ReviewRationaleCheck :check="card.rationaleChecks[key]!"/></dd>
               <dd v-if="rating.retainedReason">保留理由 {{rating.retainedReason}}</dd>
             </dl>
           </details>
@@ -425,7 +499,7 @@ async function submit(previous?:Attempt){
 .workbench{min-height:4rem;overflow-wrap:anywhere}
 .workbench-title,.workbench-header,.workbench-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .workbench-title{justify-content:space-between;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--pmo-line)}
-.workbench-title h2{font-size:18px;margin:0}
+.workbench-title h2{font-size:24px;font-weight:600;margin:0}
 .workbench-content{min-height:48px}
 .workbench-header{justify-content:space-between}
 .workbench h3,.workbench h4{margin:0 0 .4rem}
@@ -434,6 +508,11 @@ async function submit(previous?:Attempt){
 .result-note{color:var(--el-color-primary)}
 .group{border:1px solid var(--pmo-line);border-radius:8px;padding:12px 16px;margin-top:12px}
 .compact-list{margin:.35rem 0;padding-left:1.25rem}
+.assessment-dimensions{list-style:none;padding:0;margin:.5rem 0;display:grid;gap:6px;max-width:640px}
+.assessment-dimensions li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:10px;align-items:center}
+.assessment-dimensions meter{width:100%;height:12px}
+.assessment-dimensions meter::-webkit-meter-optimum-value{background:var(--el-color-primary)}
+.assessment-score{font-variant-numeric:tabular-nums;color:var(--el-text-color-secondary)}
 summary{cursor:pointer}
 .workbench-actions{margin-top:.8rem}
 .workbench form{display:grid;gap:12px}
