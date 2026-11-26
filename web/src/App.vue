@@ -36,6 +36,7 @@ import OrgDirectory from './OrgDirectory.vue'
 import AcceptOrgInvite from './AcceptOrgInvite.vue'
 import ProjectAssistant from './ProjectAssistant.vue'
 import ProjectOverview from './ProjectOverview.vue'
+import type {AssistantQuestion} from './assistantQuestions'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 type ProjectIdentity=Omit<Project,'createdAt'>
 type HealthSample={snapshotId:string;asOf:string;health:'green'|'yellow'|'red'|'untrusted';publication:'official'|'preview'|'withheld';ruleVersion:string}
@@ -51,6 +52,7 @@ const admin=ref(false)
 const materialProject=ref<Project|null>(null),showMaterials=ref(false),materialTab=ref('overview'),focusTaskId=ref<string>()
 const focusReviewId=ref<string>(),focusApprovalId=ref<string>(),focusChangeId=ref<string>()
 const focusReportId=ref<string>()
+const focusAssistantQuestion=ref<AssistantQuestion>()
 const lessonDraftProject=ref<string>()
 const entry=ref('ledger'), retainedEntries=ref(new Set<string>())
 const activeAccount=ref(''), projectError=ref(''), projectLoading=ref(false)
@@ -84,7 +86,7 @@ function showEntry(key:string){
 function goTop(){void nextTick(()=>window.scrollTo({top:0}))}
 function selectDestination(key:string){
   if(!groups.value.some(group=>group.items.some(item=>item.key===key)))return
-  if(showMaterials.value){if(materialTab.value!==key){materialTab.value=key;goTop()}return}
+  if(showMaterials.value){if(materialTab.value!==key){focusAssistantQuestion.value=undefined;materialTab.value=key;goTop()}return}
   if(entry.value===key)return
   if(key==='ledger'){backToLedger();return}
   if(entry.value==='ledger')rememberLedger()
@@ -121,6 +123,7 @@ function materials(row:Project){
   projectLoading.value=false
   projectError.value=''
   materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=focusChangeId.value=focusReportId.value=undefined
+  focusAssistantQuestion.value=undefined
   lessonDraftProject.value=undefined
   deferredProjectLink=false
   materialTab.value='overview';showMaterials.value=true;goTop()
@@ -268,7 +271,10 @@ async function openPortfolioReport(projectId:string,reportId:string){
   if(!uuid.test(projectId)||!uuid.test(reportId))return
   await openProjectFromEntry(projectId,showMaterials.value?'assistant':'alerts',reportId)
 }
-async function openProjectFromEntry(projectId:string,source:'appointments'|'alerts'|'assistant',reportId?:string){
+async function openProjectQuestion(projectId:string,question:AssistantQuestion){
+  if(uuid.test(projectId))await openProjectFromEntry(projectId,'assistant',undefined,question)
+}
+async function openProjectFromEntry(projectId:string,source:'appointments'|'alerts'|'assistant',reportId?:string,question?:AssistantQuestion){
   if(projectLoading.value)return
   const epoch=materialEpoch
   const session=csrf.value
@@ -281,6 +287,7 @@ async function openProjectFromEntry(projectId:string,source:'appointments'|'aler
     if(!data.materialsVisible)throw new Error('当前账号已无权读取该项目资料。')
     materials(data.project)
     if(reportId){focusReportId.value=reportId;materialTab.value='reports'}
+    else if(question){focusAssistantQuestion.value=question;materialTab.value='assistant'}
   }catch(e){if(sameContext())(source==='assistant'?projectError:error).value=message(e)}
   finally{if(epoch===materialEpoch)projectLoading.value=false}
 }
@@ -482,7 +489,9 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
       </ProjectPane>
       <ProjectPane name="assistant" :active="materialTab==='assistant'">
         <ProjectAssistant v-if="materialTab==='assistant'" :project-id="materialProject.projectId" :project-label="`${materialProject.code} · ${materialProject.name}`"
-          :revision="materialProject.revision" :api="api" @navigate="selectDestination" @draft-lesson="draftLessonFromAssistant" @open-report="openPortfolioReport"/>
+          :project-code="materialProject.code" :initial-question="focusAssistantQuestion"
+          :revision="materialProject.revision" :api="api" @navigate="selectDestination" @draft-lesson="draftLessonFromAssistant"
+          @open-report="openPortfolioReport" @open-project-question="openProjectQuestion"/>
       </ProjectPane>
     </div>
     <el-dialog v-model="dialog" :title="title" width="min(560px,94vw)" align-center

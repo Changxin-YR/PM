@@ -549,11 +549,14 @@ def execute_decision(c, a, p, review, frozen, intent, command, scored, round_no,
     require_complete_roster(p, review, frozen, scored)
     digest = score_hash(frozen, round_no, scored)
     signoffs = [i for i in confirmation_rows(c, review) if i.score_hash == digest]
-    if command.verdict in PASS and calculated:
+    # A decided low charter score must take the bounded rejection/refiling route.
+    # A withdrawal remains available to repair an incomplete submission.
+    charter_rework = review.type == 'charter' and command.verdict in ('defer', 'redirect')
+    if (command.verdict in PASS or charter_rework) and calculated:
         reject = {'veto': 'CHARTER_SCORE_VETO', 'below_threshold': 'CHARTER_SCORE_BELOW_THRESHOLD', 'shortfall': 'FEASIBILITY_SHORTFALL'}
         if calculated.classification in reject:
             raise Failure(422, reject[calculated.classification], project_id=p.id)
-        if calculated.classification == 'fast_track':
+        if command.verdict in PASS and calculated.classification == 'fast_track':
             by_role = {i.role: i.confirmed_by for i in signoffs}
             if by_role.get('sponsor') != p.sponsor_id:
                 raise Failure(422, 'SPONSOR_CONFIRMATION_REQUIRED', project_id=p.id)

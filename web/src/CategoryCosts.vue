@@ -58,7 +58,7 @@ function variance(value?:string){
   return `${value.startsWith('-')?'-':''}${digits.slice(0,cut).replace(/^0+(?=\d)/,'')}.${digits.slice(cut)}%`
 }
 function label(category:Line['category']){
-  return category==='historical_uncategorized'?'历史未分类 / 未分配':directory[category]
+  return category==='historical_uncategorized'?'未分类实际 / 未分配计划':directory[category]
 }
 async function save(){
   if(!action.value)return

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref,watch} from 'vue'
+import {computed,ref,watch} from 'vue'
 import {CalendarDays,Check,ChevronDown,ChevronUp,GitMerge,History,Plus,RefreshCw,X} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 import ReportAnalysis from './ReportAnalysis.vue'
@@ -14,7 +14,7 @@ type Page={items:Fact[];total:number;page:number;pageSize:number;reportRevision:
 type Entry={revision:number;action:string;actorId:string;occurredAt:string;validationStatus:Status;trust:Trust;reason:string;evidenceRef?:string}
 type Log={items:Entry[];total:number;page:number;pageSize:number}
 type Mode='propose'|'verify'|'clarify'
-type ComparisonStatus='same'|'changed'|'current_unverified'|'no_previous_fact'|'scan_limited'
+type ComparisonStatus='same'|'changed'|'current_unverified'|'no_previous_fact'|'scan_limited'|'outside_reporting_week'
 type WeeklyComparison={status:ComparisonStatus;previousStart:string;previousEnd:string;
   previous?:{asOf:string;typedValue:string|number|boolean;quote:string;factRef:string;reportRef:string;evidenceRef?:string}}
 
@@ -22,6 +22,16 @@ const props=defineProps<{reportId:string;projectId:string;revision:number;submit
 const page=ref<Page>(), expanded=ref(props.initiallyExpanded??false), reading=ref(false), working=ref(false)
 const error=ref(''), notice=ref(''), mode=ref<Mode>(), selected=ref<Fact>(), trust=ref<Trust>('medium')
 const subject=ref(''), predicate=ref(''), value=ref(''), kind=ref('text'), quote=ref(''), at=ref(''), reason=ref('')
+const decimalValue=/^-?[0-9]{1,35}(?:\.[0-9]{1,18})?$/
+const unitValue=/^(-?[0-9]{1,35}(?:\.[0-9]{1,18})?)\s*(人天|工作日|天|小时|元|条|项|%|person-days?|days?|hours?)$/i
+const quotedAmount=computed(()=>{
+  if(kind.value!=='text')return undefined
+  const match=unitValue.exec(value.value.trim())
+  if(!match)return undefined
+  const [,amount,unit]=match
+  const mentions=quote.value.matchAll(/(?<![0-9.\-])(-?[0-9]+(?:\.[0-9]+)?)\s*(人天|工作日|天|小时|元|条|项|%|person-days?|days?|hours?)(?![a-z0-9])/gi)
+  return [...mentions].some(([,number,shownUnit])=>number===amount&&shownUnit.toLowerCase()===unit.toLowerCase())?amount:undefined
+})
 const evidence=ref<string[]>([]), historyFor=ref(''), log=ref<Log>(), logLoading=ref(false)
 const compareFor=ref(''),comparison=ref<WeeklyComparison>(),compareLoading=ref(false),compareError=ref('')
 const comparisonRefresh=ref(0)
@@ -30,6 +40,7 @@ let compareSeq=0
 const comparisonLabels:Record<ComparisonStatus,string>={
   same:'与上周同类事实一致',changed:'与上周同类事实相比有变化',current_unverified:'当前事实的原始来源未通过复核',
   no_previous_fact:'上周没有可读且可核验的同类事实',scan_limited:'上周记录超过查询上限，本次未确定可对照的同类事实',
+  outside_reporting_week:'事实的业务时点不在这份周报的报告周期内。',
 }
 const statusLabels:Record<Status,string>={candidate:'候选',verified:'已核验',disputed:'待澄清',rejected:'已驳回'}
 const trustLabels:Record<Trust,string>={low:'低',medium:'中',high:'高'}
@@ -101,7 +112,9 @@ async function submit(){
   const target=selected.value,operation=mode.value,scope=epoch
   let path=`reports/${props.reportId}/facts/proposals`,rev=page.value.reportRevision,payload:object
   if(operation==='propose'){
-    payload={subject:subject.value,predicate:predicate.value,typedValue:kind.value==='bool'?value.value==='true':value.value,
+    const trimmedValue=value.value.trim()
+    const typedValue=kind.value==='bool'?value.value==='true':decimalValue.test(trimmedValue)?trimmedValue:value.value
+    payload={subject:subject.value,predicate:predicate.value,typedValue,
       asOf:pickedAt?.local===at.value?pickedAt.iso:new Date(`${at.value}+08:00`).toISOString(),quote:quote.value,sourceRef:`report:${props.reportId}@${rev}`}
   }else{
     if(!target)return
@@ -154,6 +167,10 @@ watch(()=>[props.reportId,props.revision],()=>{
           </select></label>
           <label>值<select v-if="kind==='bool'" v-model="value" required :disabled="working"><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select>
             <input v-else v-model="value" required maxlength="3000" :disabled="working"></label>
+          <div v-if="quotedAmount!==undefined" class="fact-wide">
+            <el-button native-type="button" size="small" :disabled="working" @click="value=quotedAmount">采用数值 {{quotedAmount}}</el-button>
+            <span class="fact-muted"> 数值用于核验，单位和上下文保留在原话中。</span>
+          </div>
           <label class="fact-wide">原话<textarea v-model="quote" required rows="2" maxlength="3000" :disabled="working"/></label>
         </div>
         <template v-else-if="selected">

@@ -15,6 +15,7 @@ from . import schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import Result, Strict
 from .cost_categories import CATEGORY_KIND, Category, Kind
+from .evidence import lookup_for_integrity, require_verified_content
 from .identity import Failure, visible
 from .materials import finish, replay
 from .pagination import pg_offset
@@ -60,6 +61,7 @@ class Reason(Strict):
 
 class Verify(Reason):
     occurredAt: AwareDatetime | None = None
+    evidenceRef: Annotated[str, Field(pattern=r'^evidence:[0-9a-fA-F-]{36}$')] | None = None
 
 
 class WeeklyEffortCandidate(Strict):
@@ -147,11 +149,13 @@ def bucket(c,a,pid,kind,start,category=UNCATEGORIZED):
         created_by=a.person,is_current_baseline=False,budget=0,actual=0,forecast_remaining=0,baseline_version=1).returning(e.c.id))
 
 
-def receipt(c,a,op,key,rid,pid,sig,row,before=None):
+def receipt(c,a,op,key,rid,pid,sig,row,before=None,*,evidence_ref=None):
     out=item(row)
     refs = [f'cost-posting:{row.id}@{2 if row.status=="verified" else 1}']
     if _bound_weekly_posting(row):
         refs.append(f'report:{row.source_ref.removeprefix(WEEKLY_SOURCE_PREFIX)}')
+    if evidence_ref:
+        refs.append(evidence_ref)
     return finish(c,a,op,key,rid,pid,sig,Result[Posting](data=out,meta=meta(op,refs)),before)
 
 
@@ -386,7 +390,10 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
 
 def decide(auth,posting_id,command,expected,key,*,reverse):
     op='human_reverse_cost_posting' if reverse else 'human_verify_cost_posting'
-    sig=fingerprint([str(posting_id),expected,command.model_dump(mode='json')])
+    parameters=command.model_dump(mode='json')
+    if parameters.get('evidenceRef') is None:
+        parameters.pop('evidenceRef',None)
+    sig=fingerprint([str(posting_id),expected,parameters])
     def write(c,a,rid):
         if not finance(c,a): raise Failure(403,'FORBIDDEN')
         pid=c.scalar(sa.select(t.c.project_id).join(db.projects,db.projects.c.id==t.c.project_id).where(t.c.id==posting_id,visible(a)))
@@ -398,6 +405,7 @@ def decide(auth,posting_id,command,expected,key,*,reverse):
         if expected!=(2 if row.status=='verified' else 1): raise Failure(409,'VERSION_CONFLICT')
         reason=command.reason.strip()
         if len(reason)<4: raise Failure(422,'INVALID_REASON')
+        evidence_ref=None
         if reverse:
             if row.status!='verified' or row.amount_signed<=0: raise Failure(422,'INVALID_REVERSAL')
             if c.scalar(sa.select(t.c.id).where(t.c.posting_of_id==row.id).limit(1)): raise Failure(409,'REVERSAL_EXISTS')
@@ -414,11 +422,23 @@ def decide(auth,posting_id,command,expected,key,*,reverse):
             if when>now or when.astimezone(UTC).strftime('%Y-%m')!=row.period: raise Failure(422,'INVALID_OCCURRENCE')
             if not row.source_fingerprint: raise Failure(422,'SOURCE_REQUIRED')
             _check_weekly_verification(c, row, when, now)
+            if command.evidenceRef:
+                if row.posting_of_id:
+                    raise Failure(422,'REVERSAL_EVIDENCE_INHERITED')
+                try:
+                    evidence_id=UUID(command.evidenceRef.removeprefix('evidence:'))
+                except ValueError as exc:
+                    raise Failure(422,'INVALID_COST_EVIDENCE_REF') from exc
+                evidence=lookup_for_integrity(c,pid,evidence_id)
+                if (evidence.resource_type,evidence.resource_id)!=('cost_posting',row.id):
+                    raise Failure(422,'EVIDENCE_TARGET_MISMATCH')
+                require_verified_content(evidence)
+                evidence_ref=f'evidence:{evidence.id}'
             if c.scalar(sa.select(t.c.id).where(t.c.project_id==pid,t.c.type==row.type,t.c.status=='verified',t.c.source_fingerprint==row.source_fingerprint)):
                 raise Failure(409,'SOURCE_ALREADY_VERIFIED')
             stmt=t.update().where(t.c.id==row.id).values(verified_by=a.person,verified_at=now,verification_note=reason,occurred_at=when,status='verified')
         saved=c.execute(stmt.returning(t)).mappings().one()
-        return receipt(c,a,op,key,rid,pid,sig,saved,fingerprint(item(row).model_dump(mode='json')))
+        return receipt(c,a,op,key,rid,pid,sig,saved,fingerprint(item(row).model_dump(mode='json')),evidence_ref=evidence_ref)
     return run(auth,op,write)
 
 

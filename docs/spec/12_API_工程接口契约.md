@@ -173,3 +173,8 @@
 `GET /projects/{projectId}/cost-reconciliations?scope=categories` 读取类别对账签署基础。使用 `scope=categories` 提交时，独立来源 JSON 应包含 `schemaVersion: 2`，在现有金额、人天两条来源行分别提供 `categoryActuals`。该对象包含对应单位的每一类及 `historical_uncategorized`，值为带两位小数的净实际字符串，合计与 `netActual` 相符。原 `schemaVersion: 1` 和默认 `scope=totals` 继续用于合计对账。类别对账校验分类版本及适用计划，合计对账保留原依赖。
 
 见 [ADR 0023](../adr/0023-category-cost-versions.md)。
+
+## 十、原始 Lite 功能核对补充
+
+- `POST /api/v1/risks/{riskId}/escalate` 由当前风险负责人或该阶段有权管理台账的人员使用人工会话、CSRF、`Idempotency-Key` 和风险 `If-Match` 提交 `reason`。草稿阶段的台账管理者为发起人，其他阶段为现任 PM。只处理尚未关闭的现有普通风险，登记服务端阻塞起始时点和前后版本。关闭、接受与移交沿用独立核验路径。
+- `POST /api/v1/cost-postings/{postingId}/verify` 可选 `evidenceRef`，引用已经关联到该正向流水并通过独立附件核验的原件。服务在同一事务内核对项目、对象、核验状态和原件摘要，把附件引用记入本次回执和审计。已有的外部凭证引用和历史合法重放继续适用。

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {ref,watch} from 'vue'
-import {Check,FilePlus,FileText,Pencil,Plus,RefreshCw,Save,Send,Trash2,X} from 'lucide-vue-next'
+import {Check,Download,FilePlus,FileText,Pencil,Plus,RefreshCw,Save,Send,Trash2,X} from 'lucide-vue-next'
 import ReportFacts from './ReportFacts.vue'
 import WeeklyEffortPosting from './WeeklyEffortPosting.vue'
+import {weeklyReportDocument} from './weeklyReportPrint'
 
 type Kind='weekly'|'daily'
 type Status='draft'|'submitted'|'confirmed'
@@ -16,7 +17,7 @@ type Basis={asOf:string;ruleVersion:string;projectRevision:number;sourceHash:str
   verifiedPeriodPostingCount:number;omittedRequirements:number;omittedRisks:number;omittedVerifiedFacts:number;verifiedFacts:SourcedFact[];
   health:{health:string;dataTrust:string;timeLine?:string;costLine?:string;qualityLine?:string;requirementSatisfactionRate?:string;gaps:string[]}}
 type Report={reportId:string;projectId:string;type:Kind;period:string;periodStart:string;periodEnd:string;versionNo:number;revision:number;
-  status:Status;authorId:string;submittedAt?:string;confirmedAt?:string;structuredFields?:Fields;narrative?:string;
+  status:Status;authorId:string;submittedAt?:string;submittedBy?:string;confirmedAt?:string;confirmedBy?:string;structuredFields?:Fields;narrative?:string;
   isCurrent:boolean;isCurrentConfirmed:boolean;canEdit:boolean;canSubmit:boolean;canConfirm:boolean;contentHash?:string;
   legacyStructuredFields?:boolean;weeklyBasis?:Basis}
 type Editor={item?:Report;type:Kind;day:string;effort:string;fields:Record<Section,Entry[]>;narrative:string}
@@ -60,6 +61,41 @@ function target(row:Report){return `reports/${row.reportId}`}
 function sourceLabel(id?:string){return milestones.value.find(item=>item.milestoneId===id)?.name??id}
 function entryText(item:Entry){return typeof item.summary==='string'?item.summary:typeof item.name==='string'?item.name:typeof item.description==='string'?item.description:''}
 function evidenceRefs(item:Entry){return [...new Set([...(item.evidenceRefs??[]),...(item.evidenceRef?[item.evidenceRef]:[])])]}
+function publishedWeek(row:Report):row is Report & {confirmedAt:string;contentHash:string}{
+  return row.type==='weekly'&&row.status==='confirmed'&&row.revision>=2&&!!row.contentHash&&
+    !!row.submittedBy&&!!row.submittedAt&&!!row.confirmedBy&&!!row.confirmedAt&&Date.parse(row.submittedAt)<=Date.parse(row.confirmedAt)
+}
+function downloadWeeklyReport(row:Report){
+  if(!publishedWeek(row))return
+  const basis=row.weeklyBasis, health=basis?.health
+  const metrics=[
+    {label:'时间线',value:lamp(health?.timeLine??'unavailable')},
+    {label:'成本线',value:lamp(health?.costLine??'unavailable')},
+    {label:'质量线',value:lamp(health?.qualityLine??'unavailable')},
+    {label:'申报人天',value:row.structuredFields?.effort_person_days??'未填写'},
+    {label:'当周核验人天净额',value:basis?.verifiedPeriodPostingCount
+      ? `${basis.verifiedPeriodPersonDays}（${basis.verifiedPeriodPostingCount} 笔）` : basis ? '无核验流水' : '不可用'},
+    {label:'整体健康',value:lamp(health?.health??'unavailable')},
+  ]
+  const printableSections=sections.map(section=>({title:section.label,empty:section.empty,
+    entries:(row.structuredFields?.[section.key]??[]).map(entry=>{
+      const itemId=entry.milestoneId??entry.requirementId??entry.riskId
+      const claim=entry.claim==='completion'?'完工申报':entry.claim==='progress'?'进展申报':''
+      return [entryText(entry),claim,itemId].filter(Boolean).join(' · ')||'详见原报告条目'
+    })}))
+  const html=weeklyReportDocument({ period:row.period,start:row.periodStart,end:row.periodEnd,
+    version:row.versionNo,revision:row.revision,current:row.isCurrentConfirmed,confirmedAt:time(row.confirmedAt),
+    projectId:row.projectId,reportId:row.reportId,contentHash:row.contentHash,metrics,sections:printableSections,narrative:row.narrative,
+    basis:basis?{asOf:time(basis.asOf),ruleVersion:basis.ruleVersion,sourceHash:basis.sourceHash,
+      omitted:[basis.omittedRequirements?`需求 ${basis.omittedRequirements} 项`:'',basis.omittedRisks?`风险 ${basis.omittedRisks} 项`:'',
+        basis.omittedVerifiedFacts?`已核验 Fact ${basis.omittedVerifiedFacts} 项`:''].filter(Boolean)}:undefined,
+  })
+  const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}))
+  const link=document.createElement('a')
+  link.href=url;link.download=`项目周报-${row.period}-v${row.versionNo}.html`
+  link.hidden=true;document.body.append(link);link.click();link.remove()
+  window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
 function setRefs(item:Entry,refs:string[]){item.evidenceRefs=refs;delete item.evidenceRef}
 function evidenceOptions(item:Entry){
   const options=evidence.value.filter(file=>file.linkedResourceType==='milestone'&&file.linkedResourceId===item.milestoneId)
@@ -260,6 +296,7 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
             confirm-button-text="发布报告" cancel-button-text="取消" @confirm="publish(detail)">
             <template #reference><el-button type="primary" :disabled="reading" :loading="busy"><Check :size="15"/>确认并发布</el-button></template>
           </el-popconfirm>
+          <el-button v-if="publishedWeek(detail)" title="下载后可打印为 A4 一页" :disabled="busy||reading" @click="downloadWeeklyReport(detail)"><Download :size="15"/>下载一页周报</el-button>
           <el-button text title="关闭报告详情" aria-label="关闭报告详情" :disabled="busy||reading" @click="detail=null"><X :size="15"/></el-button>
         </div>
       </div>

@@ -14,6 +14,39 @@ from pmo.projects import fingerprint
 from test_reviews import data, headers, team as team
 
 
+def test_money_verification_binds_the_reviewed_attachment_to_the_posting(live, team):
+    from test_evidence import binary
+
+    engine = live[0]
+    pid, people, users, _ = team
+    pm, reviewer, finance = (users[role] for role in ('pm', 'reviewer', 'sponsor'))
+    with engine.begin() as conn:
+        account = conn.scalar(sa.select(db.persons.c.user_id).where(db.persons.c.id == people['sponsor']))
+        conn.execute(db.user_roles.insert().values(user_id=account, role='finance_verifier'))
+    path = f'projects/{pid}/cost-postings'
+    claim = {'type':'money', 'amount':'35.00', 'period':'2020-02'}
+    first = data(pm.post(path, headers=headers(1), json={**claim, 'sourceRef':'Invoice A'}))['postingId']
+    second = data(pm.post(path, headers=headers(1), json={**claim, 'sourceRef':'Invoice B'}))['postingId']
+    attachment = data(pm.post(f'projects/{pid}/evidence', headers=headers(1),
+        data={'linkedResourceType':'cost_posting','linkedResourceId':first},
+        files={'file':('invoice.pdf',binary('pdf'),'application/pdf')}))
+    ref = attachment['evidenceRef']
+    command = {'reason':'Compared with verified invoice','occurredAt':'2020-02-15T01:00:00Z','evidenceRef':ref}
+    verify_first = f'cost-postings/{first}/verify'
+    assert finance.post(verify_first, headers=headers(1), json=command).json()['code']=='VERIFIED_EVIDENCE_REQUIRED'
+    data(reviewer.post(f"evidence/{attachment['evidenceId']}/verify", headers=headers(1),
+        json={'sha256':attachment['sha256'],'reason':'Checked the invoice original'}))
+    mismatch=finance.post(f'cost-postings/{second}/verify', headers=headers(1), json=command)
+    assert (mismatch.status_code,mismatch.json()['code'])==(422,'EVIDENCE_TARGET_MISMATCH')
+    key=headers(1)
+    response=finance.post(verify_first, headers=key, json=command)
+    assert data(response)['status']=='verified' and ref in response.json()['meta']['sourceRefs']
+    assert finance.post(verify_first,headers=key,json=command).json()==response.json()
+    with engine.connect() as conn:
+        receipt=conn.execute(sa.select(audit).where(audit.c.request_id==response.headers['X-Request-ID'])).mappings().one()
+    assert receipt['source_refs']==[f'cost-posting:{first}@2',ref]
+
+
 @pytest.mark.parametrize('kind', ['money', 'effort'])
 def test_verified_cost_cycle(live,actor,kind):
     engine,api,port,_=live

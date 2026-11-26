@@ -76,7 +76,7 @@ HUMAN_ONLY_OPERATIONS = frozenset({
         'human_assistant_charter','human_assistant_process','human_assistant_closing','human_assistant_ledger','human_assistant_preview',
         'admin_members_list','admin_users_list','admin_user_update_status',
         'admin_user_invite','admin_user_invitation_list','admin_user_invitation_revoke',
-        'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get',
+        'human_risk_close','human_risk_handoff','human_risk_handoff_acceptance','human_risk_resolution_get','human_risk_escalate',
         'human_execute_transition','human_approval_inbox','human_decide_approval','human_charter_resubmit',
         'human_approval_queue',
         'human_termination_confirmation_inbox','human_termination_confirm',

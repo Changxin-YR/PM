@@ -86,6 +86,52 @@ class Materials:
         return refs
 
 
+def _charter_value(value):
+    if isinstance(value, str):
+        return ' '.join(value.split())
+    if isinstance(value, list):
+        return [{key: ' '.join(text.split()) for key, text in risk.items()} for risk in value]
+    return value
+
+
+def charter_refiling(c, p, charter, out):
+    reopened = c.execute(sa.text('''SELECT t.approval_request_id, i.reason, d.id AS rejection_id,
+            snap.review_id, snap.snapshot_hash, snap.materials
+        FROM project_stage_transitions t
+        LEFT JOIN approval_requests q ON q.id=t.approval_request_id AND q.project_id=t.project_id
+            AND q.action='project_stage_transition' AND q.status='applied'
+        LEFT JOIN project_transition_intents i ON i.approval_id=q.id AND i.from_stage=t.from_stage AND i.to_stage=t.to_stage
+        LEFT JOIN decisions d ON d.id::text=i.basis->'rejection'->>'id' AND d.project_id=t.project_id AND d.option='reject'
+        LEFT JOIN reviews r ON r.id=d.review_id AND r.project_id=t.project_id AND r.type='charter'
+        LEFT JOIN review_decision_snapshots decision ON decision.decision_id=d.id AND decision.review_id=r.id
+        LEFT JOIN review_submission_snapshots snap ON snap.review_id=r.id AND snap.snapshot_hash=decision.material_hash
+        WHERE t.project_id=:project AND t.from_stage='rejected' AND t.to_stage='drafting'
+        ORDER BY t.to_revision DESC LIMIT 1'''), {'project': p.id}).mappings().one_or_none()
+    if reopened is None:
+        return
+    if (not reopened.reason or not reopened.materials
+            or fingerprint(reopened.materials) != reopened.snapshot_hash or len(reopened.materials.get('charter', [])) != 1):
+        out.reject('CHARTER_REFILING_BASIS_REQUIRED', '重报需要可核验的原评审材料和重提说明。')
+        return
+    previous, = reopened.materials['charter']
+    prior_ref = f"charter:{previous['id']}@{previous['revision']}"
+    refs = [f'approval:{reopened.approval_request_id}', f'decision:{reopened.rejection_id}',
+            f'review-snapshot:{reopened.review_id}', prior_ref]
+    revised = snapshot(charter) if charter is not None and str(charter.id) == previous['id'] else {}
+    changed = [
+        key for key, column in COLUMNS.items()
+        if _charter_value(previous[column]) != _charter_value(revised[column])
+    ] if revised and revised['revision'] > previous['revision'] else []
+    if not changed:
+        out.reject('CHARTER_REFILING_CHANGES_REQUIRED', '请根据重提说明更新立项卡实质内容后再送审。', refs)
+        return
+    out.content['charterRefiling'] = {'previousCharterRef': prior_ref,
+        'currentCharterRef': f'charter:{charter.id}@{charter.revision}', 'changedFields': changed,
+        'rejectionId': str(reopened.rejection_id), 'resubmissionId': str(reopened.approval_request_id),
+        'reason': reopened.reason}
+    out.refs.extend(refs)
+
+
 def charter_material(c, a, p, out):
     t = db.charters
     row = c.execute(sa.select(t).where(t.c.project_id == p.id)).mappings().one_or_none()
@@ -102,6 +148,7 @@ def charter_material(c, a, p, out):
                 Fields.model_validate({key: value})
             except ValidationError:
                 out.reject('CHARTER_FIELD_REQUIRED', f'立项卡字段缺失或无效：{key}。', refs)
+    charter_refiling(c, p, row, out)
     from .review_calibration import freeze
     freeze(c, a, p, row, out)
 

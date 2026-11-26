@@ -164,6 +164,8 @@ def test_browser_and_stdio_same_snapshot_and_private_resources(live, team):
 
 
 def test_browser_read_only_project_assistant_without_model(live, team, tmp_path):
+    from test_reviews import member
+
     _, requirement, _ = execution_fixture(live, team)
     project_id, people, users, _ = team
     with live[0].begin() as c:
@@ -171,10 +173,28 @@ def test_browser_read_only_project_assistant_without_model(live, team, tmp_path)
             target_id=requirement, created_by=people['pm'], requested_by=people['pm'], status='withdrawn',
             base_revision=1, before={'priority':'P0'}, after={'priority':'P1'},
             reason='Synthetic requirement priority history').returning(db.change_entries.c.id))
+        org = c.scalar(sa.select(db.projects.c.org_id).where(db.projects.c.id == project_id))
+        other_code = f'ASSISTANT-CROSS-{uuid4().hex[:8]}'
+        other_name = '合成助理范围项目'
+        other = c.scalar(db.projects.insert().values(org_id=org, code=other_code, name=other_name,
+            stage='drafting', revision=1, created_by=people['pm'], initiator_id=people['pm'], pm_id=people['pm'])
+            .returning(db.projects.c.id))
+        member(c, other, people['pm'], people['initiator'], 'pm')
+        duplicate_name = '同名合成助理项目'
+        for _ in range(2):
+            duplicate = c.scalar(db.projects.insert().values(org_id=org, code=uuid4().hex, name=duplicate_name,
+                stage='drafting', revision=1, created_by=people['pm'], initiator_id=people['pm'], pm_id=people['pm'])
+                .returning(db.projects.c.id))
+            member(c, duplicate, people['pm'], people['initiator'], 'pm')
+        hidden_code = f'ASSISTANT-HIDDEN-{uuid4().hex[:8]}'
+        c.execute(db.projects.insert().values(org_id=org, code=hidden_code, name='不可读合成助理项目',
+            stage='drafting', revision=1, created_by=people['outsider'], initiator_id=people['outsider']))
     with vite(live[2]) as (root, url):
         run_browser(root, url, 'assistant', {'PMO_TEST_SESSIONS': json.dumps(browser_sessions(users, 'pm')),
             'PMO_TEST_ASSISTANT_HISTORY': json.dumps({'projectId': project_id, 'requirementId': requirement,
-                'changeId': str(change_id)}), 'PMO_TEST_ASSISTANT_SCREENSHOT': str(tmp_path / 'assistant-question.png')})
+                'changeId': str(change_id), 'other': {'id': str(other), 'code': other_code, 'name': other_name},
+                'duplicateName': duplicate_name, 'hiddenCode': hidden_code}),
+            'PMO_TEST_ASSISTANT_SCREENSHOT': str(tmp_path / 'assistant-question.png')})
 
 
 def test_browser_separates_model_previews_from_official_results(live, team, tmp_path):
@@ -273,7 +293,7 @@ def test_browser_report_analysis(live, team, model_on, tmp_path):
     from test_database_roles import serve
     from test_facts import submit
     from test_report_analysis import answer, gateway, NARRATIVE
-    from test_reports import data
+    from test_reports import data, headers
 
     engine, _, port, env = live
     _, _, users, _ = team
@@ -283,7 +303,7 @@ def test_browser_report_analysis(live, team, model_on, tmp_path):
               'PMO_TEST_MODEL':str(int(model_on))}
     if model_on:
         scope = {'PMO_REPORT_ANALYSIS': '1', 'PMO_REPORT_MODEL_PROJECTS': project.removeprefix('projects/')}
-        with gateway(answer()) as (model_url, calls), serve(engine.url, tmp_path,
+        with gateway(answer(typedValue='2.50 days')) as (model_url, calls), serve(engine.url, tmp_path,
                  extra_env=scope) as api, vite(api.base_url.port) as (root, url):
             process = subprocess.Popen([sys.executable, '-m', 'pmo.report_analysis_worker', '--watch'],
                  env={**env, **scope, 'PMO_REPORT_MODEL_URL':model_url,'PMO_REPORT_MODEL_TOKEN':''})
@@ -292,6 +312,11 @@ def test_browser_report_analysis(live, team, model_on, tmp_path):
             finally:
                 process.terminate(); process.wait(timeout=10)
             assert len(calls)==1
+            reviewer = users['reviewer']
+            fact, = data(reviewer.get(f"reports/{report['reportId']}/facts"))['items']
+            result = data(reviewer.post(f"facts/{fact['factId']}/verify", headers=headers(fact['revision']),
+                        json={'trust':'medium','evidenceRef':fact['sourceRef']}))
+            assert result['validationStatus']=='verified' and result['trust']=='medium'
     else:
         with vite(port) as (root, url):
             run_browser(root, url, 'analysis', params)

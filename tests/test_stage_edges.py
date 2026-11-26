@@ -157,7 +157,7 @@ def test_normal_and_rework_edges_have_role_bound_receipts(live, team):
     f = StageChecks(live, team)
     prepare_charter(f.users['initiator'], f.path)
     charter = f.submit('charter', ('drafting', 'charter_review'), actor='initiator')
-    score(f.reviewer, charter, [3] * 4)
+    score(f.reviewer, charter, [4] * 4)
     f.decide(charter, ('charter_review', 'drafting'), 'redirect', denied='initiator')
     charter = f.submit('charter', ('drafting', 'charter_review'), actor='pm', denied='sponsor')
     score(f.reviewer, charter, [4] * 4)
@@ -204,6 +204,7 @@ def test_formal_rejection_and_one_retry_have_role_bound_receipts(live, team):
     f.decide(chart, ('charter_review', 'rejected'), 'reject', denied='initiator')
     f.move(('rejected', 'drafting'), actor='initiator', denied='reviewer', path=f.path + '/resubmit',
            operation='human_charter_resubmit', body={'reason': 'A revised proposal will address the veto.'})
+    prepare_charter(f.users['initiator'], f.path, fields={'valueProp': 'Validate the revised value with a separate paid test.'})
     chart = f.submit('charter', ('drafting', 'charter_review'), actor='initiator')
     score(f.reviewer, chart, [2] * 4)
     f.decide(chart, ('charter_review', 'rejected'), 'reject', denied='initiator')

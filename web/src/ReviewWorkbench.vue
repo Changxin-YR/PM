@@ -69,6 +69,8 @@ let conditionId=0,lastAttempt:Attempt|undefined
 const busy=computed(()=>loading.value||saving.value)
 const available=computed(()=>actions.filter(action=>view.value?.[action.flag]))
 const current=computed(()=>available.value.find(action=>action.id===selected.value))
+const charterRejectOnly=computed(()=>view.value?.review.type==='charter'&&
+  (view.value.assessment?.classification==='veto'||view.value.assessment?.classification==='below_threshold'))
 const materialRefs=computed(()=>Array.from(new Set(view.value?.materialRefs??[])))
 const workDisabled=computed(()=>busy.value||readFailed.value||!!retry.value||!!meeting.value?.navigationLocked)
 const navigationLocked=computed(()=>saving.value||!!retry.value||!!meeting.value?.navigationLocked)
@@ -163,6 +165,7 @@ const command=computed(()=>{
   if(!validReason(reason.value))return null
   if(action.id!=='decide')return {reason:reason.value.trim()}
   if(!verdict.value||!data.approvalRequestId)return null
+  if(charterRejectOnly.value&&verdict.value!=='reject')return null
   const base={verdict:verdict.value,rationale:reason.value.trim(),approvalRequestId:data.approvalRequestId}
   if(data.review.type==='closing'){
     if(verdict.value==='conditional_pass'&&!data.requirementException||verdict.value==='pass'&&data.requirementException)return null
@@ -326,8 +329,10 @@ async function submit(previous?:Attempt){
               <label>裁决<select v-model="verdict" aria-label="裁决" required @change="changeVerdict">
                 <option value="" disabled>请选择裁决</option>
                 <option v-for="(label,option) in verdicts" :key="option" :value="option"
-                  :disabled="view.review.type==='closing'&&((option==='conditional_pass'&&!view.requirementException)||(option==='pass'&&!!view.requirementException))">{{label}}</option>
+                  :disabled="(charterRejectOnly&&option!=='reject')||
+                    (view.review.type==='closing'&&((option==='conditional_pass'&&!view.requirementException)||(option==='pass'&&!!view.requirementException)))">{{label}}</option>
               </select></label>
+              <p v-if="charterRejectOnly" class="meta">当前评分触发否决或低于 3.2。请选择拒绝，发起人可按规定重提修订后的立项卡。</p>
               <label>裁决理由<textarea v-model="reason" rows="3" required minlength="4" maxlength="1500"/></label>
               <template v-if="verdict==='conditional_pass'&&view.review.type!=='closing'">
                 <fieldset v-for="(condition,index) in conditions" :key="condition.id" class="form-block">

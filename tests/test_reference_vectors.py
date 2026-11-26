@@ -227,7 +227,8 @@ def test_state(case, live, team):
     else:
         assert name == 'rejected_second_resubmit_forbidden' and case['resubmitsAlreadyUsed'] == 1
         for attempt in (1, 2):
-            review = start_charter(pid, users)
+            revised = {'valueProp': 'Test the commercial assumptions with an independent customer.'} if attempt == 2 else None
+            review = start_charter(pid, users, fields=revised)
             score(reviewer, review, [2] * 4)
             assert data(decide(reviewer, review, verdict='reject'))['decision']['stage'] == case['fromState']
             result = owner.post(path + '/resubmit', headers=headers(stage(owner, path)['revision']),

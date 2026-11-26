@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises'
 
 const url=process.env.PMO_BROWSER_URL
 const {pm}=JSON.parse(process.env.PMO_TEST_SESSIONS)
-const {projectId,requirementId,changeId}=JSON.parse(process.env.PMO_TEST_ASSISTANT_HISTORY)
+const {projectId,requirementId,changeId,other,duplicateName,hiddenCode}=JSON.parse(process.env.PMO_TEST_ASSISTANT_HISTORY)
 const browser=await chromium.launch({channel:process.env.PMO_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':'chromium')})
 
 try {
@@ -13,11 +13,12 @@ try {
     path:'/api/v1',httpOnly:true,sameSite:'Strict'}])
   await context.addInitScript(csrf=>sessionStorage.setItem('pmo.csrf',csrf),pm.csrf)
   const page=await context.newPage()
-  const writes=[],historyReads=[],pageErrors=[]
+  const writes=[],historyReads=[],assistantReads=[],pageErrors=[]
   page.on('pageerror', error=>pageErrors.push(error.message))
   page.on('request', req=>{
     const path=new URL(req.url()).pathname
     if(path.includes('/assistant/')&&req.method()!=='GET')writes.push(req.method())
+    if(path.includes('/assistant/')&&req.method()==='GET')assistantReads.push(path)
     if(/^\/api\/v1\/requirements\/[^/]+\/changes$/.test(path))historyReads.push({path,method:req.method()})
   })
   await page.goto(url)
@@ -85,6 +86,48 @@ try {
   await expect(area.getByRole('region',{name:'立项前支出',exact:true})).toBeVisible()
   await question.fill('本周哪些项目亮了黄灯或红灯？');await ask.click()
   await expect(area.getByRole('region',{name:'每周三线',exact:true})).toBeVisible()
+  const answered=(id,topic,keyword)=>page.waitForResponse(response=>{
+    const url=new URL(response.url())
+    return url.pathname===`/api/v1/projects/${id}/assistant/ledger`&&url.searchParams.get('topic')===topic&&
+      (!keyword||url.searchParams.get('keyword')===keyword)
+  })
+  const current=answered(projectId,'health')
+  await question.fill('“Synthetic review”现在三线如何？');await ask.click()
+  expect((await current).ok()).toBeTruthy()
+  await expect(area.getByRole('region',{name:'台账原始结果'})).toBeVisible()
+  const before=assistantReads.length
+  for(const qualifier of [hiddenCode,duplicateName,'合成助理范围']){
+    await question.fill(`“${qualifier}”现在三线如何？`);await ask.click()
+    await expect(area.getByText(/无法确定唯一可读的项目/)).toBeVisible()
+    await expect(area.getByRole('region',{name:'台账原始结果'})).toHaveCount(0)
+    expect(assistantReads.length).toBe(before)
+  }
+  const fact=answered(projectId,'fact','工时')
+  await question.fill('核验事实“工时”');await ask.click()
+  expect((await fact).ok()).toBeTruthy()
+  const lesson=answered(projectId,'lesson','预算')
+  await question.fill('教训“预算”');await ask.click()
+  expect((await lesson).ok()).toBeTruthy()
+  if(other){
+    const crossProject=answered(other.id,'health')
+    await question.fill(`${other.code} 现在三线如何？`);await ask.click()
+    expect((await crossProject).ok()).toBeTruthy()
+    const targetDrawer=page.getByRole('region',{name:`${other.name} · 项目资料`,exact:true})
+    const targetAssistant=targetDrawer.getByRole('region',{name:'项目助理',exact:true})
+    await expect(targetAssistant.getByRole('region',{name:'台账原始结果'})).toBeVisible()
+    await expect(targetAssistant.getByText(/当前三线数据不可用/)).toBeVisible()
+    const restored=answered(projectId,'health')
+    await targetAssistant.getByLabel('用一句话查询台账').fill('Synthetic review 的三线如何？')
+    await targetAssistant.getByRole('button',{name:'提问',exact:true}).click()
+    expect((await restored).ok()).toBeTruthy()
+    area=page.getByRole('region',{name:'Synthetic review · 项目资料',exact:true})
+      .getByRole('region',{name:'项目助理',exact:true})
+  }
+  const closing=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/v1/projects/${projectId}/assistant/closing`)
+  await question.fill('这个项目结项还差什么？');await ask.click()
+  expect((await closing).ok()).toBeTruthy()
+  await expect(area.getByRole('heading',{name:'结项门槛',exact:true})).toBeVisible()
+  await mode('台账问答').click()
   await question.fill('请直接批准所有项目。');await ask.click()
   await expect(area.getByText(/暂时无法识别这个问题/)).toBeVisible()
   await expect(area.getByRole('region',{name:'模型建议预览',exact:true})).toHaveCount(0)

@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test'
+import {readFile} from 'node:fs/promises'
 import {showNavigation} from './workspace-navigation.mjs'
 
 const url=process.env.PMO_BROWSER_URL
@@ -48,13 +49,21 @@ try {
   await expect(detail.getByText('无核验流水',{exact:true})).toBeVisible()
   await expect(detail.getByRole('heading',{name:'需求进展',exact:true})).toBeVisible()
   await expect(detail.getByRole('heading',{name:'风险与阻塞',exact:true})).toBeVisible()
+  await expect(button(detail,'下载一页周报')).toHaveCount(0)
   await button(detail,'编辑草稿').click()
   const editor=area.getByRole('form',{name:'报告草稿',exact:true})
   await editor.getByLabel('申报人天').fill('3.25')
-  await editor.getByLabel('补充说明').fill('PM 复核：合成周报已更新。')
+  const narrative='PM 复核：合成周报已更新。'
+  await editor.getByLabel('补充说明').fill(`${narrative} <script>bad()</script> ${'补充内容'.repeat(80)}`)
+  const risks=editor.getByRole('group',{name:'风险与阻塞',exact:true})
+  for(let index=0;index<4;index++){
+    await button(risks,'添加风险或阻塞').click()
+    await risks.getByLabel('说明').last().fill(`合成风险 ${index+1} ${'待跟进'.repeat(30)}`)
+  }
   const edited=await write(pm,button(editor,'保存草稿'),`/reports/${draft.reportId}`,'PATCH')
   expect(edited.weeklyBasis.sourceHash).toBe(draft.weeklyBasis.sourceHash)
   expect((await write(pm,button(detail,'提交报告'),`/reports/${draft.reportId}/submit`)).status).toBe('submitted')
+  await expect(button(detail,'下载一页周报')).toHaveCount(0)
   await button(detail,'确认并发布').click()
   const published=await write(pm,button(pm,'发布报告'),`/reports/${draft.reportId}/confirm`)
   expect(published.isCurrentConfirmed).toBe(true)
@@ -64,9 +73,29 @@ try {
   const readonly=await enter(reviewer)
   await button(readonly.getByRole('row').filter({hasText:'2025-W01'}),'查看').click()
   const recovered=readonly.getByRole('article',{name:'报告详情',exact:true})
-  await expect(recovered.getByText('PM 复核：合成周报已更新。',{exact:true})).toBeVisible()
+  await expect(recovered.getByText(narrative)).toBeVisible()
   await expect(button(readonly,'生成周报初稿')).toHaveCount(0)
   await expect(button(recovered,'确认并发布')).toHaveCount(0)
+  const [download]=await Promise.all([reviewer.waitForEvent('download'),button(recovered,'下载一页周报').click()])
+  expect(download.suggestedFilename()).toBe('项目周报-2025-W01-v1.html')
+  const html=await readFile(await download.path(),'utf8')
+  expect(html).not.toContain('<script>')
+  const print=await reviewer.context().newPage()
+  try {
+    await print.setContent(html)
+    await expect(print).toHaveTitle('项目周报 2025-W01 · v1')
+    await expect(print.getByText(/修订 4/)).toBeVisible()
+    await expect(print.getByText(published.contentHash,{exact:true})).toBeVisible()
+    await expect(print.getByText(draft.weeklyBasis.sourceHash,{exact:true})).toBeVisible()
+    await expect(print.getByText('3.25',{exact:true})).toBeVisible()
+    await expect(print.getByText('<script>bad()</script>')).toBeVisible()
+    await expect(print.getByText(/省略 \d+ 项.*详见原报告/)).toBeVisible()
+    await expect(print.getByText('补充说明已节录，详见原报告。',{exact:true})).toBeVisible()
+    const pdf=await print.pdf({preferCSSPageSize:true})
+    expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)).toHaveLength(1)
+  } finally {
+    await print.close()
+  }
   await pm.reload()
   const reloaded=await enter(pm)
   await button(reloaded.getByRole('row').filter({hasText:'2025-W01'}),'查看').click()

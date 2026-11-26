@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {onMounted,ref} from 'vue'
 import {Check,Plus,RefreshCw,Undo2} from 'lucide-vue-next'
+import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 type Kind='money'|'effort'
 const categories={
   money:{procurement:'外采',travel:'差旅',cloud:'云资源',allocation:'分摊'},
@@ -13,17 +14,21 @@ const props=defineProps<{projectId:string;api:(p:string,o?:RequestInit)=>Promise
 const emit=defineEmits<{changed:[]}>()
 const path=`projects/${props.projectId}/cost-postings`,items=ref<Row[]>([]),page=ref(1),total=ref(0),can=ref(false),busy=ref(false),error=ref('')
 const action=ref<''|Action>(''),row=ref<Row|null>(null),kind=ref<Kind>('money'),category=ref(''),filter=ref(''),amount=ref(''),period=ref(''),source=ref(''),reason=ref(''),when=ref('')
+const evidence=ref<string[]>([]),showEvidence=ref(false)
 let key='',signature=''
 const workflowErrors:Record<string,string>={
  WEEKLY_EFFORT_REQUIRES_CURRENT_PUBLICATION:'此凭证对应的周报版本已变化，请核对最新发布周报。',
  WEEKLY_EFFORT_OCCURRENCE_OUTSIDE_WEEK:'实际发生时间须在来源周报的北京时间报告周内。',
  WEEKLY_EFFORT_BALANCE_CHANGED:'当周已核验净人天已变化，请联系项目经理按最新差额提报。',
  WEEKLY_EFFORT_ALREADY_VERIFIED:'该周报版本已有核验凭证。',
+ EVIDENCE_TARGET_MISMATCH:'所选附件未关联这条成本凭证。',
+ VERIFIED_EVIDENCE_REQUIRED:'请先独立核验该凭证附件。',
+ EVIDENCE_INTEGRITY_FAILED:'附件内容校验失败，请核对原件。',
 }
 async function load(n=page.value){const params=new URLSearchParams({page:String(n)});if(filter.value)params.set('category',filter.value)
  const {data}=await props.api(`${path}?${params}`);items.value=data.items;total.value=data.total;page.value=n;can.value=data.canPropose}
 async function refresh(n=page.value){busy.value=true;error.value='';try{await load(n)}catch(e){error.value=String(e);can.value=false;items.value=[]}finally{busy.value=false}}
-function open(mode:Action,r:Row|null=null){action.value=mode;row.value=r;kind.value=r?.type??'money';category.value='';amount.value='';period.value='';source.value='';reason.value='';when.value='';error.value='';key=''}
+function open(mode:Action,r:Row|null=null){action.value=mode;row.value=r;kind.value=r?.type??'money';category.value='';amount.value='';period.value='';source.value='';reason.value='';when.value='';evidence.value=[];showEvidence.value=false;error.value='';key=''}
 function destination(row:Row|null,mode:Action){
   if(!row)return category.value?`${path}/categorized`:path
   const classification=`${path}/${row.postingId}/classification`
@@ -31,7 +36,7 @@ function destination(row:Row|null,mode:Action){
   if(mode==='verifyClassification')return `${classification}/${row.pendingClassificationId}/verify`
   return `cost-postings/${row.postingId}/${mode}`
 }
-async function save(){const a=action.value;if(!a)return;busy.value=true;error.value='';try{const r=row.value,body=JSON.stringify(a==='propose'?{type:kind.value,amount:amount.value,period:period.value,sourceRef:source.value.trim(),...(category.value?{category:category.value}:{})}:{reason:reason.value.trim(),...(a==='verify'&&!r?.postingOfId?{occurredAt:when.value+':00Z'}:{}),...(a==='classify'?{category:category.value}:{})}),target=destination(r,a),sig=target+body+(r?.revision??0)
+async function save(){const a=action.value;if(!a)return;busy.value=true;error.value='';try{const r=row.value,body=JSON.stringify(a==='propose'?{type:kind.value,amount:amount.value,period:period.value,sourceRef:source.value.trim(),...(category.value?{category:category.value}:{})}:{reason:reason.value.trim(),...(a==='verify'&&!r?.postingOfId?{occurredAt:when.value+':00Z',...(evidence.value[0]?{evidenceRef:evidence.value[0]}:{})}:{}),...(a==='classify'?{category:category.value}:{})}),target=destination(r,a),sig=target+body+(r?.revision??0)
  if(!key||sig!==signature){key=crypto.randomUUID();signature=sig}
  await props.api(target,{method:'POST',body,headers:{'Idempotency-Key':key,...(r?{'If-Match':String(r.revision)}:{})}});action.value='';await load(1);emit('changed')
  }catch(e){const message=e instanceof Error?e.message:String(e);error.value=Object.entries(workflowErrors).find(([code])=>message.includes(code))?.[1]??message}finally{busy.value=false}}
@@ -62,6 +67,11 @@ onMounted(()=>refresh(1))
 <label v-if="action==='classify'">补录类别<select v-model="category" required><option value="">请选择</option>
   <option v-for="(label,key) in categories[kind]" :key="key" :value="key">{{label}}</option></select></label>
 <p v-if="action==='verifyClassification'&&row">申请分类 {{pendingName(row)}} · {{row.pendingClassificationReason}}</p>
+<template v-if="action==='verify'&&row?.type==='money'&&!row.postingOfId">
+  <el-button v-if="!showEvidence" native-type="button" :disabled="busy" @click="showEvidence=true">选择已核验凭证附件</el-button>
+  <ScopedEvidencePicker v-else v-model="evidence" :project-id="projectId" resource-type="cost_posting" :resource-id="row.postingId"
+    label="发票或付款凭证" :api="api" :disabled="busy"/>
+</template>
 <label v-if="action==='verify'&&!row?.postingOfId">实际发生时间（UTC）<input v-model="when" type="datetime-local" required></label><label>{{reasonLabels[action]}}<textarea v-model="reason" minlength="4" maxlength="2000" required/></label></template>
 <div class="actions"><el-button :disabled="busy" @click="action=''">取消</el-button><el-button type="primary" native-type="submit" :loading="busy"><Check :size="15"/>{{actionLabels[action]}}</el-button></div></form>
 <el-table :data="items" row-key="postingId" empty-text="暂无成本凭证" v-loading="busy"><el-table-column type="expand"><template #default="{row:r}"><dl><dt>凭证编号</dt><dd>{{r.postingId}}</dd><template v-if="r.postingOfId"><dt>原凭证</dt><dd>{{r.postingOfId}}</dd><dt>冲销原因</dt><dd>{{r.reversalReason}}</dd></template><template v-if="r.occurredAt"><dt>发生时间</dt><dd>{{r.occurredAt}}</dd></template><template v-if="r.verificationNote"><dt>核验说明</dt><dd>{{r.verificationNote}}</dd></template></dl></template></el-table-column>

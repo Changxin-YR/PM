@@ -355,16 +355,17 @@ def test_reviews_stdio_closed_dtos_and_explicit_initiator_replay(live, team):
     asyncio.run(scenario())
 
 
-def prepare_charter(owner, path):
+def prepare_charter(owner, path, *, fields=None):
     charter = data(owner.get(path + '/charter'))
-    data(owner.put(path + '/charter', headers=headers(charter['expectedRevision']), json={'fieldsCharter': CHARTER}))
+    return data(owner.put(path + '/charter', headers=headers(charter['expectedRevision']),
+                          json={'fieldsCharter': CHARTER if fields is None else fields}))
 
 
-def start_charter(pid, users):
+def start_charter(pid, users, *, fields=None):
     owner = users['initiator']
     path = f'projects/{pid}'
     old = data(owner.get(path))['project']
-    prepare_charter(owner, path)
+    prepare_charter(owner, path, fields=fields)
     review = data(owner.post(path + '/reviews', headers=headers(old['revision']), json={'reviewType': 'charter'}))
     return f"reviews/{review['reviewId']}"
 
@@ -394,6 +395,23 @@ def outcome(state, verdict='pass', **kwargs):
 def decide(client, path, **kwargs):
     state = bench(client, path)
     return client.post(path + '/decisions', headers=headers(state['review']['revision']), json=outcome(state, **kwargs))
+
+
+@pytest.mark.parametrize(('scores', 'denial'), (
+    ([1, 5, 5, 5], 'CHARTER_SCORE_VETO'),
+    ([3, 3, 3, 3], 'CHARTER_SCORE_BELOW_THRESHOLD'),
+))
+def test_low_charter_cannot_use_defer_or_redirect_to_reopen_draft(live, team, scores, denial):
+    pid, _, users, _ = team
+    reviewer = users['reviewer']
+    review = start_charter(pid, users)
+    score(reviewer, review, scores)
+    before = bench(reviewer, review)
+    for verdict in ('defer', 'redirect'):
+        denied = decide(reviewer, review, verdict=verdict)
+        assert (denied.status_code, denied.json()['code']) == (422, denial)
+        assert bench(reviewer, review) == before
+    assert data(decide(reviewer, review, verdict='reject'))['decision']['stage'] == 'rejected'
 
 
 @pytest.mark.parametrize('kind', ['charter', 'feasibility'])

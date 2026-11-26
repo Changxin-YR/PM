@@ -5,7 +5,7 @@ import {Download,RefreshCw,X} from 'lucide-vue-next'
 type Evidence={evidenceId:string;evidenceRef:string;projectId:string;originalName:string;mimeType:string;sizeBytes:number;
   status:string;linkedResourceType:string;linkedResourceId:string;description:string}
 type Page={items:Evidence[];page:number;total:number}
-const props=defineProps<{projectId:string;resourceType:'project'|'risk'|'requirement'|'report';resourceId?:string;resourceIds?:string[];label:string;
+const props=defineProps<{projectId:string;resourceType:'project'|'risk'|'requirement'|'report'|'cost_posting';resourceId?:string;resourceIds?:string[];label:string;
   api:(path:string,options?:RequestInit)=>Promise<any>;mimeType?:string;maxBytes?:number;limit?:number;disabled?:boolean}>()
 const selected=defineModel<string[]>({required:true})
 const page=ref(1),total=ref(0),pageSize=40,loading=ref(false),error=ref(''),rows=ref<Evidence[]>([])

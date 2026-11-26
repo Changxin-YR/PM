@@ -305,7 +305,21 @@ def test_termination_and_rejected_resubmission_use_separate_histories(live, team
     decision = initiator.post(project + '/resubmit', headers=h, json=changed)
     assert data(decision)['toStage'] == 'drafting'
     assert initiator.post(project + '/resubmit', headers=h, json=changed).json() == decision.json()
-    item = start_charter(pid, users)
+    charter = data(initiator.get(project + '/charter'))['charter']
+    prepare_charter(initiator, project, fields={'valueProp': '  ' + charter['valueProp'] + '  '})
+    gate = data(initiator.get(project + '/gates/check', params={'gate': 'charter'}))
+    assert not gate['eligible'] and 'CHARTER_REFILING_CHANGES_REQUIRED' in {row['code'] for row in gate['missing']}
+    denied = initiator.post(project + '/reviews', headers=headers(stage(pm, project)['revision']), json={'reviewType': 'charter'})
+    assert (denied.status_code, denied.json()['code']) == (422, 'GATE_REQUIREMENTS_NOT_MET')
+    item = start_charter(pid, users, fields={'valueProp': 'A revised pilot tests the commercial assumptions with paid orders.'})
+    with engine.connect() as c:
+        material = c.scalar(sa.text("""SELECT materials->'charterRefiling' FROM review_submission_snapshots
+                                      WHERE review_id=:id"""), {'id': UUID(item.split('/')[-1])})
+        assert material['rejectionId'] == first['decision']['decisionId']
+        assert material['resubmissionId'] == data(decision)['requestId']
+        assert material['changedFields'] == ['valueProp'] and material['reason'] == changed['reason']
+        assert material['previousCharterRef'] == f"charter:{charter['charterId']}@{charter['revision']}"
+        assert material['currentCharterRef'] != material['previousCharterRef']
     score(reviewer, item, [2, 2, 2, 2])
     assert data(decide(reviewer, item, verdict='reject'))['decision']['stage'] == 'rejected'
     assert initiator.post(project + '/resubmit', headers=headers(stage(pm, project)['revision']), json=changed).json()['code'] == 'CHARTER_RESUBMISSION_LIMIT'

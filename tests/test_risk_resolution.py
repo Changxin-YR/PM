@@ -22,6 +22,7 @@ from pmo import schema_v1 as db
 from pmo.evidence import links
 from pmo.identity import Actor, explicit_grants
 from pmo.risk_resolution import ACCEPTANCE, ACCEPTANCE_LIMIT, CLOSE, GET, HANDOFF, acceptances, resolutions, resolve_risk, router
+from pmo.risks import ESCALATE
 
 
 SCOPE = 'Monitoring and escalation for the existing site only'
@@ -92,7 +93,7 @@ def scenario(live, monkeypatch):
         digest = sha256(secret.encode()).hexdigest()
         account = users['reviewer']
         cid = c.scalar(db.agent_credentials.insert().values(delegated_by=account, org_id=org,
-            allowed_actions=[CLOSE, HANDOFF, ACCEPTANCE], allowed_project_ids=[str(projects[0])], status='active',
+            allowed_actions=[CLOSE, HANDOFF, ACCEPTANCE, ESCALATE], allowed_project_ids=[str(projects[0])], status='active',
             token_hash=digest, token_fingerprint=digest[:12], expires_at=datetime.now(UTC) + timedelta(minutes=10))
             .returning(db.agent_credentials.c.id))
         c.execute(explicit_grants.insert().values(credential_id=cid, project_id=projects[0], granted_by=account))
@@ -158,6 +159,57 @@ def test_frozen_resolution_dtos():
         assert set(body['required']) == set(body['properties']) == fields and not body['additionalProperties']
     read = spec['paths']['/api/v1/risks/{riskId}/resolution']['get']
     assert read['operationId'] == GET and read['x-actorTypes'] == ['human']
+
+
+def test_escalation_preserves_owner_starts_clock_and_requires_independent_resolution(scenario):
+    s = scenario
+    owner, reviewer, outsider = (s.clients[name] for name in ('owner', 'reviewer', 'outsider'))
+    project_path = f'projects/{s.project}'
+    created = ok(owner.post(project_path + '/risks', headers=headers(), json={
+        'statement': 'Supplier data format may delay the milestone', 'response': 'Obtain a replacement export',
+        'prob': 2, 'impact': 4, 'isBlocking': False}))
+    path = f"risks/{created['riskId']}"
+    assert 'blockedSince' not in created
+    assert ok(owner.get(project_path + '/risks'))['items'][0]['canEscalate'] is True
+    command = {'reason': 'Supplier confirmed the only export is unavailable.'}
+    rejected(outsider.post(path + '/escalate', headers=headers(), json=command), 404, 'RESOURCE_NOT_FOUND')
+    assert ok(reviewer.get(project_path + '/risks'))['items'][0]['canEscalate'] is False
+    rejected(reviewer.post(path + '/escalate', headers=headers(), json=command), 403, 'FORBIDDEN')
+    rejected(s.api.post('/api/v1/' + path + '/escalate', headers={**s.bearer, **headers()}, json=command), 403, 'FORBIDDEN')
+    rejected(owner.post(path + '/escalate', headers=headers(2), json=command), 409, 'VERSION_CONFLICT')
+    rejected(owner.post(path + '/escalate', headers=headers(), json={'reason': '   '}), 422, 'VALIDATION_FAILED')
+
+    key = headers()
+    written = owner.post(path + '/escalate', headers=key, json=command)
+    promoted = ok(written)
+    assert promoted['status'] == 'open' and promoted['isBlocking']
+    assert promoted['revision'] == 2 and promoted['ownerId'] == created['ownerId'] == promoted['escalatedBy']
+    assert promoted['escalationReason'] == command['reason']
+    assert owner.post(path + '/escalate', headers=key, json=command).json() == written.json()
+    rejected(owner.post(path + '/escalate', headers=key, json={'reason': 'Another source is unavailable.'}),
+             409, 'IDEMPOTENCY_CONFLICT')
+    rejected(owner.post(path + '/escalate', headers=headers(2), json=command), 422, 'RISK_ALREADY_BLOCKING')
+    reread = ok(owner.get(project_path + '/risks'))['items'][0]
+    assert reread['blockedSince'] == promoted['blockedSince'] and reread['canEscalate'] is False
+    assert 'BLOCKING_RISK_UNRESOLVED' in {gap['code'] for gap in ok(owner.get(project_path + '/closing/check'))['missing']}
+
+    with s.engine.begin() as c:
+        risk = c.execute(sa.select(db.risks).where(db.risks.c.id == created['riskId'])).mappings().one()
+        assert risk.created_at <= risk.blocked_since == risk.updated_at
+        logs = c.execute(sa.text('''SELECT source_refs FROM audit_logs WHERE project_id=:pid AND action=:op AND result='success' '''),
+                         {'pid': s.project, 'op': ESCALATE}).scalars().all()
+        assert logs == [[f"risk:{created['riskId']}@1", f"risk:{created['riskId']}@2"]]
+        assert c.scalar(sa.select(sa.func.count()).select_from(db.outbox_events)
+                        .where(db.outbox_events.c.dedupe_key == written.headers['X-Request-ID'])) == 1
+        receipt = c.scalar(sa.select(db.idempotency_keys.c.response_body).where(
+            db.idempotency_keys.c.resource_id == created['riskId'], db.idempotency_keys.c.operation == ESCALATE))
+        assert receipt['data']['escalationReason'] == command['reason']
+    evidence = s.upload(risk)
+    rejected(owner.post(path + '/close', headers=headers(2), json={'resolutionEvidenceRef': evidence['evidenceRef']}), 403,
+             'INDEPENDENT_REVIEWER_REQUIRED')
+    assert ok(reviewer.post(path + '/close', headers=headers(2), json={
+        'resolutionEvidenceRef': evidence['evidenceRef']}))['status'] == 'closed'
+    rejected(owner.post(path + '/escalate', headers=headers(3), json=command), 422, 'RISK_REGISTER_LOCKED')
 
 
 def test_independent_close_and_gate_recheck(scenario):

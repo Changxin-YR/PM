@@ -4,7 +4,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import Field, StrictBool, model_validator
+from pydantic import Field, StrictBool, StringConstraints, model_validator
 
 from . import schema_v1 as db
 from .access import Auth, Key, Revision
@@ -12,7 +12,7 @@ from .pagination import pg_offset
 from .contracts import Result, Strict
 from .identity import Failure, visible
 from .materials import finish, project_access, replay
-from .projects import fingerprint, meta, run
+from .projects import fingerprint, meta, record_receipt, run
 
 router=APIRouter(prefix='/api/v1',tags=['Risks'])
 r=db.risks
@@ -20,6 +20,7 @@ Statement=Annotated[str,Field(min_length=5,max_length=3000,pattern=r'\S')]
 Rating=Annotated[int,Field(strict=True,ge=1,le=5)]
 ResponseText=Annotated[str,Field(max_length=3000)]
 WRITABLE=('drafting','designing','executing','on_hold','delivering')
+ESCALATE = 'human_risk_escalate'
 
 
 class Create(Strict):
@@ -47,6 +48,10 @@ class Update(Strict):
     fieldsRisk: Fields
 
 
+class Escalation(Strict):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=4, max_length=2000, pattern=r'^[^\x00]+$')]
+
+
 class Risk(Strict):
     riskId: UUID
     projectId: UUID
@@ -60,6 +65,12 @@ class Risk(Strict):
     status: str
     revision: int
     canEdit: bool | None=None
+    canEscalate: bool | None = None
+
+
+class EscalationReceipt(Risk):
+    escalatedBy: UUID
+    escalationReason: str
 
 
 class Page(Strict):
@@ -94,9 +105,21 @@ def listing(projectId:UUID,authorization:Auth,page:int=Query(1,ge=1),pageSize:in
         items=[view(row) for row in rows]
         manage=project.stage in WRITABLE and can_manage(c,a,project) if a.kind=='human' else None
         if a.kind=='human':
-            for item in items: item.canEdit=project.stage in WRITABLE and item.status=='open' and (bool(manage) or item.ownerId==a.person)
+            for item in items:
+                item.canEdit=project.stage in WRITABLE and item.status=='open' and (bool(manage) or item.ownerId==a.person)
+                item.canEscalate = item.canEdit and not item.isBlocking
         return Result[Page](data=Page(items=items,total=total,page=page,pageSize=pageSize,canCreate=manage),meta=meta(op,[f'risk:{i.riskId}@{i.revision}' for i in items],project_id=projectId))
     return run(authorization,op,query)
+
+
+def locked_project(c, actor, project_id, risk_id):
+    p = db.projects
+    pid = project_id if risk_id is None else c.scalar(sa.select(r.c.project_id)
+        .join(p, p.c.id == r.c.project_id).where(r.c.id == risk_id, visible(actor)))
+    project = c.execute(sa.select(p).where(p.c.id == pid, visible(actor)).with_for_update()).mappings().one_or_none()
+    if project is None:
+        raise Failure(404, 'RESOURCE_NOT_FOUND')
+    return project
 
 
 def save(auth,key,command,*,project_id=None,risk_id=None,expected=None):
@@ -104,10 +127,8 @@ def save(auth,key,command,*,project_id=None,risk_id=None,expected=None):
     op='pmo_risk_create' if creating else 'pmo_risk_update'
     sig=fingerprint([str(project_id if creating else risk_id),expected,command.model_dump(mode='json',exclude_unset=True)])
     def write(c,a,rid):
-        p=db.projects
-        pid=project_id if creating else c.scalar(sa.select(r.c.project_id).join(p,p.c.id==r.c.project_id).where(r.c.id==risk_id,visible(a)))
-        project=c.execute(sa.select(p).where(p.c.id==pid,visible(a)).with_for_update()).mappings().one_or_none()
-        if project is None: raise Failure(404,'RESOURCE_NOT_FOUND')
+        project = locked_project(c, a, project_id, risk_id)
+        pid = project.id
         if project.stage not in WRITABLE: raise Failure(422,'RISK_REGISTER_LOCKED')
         row=None if creating else c.execute(sa.select(r).where(r.c.id==risk_id,r.c.project_id==pid).with_for_update()).mappings().one()
         if not can_manage(c,a,project) and (row is None or row.owner_id!=a.person): raise Failure(403,'FORBIDDEN')
@@ -136,3 +157,42 @@ def create(projectId:UUID,command:Create,authorization:Auth,key:Key)->Result[Ris
 @router.patch('/risks/{riskId}',operation_id='pmo_risk_update',response_model_exclude_none=True)
 def update(riskId:UUID,command:Update,authorization:Auth,key:Key,expected:Revision)->Result[Risk]:
     return save(authorization,key,command,risk_id=riskId,expected=int(expected))
+
+
+@router.post('/risks/{riskId}/escalate', operation_id=ESCALATE, response_model_exclude_none=True,
+             openapi_extra={'x-actorTypes': ['human'], 'x-forbidAgentEvenViaHttp': True})
+def escalate(riskId: UUID, command: Escalation, authorization: Auth, key: Key,
+             expected: Revision) -> Result[EscalationReceipt]:
+    revision = int(expected)
+    signature = fingerprint([str(riskId), revision, command.reason])
+
+    def write(c, a, rid):
+        project = locked_project(c, a, None, riskId)
+        row = c.execute(sa.select(r).where(r.c.id == riskId, r.c.project_id == project.id)
+                        .with_for_update()).mappings().one()
+        if a.kind != 'human' or not (row.owner_id == a.person or can_manage(c, a, project)):
+            raise Failure(403, 'FORBIDDEN', project_id=project.id)
+        prior = replay(c, a, ESCALATE, key, signature, Result[EscalationReceipt])
+        if prior:
+            return prior
+        if project.stage not in WRITABLE or row.status != 'open':
+            raise Failure(422, 'RISK_REGISTER_LOCKED', project_id=project.id)
+        if row.revision != revision:
+            raise Failure(409, 'VERSION_CONFLICT', project_id=project.id)
+        if row.is_blocking:
+            raise Failure(422, 'RISK_ALREADY_BLOCKING', project_id=project.id)
+        at = c.scalar(sa.select(sa.func.clock_timestamp()))
+        updated = c.execute(r.update().where(r.c.id == riskId).values(
+            is_blocking=True, blocked_since=at, revision=revision + 1, updated_at=at).returning(r)).mappings().one()
+        before = view(row).model_dump(mode='json')
+        result = Result[EscalationReceipt](data=EscalationReceipt(
+            **view(updated).model_dump(), escalatedBy=a.person, escalationReason=command.reason),
+            meta=meta(ESCALATE, [f'risk:{riskId}@{revision}', f'risk:{riskId}@{updated.revision}']))
+        body = result.model_dump(mode='json', exclude_none=True)
+        record_receipt(c, a, key, ESCALATE, rid, riskId, project.id, signature, body, fingerprint(body), fingerprint(before))
+        c.execute(db.outbox_events.insert().values(dedupe_key=rid, event_type=ESCALATE, status='pending', payload={
+            'projectId': str(project.id), 'riskId': str(riskId), 'riskRevision': updated.revision,
+        }))
+        return result
+
+    return run(authorization, ESCALATE, write)

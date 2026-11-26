@@ -6,7 +6,7 @@ import AssistantRequirementHistory from './AssistantRequirementHistory.vue'
 import PreapprovalSpending from './PreapprovalSpending.vue'
 import WeeklyHealthOverview from './WeeklyHealthOverview.vue'
 import WeeklyPortfolioReports from './WeeklyPortfolioReports.vue'
-import {interpretQuestion,type AssistantTopic} from './assistantQuestions'
+import {interpretQuestion,type AssistantQuestion,type AssistantTopic,type QuestionTarget} from './assistantQuestions'
 
 type Mode='charter'|'process'|'closing'|'ledger'
 type Topic=AssistantTopic
@@ -30,8 +30,10 @@ type Data={charter:Charter;process:Process;closing:Closing;ledger:Ledger}
 type Packet={ [K in Mode]:{mode:K;data:Data[K];meta:{asOf:string;sourceRefs:string[];ruleVersion:string}} }[Mode]
 type Destination='reviews'|'reports'|'retrospective'|'health'
 
-const props=defineProps<{projectId:string;projectLabel?:string;revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const emit=defineEmits<{navigate:[destination:Destination];draftLesson:[];openReport:[projectId:string,reportId:string]}>()
+const props=defineProps<{projectId:string;projectLabel?:string;projectCode?:string;initialQuestion?:AssistantQuestion;
+  revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{navigate:[destination:Destination];draftLesson:[];openReport:[projectId:string,reportId:string];
+  openProjectQuestion:[projectId:string,question:AssistantQuestion]}>()
 const modes:{label:string;value:Mode}[]=[{value:'charter',label:'立项评审'},{value:'process',label:'过程管家'},
   {value:'closing',label:'结项回顾'},{value:'ledger',label:'台账问答'}]
 const topics:{value:Topic;label:string}[]=[{value:'health',label:'当前三线'},{value:'cost',label:'成本台账'},
@@ -45,8 +47,11 @@ const previewReasons:Record<string,string>={MODEL_DISABLED:'模型已关闭',MOD
   MODEL_SCOPE_BLOCKED:'当前项目不在模型外发范围内',MODEL_NO_SELECTION:'模型未选出可用条目'}
 const scores:Record<string,string>={strategicAlignment:'战略对齐',customerAttractiveness:'客户／市场吸引力',
   financialResourceReturn:'财务／资源回报',riskControllability:'风险可控度'}
-const mode=ref<Mode>('charter'),topic=ref<Topic>('health'),keyword=ref(''),category=ref('')
-const question=ref(''),questionError=ref(''),historyKeyword=ref('')
+const initialTarget=props.initialQuestion?.target
+const mode=ref<Mode>(initialTarget?.mode??'charter'),topic=ref<Topic>(initialTarget?.mode==='ledger'?initialTarget.topic:'health')
+const keyword=ref(''),category=ref('')
+const question=ref(props.initialQuestion?.text??''),questionError=ref(''),asking=ref(false)
+const historyKeyword=ref(topic.value==='requirement_history'?initialTarget?.keyword??'':'')
 const showPortfolio=ref(false)
 const packet=shallowRef<Packet|null>(null),loading=ref(false),error=ref('')
 const suggestion=shallowRef<Preview|null>(null),suggesting=ref(false),suggestionError=ref(''),loadedQuery=ref('')
@@ -67,9 +72,9 @@ const query=computed(()=>{
   if(useCategory.value&&category.value.trim())params.set('category',category.value.trim())
   return params.toString()
 })
-let request:AbortController|undefined,previewRequest:AbortController|undefined
+let request:AbortController|undefined,previewRequest:AbortController|undefined,scopeRequest:AbortController|undefined
 let attempt:{body:string;key:string}|undefined
-let nextKeyword:string|undefined
+let nextKeyword=initialTarget?.keyword
 
 function clearSuggestion(){
   previewRequest?.abort();previewRequest=undefined;attempt=undefined
@@ -111,22 +116,62 @@ async function suggest(){
 function changeContext(){keyword.value=nextKeyword??'';nextKeyword=undefined;category.value='';showPortfolio.value=false;void load()}
 watch([mode,topic,()=>props.projectId],changeContext,{immediate:true})
 watch(()=>props.projectId,()=>{question.value='';questionError.value='';historyKeyword.value=''})
+watch([question,mode,topic,()=>props.projectId],()=>scopeRequest?.abort(),{flush:'sync'})
 watch([keyword,category],clearSuggestion)
 watch(()=>props.revision,()=>void load())
-onBeforeUnmount(()=>{request?.abort();previewRequest?.abort()})
+onBeforeUnmount(()=>{request?.abort();previewRequest?.abort();scopeRequest?.abort()})
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
 
-function ask(){
-  if(!question.value.trim())return
-  const target=interpretQuestion(question.value)
-  if(!target){questionError.value='暂时无法识别这个问题，请选择查询主题。核验事实可在问题中用引号标出关键词。';return}
-  questionError.value=''
+function showAnswer(target:QuestionTarget){
   const nextTopic=target.mode==='ledger'?target.topic:topic.value
   historyKeyword.value=nextTopic==='requirement_history'?(target.keyword??''):''
   nextKeyword=target.keyword
   if(target.mode===mode.value&&nextTopic===topic.value){changeContext();return}
   mode.value=target.mode
   topic.value=nextTopic
+}
+
+const identityText=(value?:string)=>value?.trim().normalize('NFKC').toLowerCase()
+function matchesProject(qualifier:string,project:{code?:string;name?:string}){
+  const reference=identityText(qualifier)
+  return !!reference&&(reference===identityText(project.code)||reference===identityText(project.name))
+}
+
+function refuseScope(message:string){
+  request?.abort();request=undefined
+  packet.value=null;loading.value=false;clearSuggestion()
+  questionError.value=message
+}
+
+async function ask(){
+  const text=question.value.trim()
+  if(!text||asking.value)return
+  const target=interpretQuestion(text)
+  if(!target){questionError.value='暂时无法识别这个问题，请选择查询主题。核验事实可在问题中用引号标出关键词。';return}
+  questionError.value=''
+  const projects=target.projects??[]
+  if(projects.length>1){refuseScope('请一次指定一个项目，再查询它的台账。');return}
+  const [qualifier]=projects
+  if(!qualifier||qualifier.normalize('NFKC')===props.projectCode?.normalize('NFKC')){showAnswer(target);return}
+  const controller=new AbortController()
+  scopeRequest=controller;asking.value=true
+  const params=new URLSearchParams({page:'1',pageSize:'100','filters[keyword]':qualifier})
+  const unavailable='无法确定唯一可读的项目。请核对项目编号，或从项目台账进入对应项目。'
+  try{
+    const {data}:{data:{items:{projectId:string;code:string;name:string;materialsVisible:boolean}[];total:number}}=
+      await props.api('project-overview?'+params,{signal:controller.signal})
+    if(controller.signal.aborted)return
+    const matched=data.items.filter(project=>matchesProject(qualifier,project))
+    if(data.total>data.items.length||matched.length!==1||!matched[0].materialsVisible){
+      refuseScope(unavailable);return
+    }
+    if(matched[0].projectId===props.projectId){showAnswer(target);return}
+    emit('openProjectQuestion',matched[0].projectId,{text,target})
+  }catch(e){
+    if(!controller.signal.aborted)refuseScope(unavailable)
+  }finally{
+    if(scopeRequest===controller){scopeRequest=undefined;asking.value=false}
+  }
 }
 
 function downloadReview(){
@@ -168,7 +213,7 @@ function downloadReview(){
     </div>
     <form v-if="mode==='ledger'" class="question-form" aria-label="台账自然语言查询" @submit.prevent="ask">
       <label>用一句话查询台账<input v-model="question" maxlength="180" placeholder="例如 本周哪些项目亮了黄灯？" @input="questionError=''"/></label>
-      <el-button native-type="submit" :disabled="!question.trim()"><Search :size="15"/>提问</el-button>
+      <el-button native-type="submit" :disabled="!question.trim()" :loading="asking"><Search :size="15"/>提问</el-button>
       <p v-if="questionError" class="meta" role="status">{{questionError}}</p>
       <p v-else class="meta">{{globalTopic?'查询范围为你有权查看的项目。':`当前项目 ${projectLabel??''}`}}</p>
     </form>
