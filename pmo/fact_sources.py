@@ -8,13 +8,15 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from pydantic import AfterValidator, AwareDatetime, Field, StrictBool, StrictInt, StrictStr, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from . import evidence_storage, schema_v1 as db
 from .contracts import Strict
 from .evidence import stmt as evidence_query, links
 from .identity import Failure
 from .projects import fingerprint
-from .reports import _content, _plain, _ref
+from .report_fields import EffortCategory
+from .reports import TZ, _content, _plain, _ref
 from .requirement_baselines import active_member
 
 Short = Annotated[StrictStr, Field(min_length=1, max_length=256, pattern=r'\S'), AfterValidator(_plain)]
@@ -42,6 +44,7 @@ class CandidateFields(Strict):
 
 class Candidate(CandidateFields):
     sourceRef: Annotated[Short, Field(min_length=3)]
+    effortCategory: EffortCategory | SkipJsonSchema[None] = None
 
 
 class Location(NamedTuple):
@@ -76,12 +79,33 @@ def submitted(report) -> bool:
         report.submitted_by and report.submitted_at and _content(report) is not None)
 
 
+def current_effort_source(report) -> bool:
+    return (report.type == 'weekly' and (report.is_current_confirmed if report.status == 'confirmed'
+                                         else report.is_current))
+
+
+def _effort_location(report, command):
+    if not current_effort_source(report):
+        raise Failure(409, 'FACT_SOURCE_STALE', project_id=report.project_id)
+    day = command.asOf.astimezone(TZ).date()
+    if report.period_start <= day < report.period_end:
+        for index, item in enumerate(report.structured_fields.get('effort_breakdown') or []):
+            if (item['category'] == command.effortCategory and item['personDays'] == command.quote
+                    and normal_value(command.typedValue) == normal_value(item['personDays'])):
+                return Location(f'/structuredFields/effort_breakdown/{index}/personDays', 0)
+    raise Failure(422, 'FACT_EFFORT_SOURCE_MISMATCH', project_id=report.project_id)
+
+
 def quote_location(report, command, now):
     if not submitted(report):
         raise Failure(422, 'FACT_REPORT_NOT_SUBMITTED', project_id=report.project_id)
     if command.asOf > now:
         raise Failure(422, 'FUTURE_AS_OF', project_id=report.project_id)
-    if command.sourceRef != _ref(report) or (location := locate(report, command.quote)) is None:
+    if command.sourceRef != _ref(report):
+        raise Failure(422, 'FACT_SOURCE_MISMATCH', project_id=report.project_id)
+    if command.effortCategory is not None:
+        return _effort_location(report, command)
+    if (location := locate(report, command.quote)) is None:
         raise Failure(422, 'FACT_SOURCE_MISMATCH', project_id=report.project_id)
     if normal_value(command.typedValue)[0] == 'decimal' and not concrete(command.typedValue, command.quote):
         raise Failure(422, 'FACT_VALUE_NOT_IN_QUOTE', project_id=report.project_id)
@@ -91,7 +115,15 @@ def quote_location(report, command, now):
 def recheck(report, fact):
     saved = Location(fact.quote_path, fact.quote_offset)
     if (report.content_hash != fact.content_hash or report.revision < fact.report_revision
-            or not submitted(report) or locate(report, fact.quote) != saved):
+            or not submitted(report)):
+        raise Failure(409, 'FACT_SOURCE_STALE', project_id=fact.project_id)
+    if saved.path.startswith('/structuredFields/effort_breakdown/'):
+        locations = dict(_leaves(report.structured_fields, '/structuredFields'))
+        text = locations.get(saved.path, '')
+        valid = saved.offset >= 0 and text[saved.offset:].startswith(fact.quote)
+    else:
+        valid = locate(report, fact.quote) == saved
+    if not valid:
         raise Failure(409, 'FACT_SOURCE_STALE', project_id=fact.project_id)
 
 
@@ -102,8 +134,10 @@ def fact_labels(subject: str, predicate: str) -> tuple[str, str]:
 
 
 def group_key(pid: UUID, command: Candidate) -> str:
-    return fingerprint([str(pid), *fact_labels(command.subject, command.predicate),
-                        command.asOf.astimezone(UTC).isoformat()])
+    scope = [str(pid), *fact_labels(command.subject, command.predicate), command.asOf.astimezone(UTC).isoformat()]
+    if command.effortCategory is not None:
+        scope.append(command.effortCategory)
+    return fingerprint(scope)
 
 
 def normal_value(value: str | int | bool):

@@ -11,7 +11,8 @@ from . import fact_store as store
 from .access import Auth, Key, Revision
 from .pagination import pg_offset
 from .contracts import Result, Strict
-from .fact_sources import Candidate, Short, Status, Trust, Value, can_propose, concrete, fact_labels, high_evidence, normal_value, recheck, submitted, verified_source
+from .fact_sources import (Candidate, Short, Status, Trust, Value, can_propose, concrete, current_effort_source,
+                           fact_labels, high_evidence, normal_value, recheck, submitted, verified_source)
 from .identity import Failure
 from .materials import finish, replay
 from .projects import fingerprint, meta, run
@@ -325,7 +326,7 @@ def listing(reportId: UUID, authorization: Auth, page: int = Query(1, ge=1),
 
 @router.post('/reports/{reportId}/facts/proposals', operation_id=PROPOSE, response_model_exclude_none=True)
 def propose(reportId: UUID, command: Candidate, authorization: Auth, key: Key, expected: Revision) -> Result[Fact]:
-    signature = fingerprint([str(reportId), int(expected), command.model_dump(mode='json')])
+    signature = fingerprint([str(reportId), int(expected), command.model_dump(mode='json', exclude_none=True)])
 
     def write(c, a, rid):
         p, report, _ = _context(c, a, report_id=reportId, write=True)
@@ -378,6 +379,8 @@ def _editable(project, report, fact, expected):
         raise Failure(409, 'VERSION_CONFLICT', project_id=project.id)
     if fact.validation_status == 'rejected':
         raise Failure(422, 'FACT_SUPERSEDED', project_id=project.id)
+    if fact.quote_path.startswith('/structuredFields/effort_breakdown/') and not current_effort_source(report):
+        raise Failure(409, 'FACT_SOURCE_STALE', project_id=project.id)
     recheck(report, fact)
 
 

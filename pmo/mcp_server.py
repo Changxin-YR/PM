@@ -6,9 +6,10 @@ import os
 from pathlib import Path
 from uuid import UUID
 from string import Formatter
+from pydantic import TypeAdapter
 from .change_contract import PROPOSAL, mcp_snapshots
 from .cost_categories import CategorySummary
-from .report_fields import DraftFields, SubmitFields
+from .report_fields import DraftFields, EffortCategory, SubmitFields
 from .tool_routes import ROUTES
 
 import httpx
@@ -52,6 +53,9 @@ def advertised(tool):
             outputs = deepcopy(outputs)
         report = outputs['oneOf'][0]['properties']['data']
         report['properties']['structuredFields'] = report_schema(DraftFields, outputs)
+    if name == 'pmo_fact_propose':
+        inputs = deepcopy(inputs)
+        inputs['properties']['effortCategory'] = TypeAdapter(EffortCategory).json_schema()
     if name == 'pmo_cost_summary':
         outputs = deepcopy(outputs)
         cost = outputs['oneOf'][0]['properties']['data']

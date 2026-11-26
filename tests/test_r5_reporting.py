@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -7,6 +8,7 @@ import pytest
 import sqlalchemy as sa
 
 from pmo import outbox, schema_v1 as db
+from pmo.database_roles import WORKER_ADD, WORKER_EDIT, WORKER_READ, grant
 from pmo.weekly_delivery import DELIVER, authorizations, deliveries, inbox
 from test_reports import body, data, deny, headers, sections, team as team
 from test_weekly_report_workflow import publish
@@ -115,6 +117,41 @@ def test_已有分类抵减且未分类净额拦截新分项(team):
         'period': '2025-01', 'category': 'development', 'expectedAmount': '2.50'}), 409, 'WEEKLY_EFFORT_CLASSIFICATION_UNCLEAR')
 
 
+def test_分类事实固定引用同类别及本期结构化数值(team):
+    pm, reviewer = team.users['pm'], team.users['reviewer']
+    report = publish(pm, 提交(team, parts=分类(研发='2.50', 实施='2.50', 管理='2.00'),
+        narrative='上期累计投入2.50人天。'))
+    path = 路径(report, 'facts/proposals')
+    command = {'subject': '周报投入', 'predicate': '本期实施人天', 'typedValue': '2.50', 'quote': '2.50',
+        'asOf': '2025-01-02T10:00:00+08:00', 'effortCategory': 'implementation',
+        'sourceRef': f"report:{report['reportId']}@{report['revision']}"}
+
+    def propose(**values):
+        return pm.post(path, headers=headers(report['revision']), json={**command, **values})
+
+    deny(propose(quote='上期累计投入2.50人天'), 422, 'FACT_EFFORT_SOURCE_MISMATCH')
+    deny(propose(asOf='2025-01-08T10:00:00+08:00'), 422, 'FACT_EFFORT_SOURCE_MISMATCH')
+    deny(propose(typedValue='2.00'), 422, 'FACT_EFFORT_SOURCE_MISMATCH')
+    first = data(propose())
+    second = data(propose(effortCategory='development', predicate='本期研发人天'))
+    loaded = {item['factId']: item for item in data(pm.get(路径(report, 'facts')))['items']}
+    assert loaded[first['factId']]['quotePath'] == '/structuredFields/effort_breakdown/1/personDays'
+    assert loaded[second['factId']]['quotePath'] == '/structuredFields/effort_breakdown/0/personDays'
+    assert all(item['validationStatus'] == 'candidate' for item in loaded.values())
+
+    def verify(fact):
+        return reviewer.post(f"facts/{fact['factId']}/verify", headers=headers(fact['revision']), json={
+            'trust': 'medium', 'evidenceRef': command['sourceRef'], 'reason': '独立复核本期申报中的实施人天'})
+
+    assert data(verify(first))['validationStatus'] == 'verified'
+    assert data(pm.get(f'projects/{team.pid}/costs'))['effort']['actual'] == '0.00'
+    publish(pm, 提交(team, parts=分类()))
+    deny(propose(), 409, 'FACT_SOURCE_STALE')
+    deny(verify(second), 409, 'FACT_SOURCE_STALE')
+    assert any(item['factId'] == first['factId'] and item['validationStatus'] == 'verified'
+               for item in data(pm.get(路径(report, 'facts')))['items'])
+
+
 @pytest.mark.parametrize('parts', [分类(管理='2.50'), 分类(研发='-2.50'), 分类(研发='2.501'),
     [{'category': 'travel', 'personDays': '7.00', 'basis': '交通发票'}],
     [{'category': 'management', 'personDays': '7.00', 'basis': ' '}]],
@@ -204,3 +241,77 @@ def test_撤销授权或发布新版后隔离任务不得发送(team, live, monk
     history = {item['deliveryId']: item for item in data(pm.get(path))['deliveries']}
     assert [history[key]['errorCode'] for key in ids] == ['RECIPIENT_AUTHORIZATION_INVALID', 'DELIVERY_REQUIRES_PUBLISHED_WEEKLY']
     assert all(item['status'] == 'blocked' for item in history.values())
+
+
+def test_最小权限工作进程重启后不重复发送(team, live, monkeypatch):
+    from psycopg import sql
+
+    env = live[3]['PMO_SYNTHETIC_POLICY_SCHEMA']
+    monkeypatch.setenv('PMO_SYNTHETIC_POLICY_SCHEMA', env)
+    pm = team.users['pm']
+    approval = 授权(team)
+    report = publish(pm, 提交(team))
+    path = 路径(report, 'delivery')
+    digest = data(pm.get(路径(report, 'weekly-export')))['sha256']
+    first = data(pm.post(path, headers=headers(report['revision']), json={
+        'authorizationId': str(approval), 'reportHash': report['contentHash'], 'attachmentHash': digest}))
+    role = 'r5_weekly_worker_' + uuid4().hex
+    with closing(team.engine.raw_connection()) as proxy:
+        conn = proxy.driver_connection
+        conn.execute(sql.SQL('CREATE ROLE {} NOLOGIN').format(sql.Identifier(role)))
+        conn.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(env), sql.Identifier(role)))
+        for table in WORKER_READ:
+            grant(conn, role, table, 'SELECT', schema=env)
+        for table in WORKER_ADD:
+            grant(conn, role, table, 'INSERT', schema=env)
+        for table, columns in WORKER_EDIT.items():
+            grant(conn, role, table, 'UPDATE', columns, schema=env)
+        for table, columns in {
+            'notifications': 'rule_event_id recipient_person_id', 'projects': 'id org_id pm_id sponsor_id stage',
+            'reports': 'id project_id type version_no revision content_hash status is_current_confirmed confirmed_by '
+                       'confirmed_at submitted_by submitted_at author_id structured_fields narrative period '
+                       'period_start period_end weekly_basis',
+            'project_members': 'project_id person_id role assignment_status accepted_at revoked_at',
+            'persons': 'id org_id user_id is_active', 'user_accounts': 'id is_active locked_until',
+        }.items():
+            grant(conn, role, table, 'SELECT', columns, schema=env)
+        conn.commit()
+    worker = sa.create_engine(team.engine.url.update_query_dict({'options': f'-csearch_path={env} -crole={role}'}))
+    try:
+        while lease := outbox.claim(worker):
+            assert outbox.consume(worker, lease)
+            if lease.event_type == DELIVER:
+                break  # 模拟进程在持久回执提交后还未确认队列即重启。
+            assert outbox.acknowledge(worker, lease)
+        assert lease and lease.event_type == DELIVER
+        with team.engine.begin() as c:
+            c.execute(db.outbox_events.update().where(db.outbox_events.c.id == lease.event_id)
+                      .values(locked_until=sa.func.clock_timestamp()))
+        assert outbox.dispatch(worker, 20) == 0
+        with team.engine.connect() as c:
+            assert c.scalar(sa.select(sa.func.count()).select_from(inbox).where(inbox.c.message_id == UUID(first['deliveryId']))) == 1
+        receipt, = data(pm.get(path))['deliveries']
+        assert receipt['status'] == 'delivered' and receipt['externalReceiptVerified'] is False
+    finally:
+        worker.dispose()
+        with team.engine.begin() as c:
+            c.exec_driver_sql(f'DROP OWNED BY {role}')
+            c.exec_driver_sql(f'DROP ROLE {role}')
+
+
+def test_非隔离工作进程不得发送正式周报(team, live, monkeypatch):
+    pm = team.users['pm']
+    approval = 授权(team)
+    report = publish(pm, 提交(team))
+    path = 路径(report, 'delivery')
+    digest = data(pm.get(路径(report, 'weekly-export')))['sha256']
+    pending = data(pm.post(path, headers=headers(report['revision']), json={
+        'authorizationId': str(approval), 'reportHash': report['contentHash'], 'attachmentHash': digest}))
+    monkeypatch.delenv('PMO_SYNTHETIC_POLICY_SCHEMA', raising=False)
+    with team.engine.begin() as c:
+        with pytest.raises(ValueError, match='Synthetic inbox not available'):
+            from pmo.weekly_delivery import deliver
+
+            deliver(c, {'projectId': str(team.pid), 'deliveryId': pending['deliveryId']})
+        assert c.scalar(sa.select(inbox.c.message_id).where(inbox.c.message_id == UUID(pending['deliveryId']))) is None
+    assert data(pm.get(path))['deliveries'][0]['status'] == 'pending'

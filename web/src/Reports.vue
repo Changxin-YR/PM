@@ -381,6 +381,7 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
       <ReportFacts v-if="detail.submittedAt&&detail.contentHash" :key="detail.reportId" :project-id="projectId" :report-id="detail.reportId"
         :initially-expanded="focusReportId===detail.reportId"
         :current-weekly="detail.type==='weekly'&&detail.isCurrentConfirmed"
+        :period-end="detail.periodEnd" :effort-breakdown="detail.structuredFields?.effort_breakdown"
         :revision="detail.revision" :submitted-at="detail.submittedAt" :api="api"/>
     </article>
   </section>
@@ -404,6 +405,6 @@ watch(()=>[props.projectId,props.focusReportId],()=>{if(props.focusReportId)void
 .report-copy{display:block;white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0}
 .report-basis{padding:8px 0;border-block:1px solid var(--el-border-color-light);overflow-wrap:anywhere}.report-basis summary{cursor:pointer;font-weight:600}
 .report-muted{color:var(--el-text-color-secondary);margin:4px 0}.report-notice{color:var(--el-color-success-dark-2);margin:0}
-.effort-toggle{display:flex;align-items:center;gap:8px}.effort-toggle input{width:auto}.effort-fields{grid-template-columns:minmax(100px,1fr) minmax(180px,3fr);margin:8px 0}
+.report-form .effort-toggle{display:flex;align-items:center;gap:8px}.effort-toggle input{width:auto}.effort-fields{grid-template-columns:minmax(100px,1fr) minmax(180px,3fr);margin:8px 0}
 @media(max-width:540px){.effort-fields{grid-template-columns:1fr}}
 </style>
