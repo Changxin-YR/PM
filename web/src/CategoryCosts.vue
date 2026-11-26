@@ -80,7 +80,7 @@ async function save(){
 
 <template>
   <section class="category-costs" aria-label="类别预算与预测">
-    <div class="toolbar"><h3>类别预算与预测</h3><span>{{viewLabel[data.categories.mode]}}</span></div>
+    <div class="toolbar category-heading"><h3>类别预算与预测</h3><el-tag size="small" type="info" effect="plain">{{viewLabel[data.categories.mode]}}</el-tag></div>
     <p v-if="data.categories.forecastNeedsReview" role="status">预算或实际基础已更新。预测仍使用 {{new Date(data.categories.forecastObservedAt!).toLocaleString('zh-CN')}} 的基础，待复核。</p>
     <p v-if="notice" role="status">{{notice}}</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false"/>
@@ -105,24 +105,29 @@ async function save(){
         <thead><tr><th scope="col">类别</th><th v-for="field in amountKeys" :key="field" scope="col">{{amountFields[field]}}</th><th scope="col">偏差</th><th scope="col">来源</th></tr></thead>
         <tbody><tr v-for="row in data.categories.items.filter(row=>row.type===unit)" :key="row.category">
           <th scope="row">{{label(row.category)}}</th>
-          <td v-for="field in amountKeys" :key="field">{{row[field]??(field==='forecastRemaining'?'未填写':'—')}}</td>
+          <td v-for="field in amountKeys" :key="field" class="cost-number">{{row[field]??(field==='forecastRemaining'?'未填写':'—')}}</td>
           <td>{{row.unbudgetedExposure?'无类别预算但存在投入':variance(row.varianceRate)}}</td>
           <td><details v-if="row.sourceRefs.length"><summary>{{row.sourceRefs.length}} 条来源</summary><ul><li v-for="ref in row.sourceRefs" :key="ref">{{ref}}</li></ul></details><span v-else>—</span></td>
         </tr></tbody>
-        <tfoot><tr><th scope="row">合计</th><td v-for="field in amountKeys" :key="field">{{total(data.categories.items.filter(row=>row.type===unit),field)}}</td><td>{{variance(data[unit].varianceRate)}}</td><td>—</td></tr></tfoot>
+        <tfoot><tr><th scope="row">合计</th><td v-for="field in amountKeys" :key="field" class="cost-number">{{total(data.categories.items.filter(row=>row.type===unit),field)}}</td><td>{{variance(data[unit].varianceRate)}}</td><td>—</td></tr></tfoot>
       </table>
     </div>
   </section>
 </template>
 
 <style scoped>
-.category-costs {margin-top:20px;display:grid;gap:12px}
+.category-costs {margin-top:16px;padding-top:12px;border-top:1px solid var(--pmo-line);display:grid;gap:8px;min-width:0}
+.category-heading,.category-costs .actions {margin:0}
+.category-costs .actions:empty {display:none}
 .category-table {max-width:100%;overflow:auto}
-.category-table table {border-collapse:collapse;min-width:44rem;width:100%;font-variant-numeric:tabular-nums}
-caption {text-align:left;font-weight:600;padding:8px}
-th,td {padding:8px;border-bottom:1px solid var(--pmo-line);text-align:left;vertical-align:top}
+.category-table table {border-collapse:collapse;min-width:44rem;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+caption {text-align:left;font-weight:600;padding:8px 0}
+th,td {height:42px;padding:8px;border-bottom:1px solid var(--pmo-line);text-align:left;vertical-align:middle}
+thead {background:var(--pmo-soft);color:var(--pmo-secondary)}
+tbody th {font-weight:400}
+.cost-number {text-align:right}
 tfoot {font-weight:600;background:var(--pmo-bg)}
 details ul {max-width:15rem;overflow-wrap:anywhere;padding-left:18px}
 .category-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr));gap:12px}
-form {display:grid;gap:12px;padding:12px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px}
+form {display:grid;gap:12px;padding:12px;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-panel)}
 </style>

@@ -8,5 +8,27 @@ function pct(x?:string){return x===undefined||x==='UNAVAILABLE'?'不可用':new 
 async function load(){busy.value=true;error.value='';try{data.value=(await props.api(`projects/${props.projectId}/requirement-metrics`)).data}catch(e){data.value=null;error.value=String(e)}finally{busy.value=false}}
 onMounted(load)
 </script>
-<template><section aria-label="需求指标" v-loading="busy"><div class="toolbar"><h3>需求指标</h3><el-button aria-label="刷新需求指标" title="刷新需求指标" :disabled="busy" @click="load"><RefreshCw :size="15"/></el-button></div><el-alert v-if="error" type="error" :title="error" :closable="false"/><template v-if="data"><dl><dt>加权满足率</dt><dd>{{pct(data.satisfaction)}}（{{data.confirmedWeight}} / {{data.activeWeight}}）</dd><dt>初始需求变更率</dt><dd>{{pct(data.changeRate)}}（{{data.changedInitialCount}} / {{data.initialCount}}）</dd><dt>P0 已确认 / 有效</dt><dd>{{data.confirmedP0}} / {{data.activeP0}}</dd><dt>待审冻结 / 有效需求</dt><dd>{{data.frozenCount}} / {{data.activeCount}}</dd></dl><p v-if="data.gaps.length">{{data.gaps.map(g=>gaps[g]??g).join('；')}}</p></template></section></template>
-<style scoped>section{border-top:1px solid var(--pmo-line);padding-top:8px;margin-top:1rem}dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.4rem 1rem}dd{margin:0;font-variant-numeric:tabular-nums}</style>
+<template>
+  <section class="panel" aria-label="需求指标" v-loading="busy">
+    <div class="toolbar metrics-toolbar"><h3>需求指标</h3><el-button aria-label="刷新需求指标" title="刷新需求指标" :disabled="busy" @click="load"><RefreshCw :size="15"/></el-button></div>
+    <el-alert v-if="error" type="error" :title="error" :closable="false"/>
+    <template v-if="data">
+      <dl class="metrics">
+        <div><dt>加权满足率</dt><dd>{{pct(data.satisfaction)}} <small>（{{data.confirmedWeight}} / {{data.activeWeight}}）</small></dd></div>
+        <div><dt>初始需求变更率</dt><dd>{{pct(data.changeRate)}} <small>（{{data.changedInitialCount}} / {{data.initialCount}}）</small></dd></div>
+        <div><dt>P0 已确认 / 有效</dt><dd>{{data.confirmedP0}} / {{data.activeP0}}</dd></div>
+        <div><dt>待审冻结 / 有效需求</dt><dd>{{data.frozenCount}} / {{data.activeCount}}</dd></div>
+      </dl>
+      <p v-if="data.gaps.length" class="metrics-gaps">{{data.gaps.map(g=>gaps[g]??g).join('；')}}</p>
+    </template>
+  </section>
+</template>
+<style scoped>
+.metrics-toolbar{justify-content:space-between}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:8px 16px;margin:0}
+.metrics div{min-width:0;border-inline-start:1px solid var(--pmo-line);padding-inline-start:12px}
+.metrics dt,.metrics-gaps{color:var(--pmo-muted);font-size:13px}
+.metrics dd{margin:0;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.metrics small{font-weight:400}
+.metrics-gaps{margin:12px 0 0}
+</style>

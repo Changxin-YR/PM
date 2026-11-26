@@ -81,7 +81,8 @@ async function send(){
 </script>
 
 <template>
-  <section class="panel" aria-label="三线健康" :aria-busy="loading||saving">
+  <section aria-label="三线健康" :aria-busy="loading||saving">
+  <section class="panel" aria-label="当前健康">
     <div class="toolbar health-toolbar">
       <h3>当前健康</h3>
       <div class="controls">
@@ -92,7 +93,7 @@ async function send(){
     <el-alert v-if="error" type="error" :title="error" :closable="false"/>
     <p v-if="notice" role="status">{{notice}}</p>
     <template v-if="current">
-      <div class="toolbar health-meta">
+      <div class="toolbar health-meta current-state" :data-health="current.health">
         <el-tag :type="tag(current.health)" effect="plain">{{label(current.health)}}</el-tag>
         <span>{{publication[current.publication]}}</span><span>{{time(current.asOf)}} 北京时间</span>
       </div>
@@ -113,6 +114,8 @@ async function send(){
         <p>{{current.ruleVersion}}</p><ul><li v-for="source in current.sourceRefs" :key="source"><code>{{source}}</code></li></ul>
       </details>
     </template>
+  </section>
+  <section class="panel health-history" aria-label="历史快照与申诉">
     <h3>历史快照与申诉</h3>
     <p v-if="!rows.length&&!loading" class="health-meta">暂无历史快照。</p>
     <ul class="history" v-else>
@@ -146,14 +149,19 @@ async function send(){
       </form>
     </el-dialog>
   </section>
+  </section>
 </template>
 
 <style scoped>
 .health-toolbar,.controls,.history-meta,.health-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}
-.health-toolbar{justify-content:space-between}.health-toolbar h3{margin:.4rem 0}.health-meta{color:var(--pmo-muted);font-size:.88rem}
+.health-toolbar{justify-content:space-between}.health-toolbar h3{margin:0}.health-meta{color:var(--pmo-muted);font-size:13px}
+.current-state{padding:8px 12px;border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-control);background:var(--pmo-sidebar)}
+.current-state[data-health="red"]{color:var(--el-color-danger);border-color:var(--el-color-danger-light-8);background:var(--el-color-danger-light-9)}
+.current-state[data-health="yellow"],.current-state[data-health="untrusted"]{color:var(--el-color-warning);border-color:var(--el-color-warning-light-8);background:var(--el-color-warning-light-9)}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:.65rem;margin:1rem 0}
-.metrics div{border-left:2px solid var(--pmo-line);padding:.3rem .7rem}.metrics dt{font-size:.86rem;color:var(--pmo-muted)}.metrics dd{margin:.25rem 0;font-weight:650;font-size:1.05rem}
+.metrics div{border-inline-start:1px solid var(--pmo-line);padding:4px 12px}.metrics dt{font-size:13px;color:var(--pmo-muted)}.metrics dd{margin:4px 0;font-weight:600;font-size:22px;font-variant-numeric:tabular-nums}
 .trace,.appeal{font-size:.88rem;overflow-wrap:anywhere;margin:.5rem 0}.trace summary{cursor:pointer;color:var(--pmo-primary-hover)}.trace ul,.gaps{padding-inline-start:1.3rem}
-.history{padding:0;list-style:none}.history>li{border-top:1px solid var(--pmo-line);padding:.75rem 0}.history time{font-variant-numeric:tabular-nums}
+.history{padding:0;margin:0;list-style:none}.history>li{border-top:1px solid var(--pmo-line);padding:12px 0}.history .toolbar{margin-bottom:4px}.history time{font-variant-numeric:tabular-nums;font-weight:600}
+.health-history > h3{margin-bottom:8px}
 .appeal{display:grid;grid-template-columns:5rem minmax(0,1fr);gap:.25rem}.appeal dd{margin:0}
 </style>

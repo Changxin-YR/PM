@@ -106,7 +106,7 @@ onUnmounted(() => { ++sequence; ++searchSequence })
         <el-table-column label="里程碑 / 需求 / 风险申报" min-width="185"><template #default="{row}">
           {{row.status==='published'?`${row.milestoneClaims} / ${row.requirementClaims} / ${row.riskClaims}`:'—'}}
         </template></el-table-column>
-        <el-table-column label="申报人天" min-width="104"><template #default="{row}">{{row.declaredPersonDays??'—'}}</template></el-table-column>
+        <el-table-column label="申报人天" min-width="104" align="right"><template #default="{row}">{{row.declaredPersonDays??'—'}}</template></el-table-column>
         <el-table-column label="来源" min-width="128"><template #default="{row}">
           <el-button v-if="row.reportId" text type="primary" :title="row.sourceRef" @click="emit('open-report', row.projectId, row.reportId)">
             <FileText :size="15"/>查看周报
@@ -145,9 +145,9 @@ onUnmounted(() => { ++sequence; ++searchSequence })
 </template>
 
 <style scoped>
-.filters{align-items:end;flex-wrap:wrap;gap:12px}
+.filters{align-items:end;flex-wrap:wrap;gap:8px}
 .project-filter{width:min(100%,270px)}
-.period{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px}
+.period{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin:8px 0;font-size:13px}
 .period span,.support{color:var(--el-text-color-secondary)}
 .support{display:block;margin-top:3px}
 .mobile-portfolio{display:none}
@@ -155,7 +155,7 @@ onUnmounted(() => { ++sequence; ++searchSequence })
   .portfolio-table{display:none}
   .mobile-portfolio{display:block}
   .portfolio-cards{display:grid;gap:8px;margin:0;padding:0;list-style:none}
-  .portfolio-cards li{padding:12px;border:1px solid var(--pmo-line);border-radius:8px;overflow-wrap:anywhere}
+  .portfolio-cards li{padding:12px;border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-panel);overflow-wrap:anywhere}
   .card-heading,.card-counts{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
   .card-counts{font-size:12px}
   .card-counts dt{color:var(--el-text-color-secondary)}

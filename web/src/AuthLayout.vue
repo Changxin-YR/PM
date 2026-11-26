@@ -12,14 +12,16 @@ defineExpose({focusForm})
   <main class="auth-layout">
     <div class="auth-brand-panel">
       <PmoBrand/>
-      <div class="auth-intro">
-        <p>让项目协作，更清晰</p>
-        <span>人与 Agent 共同使用的项目工作台</span>
-      </div>
-      <div class="auth-illustration" aria-hidden="true">
-        <div class="auth-node"><Folder :size="25"/></div>
-        <div class="auth-node"><List :size="25"/></div>
-        <div class="auth-node"><CircleCheck :size="25"/></div>
+      <div class="auth-brand-content">
+        <div class="auth-intro">
+          <p>让项目协作，更清晰</p>
+          <span>人与 Agent 共同使用的项目工作台</span>
+        </div>
+        <div class="auth-illustration" aria-hidden="true">
+          <div class="auth-node"><Folder :size="22"/></div>
+          <div class="auth-node"><List :size="22"/></div>
+          <div class="auth-node"><CircleCheck :size="22"/></div>
+        </div>
       </div>
     </div>
     <div ref="formPanel" class="auth-form-panel">

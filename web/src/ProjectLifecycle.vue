@@ -141,7 +141,7 @@ async function send(attempt:Attempt){
     <p v-if="notice" role="status" class="notice">{{notice}}</p>
     <p v-if="loading" class="meta">正在读取阶段流转…</p>
     <h3>{{focusApprovalId?'选中的阶段流转':'阶段流转记录'}}</h3>
-    <p v-if="state&&!state.items.length" class="meta">{{focusApprovalId?'此申请已不可见。':'暂无阶段流转记录。'}}</p>
+    <p v-if="state&&!state.items.length" class="meta lifecycle-empty">{{focusApprovalId?'此申请已不可见。':'暂无阶段流转记录。'}}</p>
     <ul v-if="state?.items.length" class="entries" aria-label="阶段流转记录">
       <li v-for="item in state.items" :key="item.requestId">
         <div class="entry-heading">
@@ -209,7 +209,8 @@ async function send(attempt:Attempt){
 <style scoped>
 .lifecycle{overflow-wrap:anywhere}
 .lifecycle-toolbar,.stage-heading,.controls,.entry-heading,.entry-actions,.edge{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
-.lifecycle-toolbar{justify-content:space-between}
+.lifecycle-toolbar{justify-content:space-between;border-bottom:1px solid var(--pmo-line);padding-bottom:12px}
+.lifecycle-empty{display:grid;place-items:center;min-height:72px;margin:0;text-align:center}
 .controls,.entry-actions{margin-left:auto}
 .meta,.lifecycle-form legend{color:var(--el-text-color-secondary);font-size:13px}
 .notice{color:var(--el-color-primary)}
@@ -224,5 +225,6 @@ summary{cursor:pointer}
 .lifecycle-form fieldset{border:0;padding:0;margin:0;min-width:0}
 .lifecycle-form legend{padding:0;margin:0 0 .45rem}
 .lifecycle-form p{margin:0;overflow-wrap:anywhere}
+.lifecycle-form .edge{padding:8px 12px;background:var(--pmo-sidebar);border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-control);font-weight:600}
 .controls :deep(.el-button),.entry-actions :deep(.el-button){margin-left:0}
 </style>

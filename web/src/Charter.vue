@@ -91,11 +91,11 @@ onMounted(read)
 </template>
 
 <style scoped>
-.charter,.charter fieldset {display:grid;gap:16px;min-width:0}
+.charter,.charter fieldset {display:grid;gap:12px;min-width:0}
 .charter fieldset {border:0;margin:0;padding:0}
 .bar,.readonly-note,.readonly-label {display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .meta,.charter-actions span {font-size:13px;color:var(--pmo-muted)}
-.readonly-note {background:var(--pmo-selected);color:var(--pmo-primary-hover);border-radius:8px;padding:10px 12px;margin:0}
+.readonly-note {background:var(--pmo-sidebar);color:var(--pmo-secondary);border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-control);padding:8px 12px;margin:0}
 .charter-section + .charter-section {margin-top:0}
 .charter-section h3 {font-size:16px;font-weight:600;margin:0 0 12px}
 .risks-heading {justify-content:space-between;margin-bottom:8px}
@@ -105,8 +105,8 @@ onMounted(read)
 .numbers {grid-template-columns:repeat(3,minmax(0,1fr));font-variant-numeric:tabular-nums}
 .risk {display:grid;align-items:end;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:8px 0}
 dt {font-size:13px;color:var(--pmo-secondary)}
-dd {margin:4px 0 0;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px;padding:8px 12px;min-height:38px;white-space:pre-wrap;overflow-wrap:anywhere}
-.charter-actions {margin-top:16px;justify-content:flex-end}
+dd {margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.charter-actions {margin-top:12px;justify-content:flex-end}
 .readonly-label {margin-right:auto}
 @media (max-width:700px) {
   .narratives,.numbers,.risk-fields {grid-template-columns:1fr}

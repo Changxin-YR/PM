@@ -198,7 +198,7 @@ function downloadReview(){
 
 <template>
   <section class="assistant" aria-label="项目助理" :aria-busy="loading">
-    <div class="assistant-toolbar">
+    <div class="panel assistant-toolbar">
       <el-segmented v-model="mode" :options="modes" aria-label="助理模式"/>
       <form class="filters" @submit.prevent="load">
       <label v-if="mode==='ledger'">查询主题<select v-model="topic">
@@ -211,7 +211,7 @@ function downloadReview(){
       <el-tooltip v-else-if="!historyTopic&&!globalTopic" content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
       </form>
     </div>
-    <form v-if="mode==='ledger'" class="question-form" aria-label="台账自然语言查询" @submit.prevent="ask">
+    <form v-if="mode==='ledger'" class="panel question-form" aria-label="台账自然语言查询" @submit.prevent="ask">
       <label>用一句话查询台账<input v-model="question" maxlength="180" placeholder="例如 本周哪些项目亮了黄灯？" @input="questionError=''"/></label>
       <el-button native-type="submit" :disabled="!question.trim()" :loading="asking"><Search :size="15"/>提问</el-button>
       <p v-if="questionError" class="meta" role="status">{{questionError}}</p>
@@ -223,7 +223,8 @@ function downloadReview(){
     <PreapprovalSpending v-if="mode==='ledger'&&topic==='spending'" :api="api"/>
     <section v-if="mode==='ledger'&&topic==='weekly_health'" class="panel assistant-panel"><WeeklyHealthOverview :api="api"/></section>
 
-    <section v-if="charter" class="panel assistant-panel">
+    <template v-if="charter">
+    <section class="panel assistant-panel">
       <div class="assistant-row"><h3>立项材料与评分</h3><div class="assistant-actions">
         <el-button :icon="Download" @click="downloadReview">下载评审材料</el-button>
         <el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button>
@@ -237,13 +238,18 @@ function downloadReview(){
       <p v-if="charter.pendingScore" class="meta">已录评分读取时点 · {{time(charter.pendingScore.observedAt)}}</p>
       <p v-else-if="charter.scoreSummary" class="meta">最近一次正式裁决 · {{time(charter.scoreSummary.decidedAt)}}</p>
       <AssistantLines v-if="visibleScore" :items="charter.pendingScore?charter.pendingWeaknesses:charter.weaknesses"/>
+    </section>
+    <section class="panel assistant-panel">
       <h3>评审建议草稿</h3>
       <AssistantLines :items="charter.reviewDraft"/>
+    </section>
+    <section class="panel assistant-panel">
       <h3>历史教训</h3>
       <AssistantLines v-if="charter.lessonRefs.length" :items="charter.lessonRefs.map(item=>({...item,
         prompt:item.matchedTerm?`立项卡文字匹配 · ${item.matchedTerm}`:undefined}))"/>
       <p v-else class="meta">没有匹配的已确认教训。</p>
     </section>
+    </template>
 
     <template v-if="process">
       <section class="panel assistant-panel">
@@ -284,11 +290,14 @@ function downloadReview(){
       </section>
     </template>
 
-    <section v-if="closing" class="panel assistant-panel">
+    <template v-if="closing">
+    <section class="panel assistant-panel">
       <div class="assistant-row"><h3>结项门槛</h3><el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button></div>
       <p v-if="closing.gateEligible===null" class="meta">当前未处于结项检查阶段。</p>
       <p v-else-if="closing.gateEligible" class="meta">未发现结项缺口 · 待人工裁决</p>
       <AssistantLines :items="closing.gateGaps.map(gap=>({text:gap.message,sourceRefs:gap.sourceRefs}))"/>
+    </section>
+    <section class="panel assistant-panel">
       <div class="assistant-row"><h3>{{closing.retrospectiveKind==='terminated'?'终止复盘':'复盘四问'}}</h3>
         <el-button text @click="emit('navigate','retrospective')">复盘与教训<ArrowRight :size="14"/></el-button></div>
       <ol><li v-for="question in closing.retrospectiveQuestions" :key="question">{{question}}</li></ol>
@@ -297,6 +306,7 @@ function downloadReview(){
       <p v-else class="meta">暂无可引用的复盘回答。</p>
       <el-button v-if="closing.canStartLessonDraft" @click="emit('draftLesson')">从复盘起草教训<ArrowRight :size="14"/></el-button>
     </section>
+    </template>
 
     <section v-if="ledger" class="panel assistant-panel" aria-label="台账原始结果">
       <div class="assistant-row"><h3>台账结果</h3><el-button v-if="topic==='health'" text @click="emit('navigate','health')">三线明细<ArrowRight :size="14"/></el-button></div>
@@ -331,27 +341,32 @@ function downloadReview(){
 </template>
 
 <style scoped>
-.assistant {display:grid;gap:16px;min-width:0;overflow-wrap:anywhere}
+.assistant {display:grid;gap:12px;min-width:0;overflow-wrap:anywhere}
 .assistant > .panel + .panel {margin-top:0}
-.assistant-toolbar,.filters,.question-form,.assistant-actions {display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.filters,.question-form,.assistant-actions {display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.assistant-toolbar{display:grid;gap:12px;justify-items:start;padding-block-start:0}
+.assistant-toolbar .filters{width:100%}
 .question-form label {flex:1 1 240px;min-width:0;margin:0}
 .question-form input {width:100%;min-width:0}
 .question-form p {flex:1 1 100%;margin:0}
 .portfolio-preview {margin:16px 0;padding-bottom:16px;border-bottom:1px solid var(--pmo-line)}
-.assistant-toolbar :deep(.el-segmented) {max-width:100%;background:var(--pmo-surface);border:1px solid var(--pmo-line)}
-.assistant-toolbar :deep(.el-segmented__item-label) {line-height:24px}
+.assistant-toolbar :deep(.el-segmented) {width:100%;max-width:100%;padding:0;border-radius:0;background:var(--pmo-surface);border-bottom:1px solid var(--pmo-line);--el-segmented-item-selected-color:var(--pmo-primary-hover);--el-segmented-item-selected-bg-color:transparent}
+.assistant-toolbar :deep(.el-segmented__group){flex-wrap:wrap;justify-content:flex-start}
+.assistant-toolbar :deep(.el-segmented__item){flex:0 0 auto;border-radius:0;border-bottom:2px solid transparent;padding-inline:12px}
+.assistant-toolbar :deep(.el-segmented__item.is-selected){border-color:var(--pmo-primary);font-weight:600}
+.assistant-toolbar :deep(.el-segmented__item-label) {line-height:38px}
 .filters label {flex:1 1 140px;min-width:0;margin:0}
 .filters input,.filters select {width:100%;min-width:0}
 .assistant-row {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
 h3 {font-size:16px;font-weight:600;margin:16px 0 8px}
 .assistant-row h3,.assistant-panel > h3:first-child {margin:0}
-.summary-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px;margin:16px 0 8px}
-.summary-grid div {border-inline-start:2px solid var(--pmo-line);padding:0 12px;min-width:0}
+.summary-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:8px;margin:12px 0 8px}
+.summary-grid div {border-inline-start:1px solid var(--pmo-line);padding:0 12px;min-width:0}
 dt {color:var(--pmo-muted);font-size:13px}
 dd {margin:4px 0 0}
-.summary-grid dd {font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
-.process-grid div {position:relative;padding-inline-start:52px}
-.process-grid dt > svg {position:absolute;inset-inline-start:8px;top:50%;transform:translateY(-50%);box-sizing:content-box;color:var(--pmo-primary-hover);background:var(--pmo-selected);border-radius:8px;padding:8px}
+.summary-grid dd {font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.process-grid dt {display:flex;align-items:center;gap:4px}
+.process-grid dt > svg {width:15px;height:15px;flex:none;color:var(--pmo-primary-hover)}
 .health-swatch {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--el-color-info)}
 .health-swatch[data-state=green] {background:var(--el-color-success)}
 .health-swatch[data-state=yellow] {background:var(--el-color-warning)}
@@ -365,10 +380,9 @@ dd {margin:4px 0 0}
 .packet-sources summary {cursor:pointer;font-weight:500}
 code {display:block;font-size:12px;margin:4px 0}
 @media (max-width:560px) {
-  .assistant-toolbar {align-items:stretch}
   .assistant-toolbar :deep(.el-segmented) {width:100%;min-width:0}
-  .assistant-toolbar :deep(.el-segmented__item) {flex:1;min-width:0;padding:2px}
-  .assistant-toolbar :deep(.el-segmented__item-label) {font-size:12px}
+  .assistant-toolbar :deep(.el-segmented__item) {flex:1 0 auto;min-width:0;padding-inline:6px}
+  .assistant-toolbar :deep(.el-segmented__item-label) {font-size:13px}
   .filters {width:100%}
   .sections div {grid-template-columns:1fr}
   .sections dd {grid-column:1}

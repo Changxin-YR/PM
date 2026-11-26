@@ -52,7 +52,7 @@ onMounted(read)
   <el-table-column label="状态" width="120">
     <template #default="{row}"><el-tag size="small" :type="row.status==='customer_confirmed'&&row.baselineVersion?'success':'info'">{{row.baselineVersion?statuses[row.status]:'草稿'}}</el-tag></template>
   </el-table-column>
-  <el-table-column label="操作" width="142">
+  <el-table-column label="操作" width="174">
     <template #default="{row}">
       <div class="requirement-actions">
         <RequirementHistory :api="api" :id="row.requirementId"/>

@@ -186,7 +186,7 @@ async function send(attempt:Attempt){
 </template>
 
 <style scoped>
-.reconciliation{margin-top:1rem;overflow-wrap:anywhere}
+.reconciliation{margin-top:12px;overflow-wrap:anywhere}
 .reconcile-toolbar,.controls{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
 .reconcile-toolbar h3,.measure h4,.variance h5{margin:0}
 .controls{margin-left:auto}
@@ -195,7 +195,7 @@ async function send(attempt:Attempt){
 .signed-note{color:var(--el-color-primary)}
 .measure-grid,.reason-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.75rem}
 .measure,.variance,.trace{border-top:1px solid var(--pmo-line);margin-top:12px;padding-top:8px}
-.measure{border:1px solid var(--pmo-line);border-radius:8px;background:var(--pmo-bg);padding:16px}
+.measure{border:1px solid var(--pmo-line);border-radius:var(--pmo-radius-panel);background:var(--pmo-bg);padding:12px}
 .reconciliation dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.3rem .6rem;margin:.5rem 0}
 .reconciliation dd{margin:0;font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
 .reconciliation a{color:var(--pmo-primary-hover);display:inline-flex;align-items:center;gap:.3rem;max-width:100%}

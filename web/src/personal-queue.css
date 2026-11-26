@@ -10,22 +10,24 @@
   gap: 12px;
 }
 
-.queue-toolbar button { margin-left: auto; }
-ul { list-style: none; margin: 16px 0 0; padding: 0; }
-li { padding: 16px 0; border-top: 1px solid var(--pmo-line); }
+.queue-toolbar button { margin-inline-start: auto; }
+ul { list-style: none; margin: 10px 0 0; padding: 0; }
+li { padding: 12px 0; border-top: 1px solid var(--pmo-line); }
 li button { flex: none; }
 .queue-description { min-width: 0; }
 small { display: block; margin-top: 4px; color: var(--pmo-muted); font-size: 13px; }
 .waiting { color: var(--el-color-warning-dark-2); }
 
 .queue-empty {
-  min-height: 126px;
+  min-height: 88px;
   margin: 0;
-  padding: 20px;
+  padding: 12px;
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 12px;
+  gap: 8px;
+  font-size: 13px;
+  text-align: center;
   color: var(--pmo-muted);
 }
 
