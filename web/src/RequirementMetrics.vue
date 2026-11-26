@@ -14,8 +14,8 @@ onMounted(load)
     <el-alert v-if="error" type="error" :title="error" :closable="false"/>
     <template v-if="data">
       <dl class="metrics">
-        <div><dt>加权满足率</dt><dd>{{pct(data.satisfaction)}} <small>（{{data.confirmedWeight}} / {{data.activeWeight}}）</small></dd></div>
-        <div><dt>初始需求变更率</dt><dd>{{pct(data.changeRate)}} <small>（{{data.changedInitialCount}} / {{data.initialCount}}）</small></dd></div>
+        <div><dt>加权满足率</dt><dd>{{pct(data.satisfaction)}}<small>（{{data.confirmedWeight}} / {{data.activeWeight}}）</small></dd></div>
+        <div><dt>初始需求变更率</dt><dd>{{pct(data.changeRate)}}<small>（{{data.changedInitialCount}} / {{data.initialCount}}）</small></dd></div>
         <div><dt>P0 已确认 / 有效</dt><dd>{{data.confirmedP0}} / {{data.activeP0}}</dd></div>
         <div><dt>待审冻结 / 有效需求</dt><dd>{{data.frozenCount}} / {{data.activeCount}}</dd></div>
       </dl>
