@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMO 轻量管理系统开发设计方案（评审稿）</title>
+<style>
+  :root{
+    --bg:#F6F8FB;--paper:#FFFFFF;--ink:#0F172A;--ink2:#475569;--ink3:#64748B;
+    --line:#E2E8F0;--line2:#CBD5E1;
+    --blue:#1A56DB;--blue2:#3B82F6;--blue-soft:#EEF4FF;--blue-line:#C7D9FB;
+    --cyan:#0E7490;--cyan-soft:#ECFEFF;
+    --amber:#B45309;--amber-soft:#FFFBEB;
+    --red:#B91C1C;--red-soft:#FEF2F2;
+    --green:#15803D;--green-soft:#F0FDF4;
+    --violet:#6D28D9;--violet-soft:#F5F3FF;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased;}
+  .layout{display:flex;max-width:1440px;margin:0 auto;}
+  .toc{width:250px;flex:0 0 250px;position:sticky;top:0;height:100vh;overflow-y:auto;
+    padding:34px 18px 40px 26px;border-right:1px solid var(--line);
+    background:linear-gradient(180deg,#FBFCFE 0%,#F6F8FB 100%);}
+  .toc-brand{font-size:12px;letter-spacing:.14em;color:var(--blue);font-weight:700;margin-bottom:4px;}
+  .toc-title{font-size:13px;color:var(--ink3);margin-bottom:22px;line-height:1.5;}
+  .toc a{display:block;font-size:12.5px;color:var(--ink2);text-decoration:none;
+    padding:5px 10px;border-left:2px solid transparent;border-radius:0 4px 4px 0;transition:.15s;line-height:1.5;}
+  .toc a:hover{background:var(--blue-soft);color:var(--blue);border-left-color:var(--blue2);}
+  .toc a.lv2{padding-left:22px;font-size:12px;color:var(--ink3);}
+  .toc .grp{font-size:10.5px;letter-spacing:.12em;color:#94A3B8;margin:16px 0 4px 10px;text-transform:uppercase;}
+  main{flex:1;min-width:0;padding:0 0 100px;}
+  .cover{padding:72px 56px 56px;background:var(--paper);border-bottom:1px solid var(--line);position:relative;overflow:hidden;}
+  .cover:before{content:"";position:absolute;top:0;left:0;width:6px;height:100%;
+    background:linear-gradient(180deg,var(--blue) 0%,#38BDF8 60%,#A5B4FC 100%);}
+  .cover .kicker{font-size:11.5px;letter-spacing:.22em;color:var(--blue);font-weight:700;margin-bottom:18px;}
+  .cover h1{font-size:38px;line-height:1.22;margin:0 0 16px;font-weight:800;letter-spacing:-.02em;}
+  .cover h1 span{color:var(--blue);}
+  .cover .sub{font-size:16px;color:var(--ink2);max-width:720px;margin:0 0 30px;}
+  .meta{display:flex;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:20px;max-width:820px;}
+  .meta div{padding-right:32px;margin-right:32px;border-right:1px solid var(--line);}
+  .meta div:last-child{border-right:none;}
+  .meta dt{font-size:10.5px;letter-spacing:.12em;color:var(--ink3);margin-bottom:3px;}
+  .meta dd{margin:0;font-size:13.5px;font-weight:600;color:var(--ink);}
+  section{padding:52px 56px 8px;background:var(--paper);}
+  section + section{border-top:1px solid var(--line);}
+  h2{font-size:25px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px;}
+  h2 .num{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--blue);
+    background:var(--blue-soft);padding:3px 9px;border-radius:5px;letter-spacing:.04em;position:relative;top:-2px;}
+  .lede{font-size:15px;color:var(--ink2);margin:0 0 28px;max-width:820px;}
+  h3{font-size:17.5px;font-weight:700;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  h3:first-of-type{margin-top:8px;}
+  h4{font-size:14.5px;font-weight:700;margin:26px 0 10px;color:var(--ink);}
+  p{margin:0 0 14px;}
+  ul,ol{margin:0 0 16px;padding-left:22px;}
+  li{margin-bottom:7px;}
+  strong{font-weight:700;color:var(--ink);}
+  code{font-family:var(--mono);font-size:12.5px;background:#F1F5F9;color:#0B4AC2;
+    padding:1.5px 5px;border-radius:4px;border:1px solid #E2E8F0;}
+  .tw{overflow-x:auto;margin:18px 0 24px;border:1px solid var(--line);border-radius:10px;background:var(--paper);}
+  table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.6;}
+  thead th{background:#0F2A5C;color:#fff;text-align:left;padding:10px 13px;font-weight:600;
+    font-size:12px;letter-spacing:.03em;white-space:nowrap;}
+  thead th:first-child{border-radius:9px 0 0 0;}
+  thead th:last-child{border-radius:0 9px 0 0;}
+  tbody td{padding:10px 13px;border-top:1px solid var(--line);vertical-align:top;color:var(--ink2);}
+  tbody tr:nth-child(even){background:#FAFBFD;}
+  tbody tr:hover{background:var(--blue-soft);}
+  tbody td strong{color:var(--ink);}
+  td.k{font-weight:600;color:var(--ink);white-space:nowrap;}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1.5px 7px;border-radius:20px;
+    letter-spacing:.02em;white-space:nowrap;line-height:1.6;}
+  .t-blue{background:var(--blue-soft);color:var(--blue);border:1px solid var(--blue-line);}
+  .t-cyan{background:var(--cyan-soft);color:var(--cyan);border:1px solid #A5F3FC;}
+  .t-amber{background:var(--amber-soft);color:var(--amber);border:1px solid #FDE68A;}
+  .t-red{background:var(--red-soft);color:var(--red);border:1px solid #FECACA;}
+  .t-green{background:var(--green-soft);color:var(--green);border:1px solid #BBF7D0;}
+  .t-violet{background:var(--violet-soft);color:var(--violet);border:1px solid #DDD6FE;}
+  .t-grey{background:#F1F5F9;color:#475569;border:1px solid #E2E8F0;}
+  .callout{border-left:3px solid var(--blue);background:var(--blue-soft);
+    padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0 26px;font-size:14px;}
+  .callout p:last-child{margin-bottom:0;}
+  .callout .lb{font-size:10.5px;font-weight:800;letter-spacing:.14em;color:var(--blue);display:block;margin-bottom:5px;}
+  .callout.warn{border-left-color:var(--amber);background:var(--amber-soft);}
+  .callout.warn .lb{color:var(--amber);}
+  .callout.dark{border-left-color:var(--ink);background:#F8FAFC;}
+  .callout.dark .lb{color:var(--ink);}
+  .flow{display:flex;flex-wrap:wrap;margin:24px 0 26px;align-items:stretch;}
+  .step{flex:1;min-width:110px;background:#fff;border:1px solid var(--line);border-top:3px solid var(--blue);
+    padding:13px 11px;position:relative;}
+  .step:first-child{border-radius:8px 0 0 8px;}
+  .step:last-child{border-radius:0 8px 8px 0;border-top-color:var(--green);}
+  .step .n{font-family:var(--mono);font-size:10px;color:var(--blue);font-weight:700;letter-spacing:.08em;}
+  .step b{display:block;font-size:12.5px;margin:3px 0 5px;color:var(--ink);}
+  .step span{font-size:11px;color:var(--ink3);line-height:1.5;display:block;}
+  .step:after{content:"›";position:absolute;right:-7px;top:50%;transform:translateY(-50%);
+    color:var(--line2);font-size:20px;font-weight:700;z-index:2;background:#fff;line-height:1;}
+  .step:last-child:after{display:none;}
+  pre{background:#0F172A;color:#E2E8F0;padding:16px 18px;border-radius:9px;overflow-x:auto;
+    font-family:var(--mono);font-size:11.8px;line-height:1.72;margin:16px 0 22px;}
+  pre .c{color:#7C93B5;} pre .k{color:#7DD3FC;} pre .s{color:#A5E8B0;} pre .v{color:#FCD34D;} pre .r{color:#FCA5A5;}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:20px 0 26px;}
+  .card{border:1px solid var(--line);border-radius:9px;padding:15px 17px;background:#fff;border-top:3px solid var(--blue);}
+  .card h5{margin:0 0 6px;font-size:13.5px;font-weight:700;color:var(--ink);}
+  .card p{margin:0;font-size:12.5px;color:var(--ink2);line-height:1.65;}
+  .card.c2{border-top-color:var(--cyan);} .card.c3{border-top-color:var(--violet);} .card.c4{border-top-color:var(--amber);}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0 26px;}
+  .kpi{border:1px solid var(--line);border-radius:9px;padding:14px 16px;background:#FBFCFE;}
+  .kpi b{display:block;font-size:26px;font-weight:800;color:var(--blue);line-height:1.2;letter-spacing:-.02em;}
+  .kpi span{font-size:11.5px;color:var(--ink3);line-height:1.5;display:block;margin-top:4px;}
+  .num-list{counter-reset:n;list-style:none;padding-left:0;}
+  .num-list>li{counter-increment:n;position:relative;padding-left:34px;margin-bottom:12px;}
+  .num-list>li:before{content:counter(n,decimal-leading-zero);position:absolute;left:0;top:1px;
+    font-family:var(--mono);font-size:11px;font-weight:700;color:var(--blue);
+    background:var(--blue-soft);padding:1px 5px;border-radius:4px;}
+  .small{font-size:12px;color:var(--ink3);}
+  .mono{font-family:var(--mono);font-size:12px;}
+  .foot{padding:34px 56px;background:#0F2A5C;color:#93B4E8;font-size:11.5px;line-height:1.8;}
+  .foot b{color:#fff;}
+  .state{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;
+    padding:2px 8px;border-radius:5px;border:1px solid var(--line2);background:#F8FAFC;color:var(--ink2);}
+  @media (max-width:1180px){
+    .toc{display:none;}
+    section,.cover{padding-left:30px;padding-right:30px;}
+    .cards{grid-template-columns:1fr;}
+    .kpis{grid-template-columns:repeat(2,1fr);}
+  }
+  @media print{
+    body{background:#fff;font-size:10.5pt;}
+    .toc{display:none;}
+    section{page-break-inside:avoid;padding:18px 0;}
+    .cover{padding:0 0 20px;}
+    h2{page-break-after:avoid;}
+    .tw,pre,.flow{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<aside class="toc">
+  <div class="toc-brand">PMO ONTOLOGY · LITE</div>
+  <div class="toc-title">PMO 本体 · 轻量版<br>设计方案 v1.0-Lite</div>
+  <div class="grp">独立系统开发设计</div>
+  <a href="#intro">A　设计范围</a><a href="#workflow">B　网页与业务流程</a><a href="#system">C　数据与规则</a><a href="#mcp">D　智能体操作</a><a href="#uat">E　开发与验收</a><a href="#sign">F　评审意见单</a>
+  <div class="grp">附件原文 · 逐章对照</div>
+  <a href="#s0">00　一页纸摘要</a>
+  <a href="#s1">01　管理关注点与总体设计</a>
+  <a href="#s1" class="lv2">1.1 五个关注点映射</a>
+  <a href="#s1" class="lv2">1.2 项目生命周期状态机</a>
+  <a href="#s2">02　轻量本体：16 类</a>
+  <a href="#s2" class="lv2">2.1 类清单</a>
+  <a href="#s2" class="lv2">2.2 四个关键结构</a>
+  <a href="#s3">03　三道关口与评分卡</a>
+  <a href="#s3" class="lv2">3.1 立项评分卡</a>
+  <a href="#s3" class="lv2">3.2 可落地性评分卡</a>
+  <a href="#s3" class="lv2">3.3 结项门槛</a>
+  <a href="#s4">04　过程三线与 8 条规则</a>
+  <a href="#s5">05　证据管道：日报周报</a>
+  <a href="#s6">06　PMO 助手：单 Agent 四模式</a>
+  <a href="#s7">07　10 人天开发计划</a>
+  <a href="#s8">08　与完整版的衔接</a>
+  <a href="#s9">09　附录</a>
+</aside>
+
+<main>
+
+<header class="cover" id="intro"><div class="kicker">业务与技术联合评审 · 2026-11-19</div><h1>PMO 轻量管理系统<br><span>开发设计方案</span></h1>
+<p class="sub">人员通过网页登录办事，智能体通过 MCP 操作同一本项目台账。两个入口使用相同的权限、指标和关口校验。</p>
+<p><strong>业务依据：</strong>《PMO 本体设计方案·轻量版》v1.0-Lite（2026-11-13）。下文把附件称为“原案”。三道关口、16 个业务类、12 条关系、8 条规则、1 个助手四种模式及 5 个工具全部保留。新增内容集中于 Web、MCP 和独立部署；待裁决事项不作为已批准规则。</p>
+<p>本稿适用于原案设定的小规模项目管理，不扩展到项目组合、WBS 或跨组织资源调度。<a href="#workflow">看开发设计</a> · <a href="#sign">填写评审意见</a> · <a href="#baseline">对照附件原文</a></p></header>
+
+<section id="workflow"><h2><span class="num">B</span>谁在网页上完成什么</h2>
+<div class="tw"><table><thead><tr><th>页面 / 人员</th><th>输入、操作与产出</th><th>放行边界</th></tr></thead><tbody>
+<tr><td>登录与工作台<br>内部人员、管理员</td><td>登录后按成员关系显示项目、评审和到期待办；管理员邀请、停用账户、分配项目权限。</td><td>登录不等于可看所有项目；管理员不自动取得业务裁决权。无智能体时仍可完成业务全流程。</td></tr>
+<tr><td>立项卡与评审<br>PM、发起人、评审人</td><td>填写价值主张、受益方、吸引力证据、收益、成功标准、钱/人天/周期及主要风险。独立评分、选择锚点、说明理由，附历史教训；具名形成决议。</td><td>四维权重 20%、30%、25%、25%；任一维 1 分优先否决。≥4.2 可快审，仍需发起人确认；[3.2,4.2) 通过加补强，低于 3.2 重做或不立项。</td></tr>
+<tr><td>方案与落地评审<br>PM、客户代表、评审人</td><td>建立 3–8 个里程碑、至少一条需求基线、预算分解与风险清单。按技术、资源、依赖、时间、验收标准五维评审。</td><td>任一维 ≤2 不能通过；有条件通过不能覆盖短板。补强项生成有责任人和期限的 Task。</td></tr>
+<tr><td>执行台账、周报、看板<br>成员、PM、发起人</td><td>记录里程碑计划/预测/实际，分开记金额和人天，逐条验收需求、登记客户确认与变更。周报读固定区块、抽取叙述事实、比对差异；PM 核对后发布。</td><td>基线变更须留痕，低可信事实不参与计算；看板能追到数据时点与证据，不能以模型推测代替实际值。</td></tr>
+<tr><td>交付、结项与复盘<br>PM、客户代表、评审人</td><td>P0 全部客户确认且加权满足率 ≥90%；金额、人天偏差均 ≤20% 且超支有归因；阻塞风险已关或接收方确认移交。核对后记录裁决，回答复盘四问。</td><td>普通申请缺一项即退回。书面接受偏差的特别路径见 F2。至少一条人工确认的 Lesson 才能归档，供下一次立项检索。</td></tr>
+</tbody></table></div><p><strong>状态推进：</strong>立项准备 → 立项评审 → 方案细化 → 落地评审 → 实施 → 交付验收 → 结项评审 → 已结项 → 回顾 → 归档。暂停、恢复、终止分别留原因与决议。裁决保留通过、有条件通过、暂缓、调整方向、不通过五种结果。退回保留原材料版本，不用覆盖旧评分来实现重报。详见<a href="#s1">原案 §1</a>、<a href="#s3">§3</a>。</p></section>
+
+<section id="system"><h2><span class="num">C</span>数据、权限与规则如何落地</h2>
+<p><strong>设计建议：</strong>采用“Web 页面 / MCP 服务 → 同一业务服务 → 关系型数据库”。证据文件私有存储，数据库记录出处和权限。后台作业负责缺报检查、提醒与重试。业务计算不放在浏览器或提示词中；无需图数据库或规则引擎。</p>
+<div class="tw"><table><thead><tr><th>沿用原业务对象</th><th>独立系统需要保证的约束</th></tr></thead><tbody>
+<tr><td>Project、Charter、Scorecard、Review、Decision</td><td>评审批次连接项目、材料版本、评分人和决议；状态与决议同事务落库。旧材料的批准不能用来放行变更后的材料。</td></tr>
+<tr><td>Milestone、CostEntry、Requirement、ChangeEntry、Risk</td><td>预测不能覆盖计划；客户确认与内部验收分开记录。ChangeEntry 保存前后值、原因、批准人与时间，拟增加目标类型以支撑 LR-03。</td></tr>
+<tr><td>Report、Fact、Task、Lesson、Person、Stakeholder</td><td>事实关联报告、时点与引文；风险、补强和澄清任务落实到人；已确认教训保留项目出处。客户相关方不自动取得登录权。</td></tr>
+</tbody></table></div>
+<p><strong>三线保留原文口径：</strong>时间线看关键里程碑推迟天数与逾期；成本分金额、人天算（实际＋剩余预测）÷预算−1；质量按 P0/P1/P2 权重 3/2/1 算客户确认满足率。质量灯仍为“P0 存在未确认或客户提出争议即红”，不改为“到期未确认才红”。项目任一线红则红，两线黄则黄，其余绿。保存输入快照，申诉不改历史。完整阈值见<a href="#s4">原案 §4</a>。</p>
+<p><strong>八规则落点：</strong>LR-01 跳关、LR-02 五维短板、LR-05 无记录变更、LR-07 结项缺口在提交时拦截。LR-03 延期无变更通知 PM；LR-04 成本任一口径超 15% 通知发起人，超 20% 要求重估；LR-06 连缺两期周报或关键里程碑无佐证，标数据不可信并暂停计算；LR-08 结项两周未完成复盘/沉淀教训，提醒发起人并计入月报。复盘与教训是归档前置条件，不是等两周后才检查。</p></section>
+
+<section id="mcp"><h2><span class="num">D</span>智能体怎样通过 MCP 办事</h2>
+<p>保留立项评审助理、过程管家、结项回顾助理、台账问答四种模式。首版把<a href="#s6">原案 §6</a>的五个工具封装为 MCP 工具；不默认开放通用写表或新增审批工具。</p>
+<div class="tw"><table><thead><tr><th>工具名</th><th>输入 → 结果</th><th>是否写入</th></tr></thead><tbody>
+<tr><td><code>query_table</code></td><td>项目范围、过滤条件、字段 → 分页记录、时点与来源</td><td>只读；限制可查对象、字段及项目。</td></tr>
+<tr><td><code>write_fact</code></td><td>项目、来源报告、主谓值、时点、原文引用 → 事实编号与处理状态</td><td>仅授权的过程管家可写 Fact；先校验结构和来源，低可信或矛盾项进澄清，不改基线。</td></tr>
+<tr><td><code>compute_three_lines</code></td><td>项目、数据时点 → 四项指标、三线灯色与输入快照</td><td>返回确定性计算结果，不变更业务基线。</td></tr>
+<tr><td><code>check_gate</code></td><td>项目、关口、材料版本 → 逐项校验、缺口和补救方向</td><td>只校验，不代人裁决或推进阶段。</td></tr>
+<tr><td><code>search_lessons</code></td><td>关键词、类别 → 有权限的已确认教训及项目出处</td><td>只读；无命中明确说明，不编造案例。</td></tr>
+</tbody></table></div><p><strong>接入建议：</strong>远程 MCP 通过 HTTPS 接入；服务端按客户端身份、委托人、项目范围和工具权限逐次校验，不信任调用方自报的角色。凭据可撤销。写入带幂等键并记录来源、操作者、时间与结果。保留人工裁决、客户签署、教训确认和归档。</p>
+<p><strong>联调样例：</strong>过程管家从项目 P01 周报抽一条里程碑预测，write_fact 返回 F01；同一请求重试仍返回 F01。PM 在网页打开 F01 核对原文，解决与上周记录的矛盾后刷新三线。Web 与 MCP 查同一时点得到同一结果，其他项目的客户端不能读 F01。</p></section>
+
+<section id="uat"><h2><span class="num">E</span>开发批次与试点验收</h2>
+<p><strong>评审通过后分四批交付：</strong>① 网页登录、项目权限和评审状态机；② 基线、变更、成本、三线、结项复盘和八条规则；③ 证据管道、助手四模式与 MCP 五工具；④ 一新一旧两个真实项目试点、联调、使用手册与业务签收。原案的 10 人天针对平台表格和轻脚本，不作为独立系统工期承诺。</p>
+<p><strong>原案八问全测：</strong>立项分与弱项、时间/钱/人天/满足率、延期无变更、未立项先花钱、结项缺口、相似项目教训、本周黄红项目及原因、需求变更历史。除历史教训允许检索式回答外，其余必须可确定性复算或查询。逐题通过标准见<a href="#s7">原案 §7.1</a>。</p>
+<div class="tw"><table><thead><tr><th>交给测试人员的输入</th><th>评审时可先手算的预期结果</th></tr></thead><tbody>
+<tr><td>单人立项评分 4、5、3、4；落地五维中一项为 2</td><td>立项得 4.05，回报最弱，不走快审；即便立项通过，落地仍拦截并列补强项。</td></tr>
+<tr><td>预算 100 万、实际 70 万、剩余预测 40 万；预算 50 人天、实际 40、剩余预测 20</td><td>金额 +10%、人天 +20%；因人天超 15% 报红并通知发起人，恰好 20% 不触发“超 20% 重估”。</td></tr>
+<tr><td>P0/P1/P2 各一，仅 P0、P1 客户确认，无书面偏差接受</td><td>加权满足率 5/6，即 83.33%。P0 达标，但加权率未达 90%，普通结项被拒并列明缺口。</td></tr>
+<tr><td>同一客户端重试、跨项目、撤权；断开智能体；从备份恢复</td><td>不重复写，不泄露他项数据，撤权后拒绝；人工仍能全程办理。恢复后项目、决议、证据和审计可对账。</td></tr>
+</tbody></table></div></section>
+<section id="sign"><h2><span class="num">F</span>评审意见单</h2>
+<div class="tw"><table><thead><tr><th>待决事项</th><th>请评审人明确</th><th>建议确认人</th></tr></thead><tbody>
+<tr><td>F1　多人评分</td><td>保留独立打分、锚点理由、1 分否决和一次复议。否决看单个评审人的分数还是合议维度分？不同评审人的分数如何汇总？</td><td>发起人、评审负责人</td></tr>
+<tr><td>F2　带条件结项</td><td>§3.3 允许客户书面接受需求偏差，LR-07 要求门槛不达标拒绝。建议普通路径仍拦截，另提例外并保留未达指标、客户凭据、补救责任及具名决议。须明确是否可涉及 P0、谁能批准，未决前不自动放行。</td><td>PMO、客户代表、评审负责人</td></tr>
+<tr><td>F3　指标边界</td><td>原文 P0 未确认即红，先用真实项目验证；若改为到期才红，须另行批准。确定 LR-05 冻结项是否留在分母、成本偏差是否取绝对值、预算为零或无基线时如何展示。</td><td>PMO、成本负责人</td></tr>
+<tr><td>F4　状态与变更</td><td>确认里程碑与 ChangeEntry 的关联；明确 approved、rejected、redesign 是决议还是状态，写明退回、重报、终止的合法后续动作。</td><td>PM、产品负责人</td></tr>
+<tr><td>F5　部署与试点</td><td>确定部署位置、登录方式、首个 MCP 客户端、授权与撤销负责人、证据保存期限、两个试点项目及验收人。原五个工具之外的写操作须逐项申请。</td><td>IT、接入方、业务负责人</td></tr>
+</tbody></table></div>
+<p><strong>开工条件：</strong>F1–F5 有书面结论；业务确认样例预期；技术冻结首版页面、状态、字段、权限和工具契约，给出工期与恢复方案；负责人同意后才开始开发。试点验收后运行一个月，再依据八问表现决定是否调阈值。</p>
+<p><strong>评审结论：</strong>□ 同意开发　□ 修改后复审　□ 暂缓　　评审人：____________　日期：____________</p><p>修改意见（请注明 F 编号或原案章节）：__________________________________________________</p></section>
+<section id="baseline"><h2>附录｜用户提供的业务设计原文</h2><p>以下保留原文件封面及第 00–09 章正文。其中的平台表格、D1–D10 计划及“开发从建表直接开始”属于原实施假设；本次项目的开工条件见上方评审意见单。</p></section>
+<header class="cover">
+  <div class="kicker">ONTOLOGY DESIGN SPECIFICATION · LITE EDITION</div>
+  <h1>项目管理 PMO 本体 · 轻量版<br><span>10 人天可落地的治理骨架</span></h1>
+  <p class="sub">对应简单业务场景的管理闭环：立项看价值与吸引力、方案看可落地、过程盯时间 / 钱 / 人天 / 需求满足度、结项做回顾。一个 Agent、一套表格、八条规则——先跑起来，再谈演进。</p>
+  <dl class="meta">
+    <div><dt>版本</dt><dd>v1.0-Lite</dd></div>
+    <div><dt>日期</dt><dd>2026-11-13</dd></div>
+    <div><dt>开发规模</dt><dd>10 人天</dd></div>
+    <div><dt>规模</dt><dd>16 类 / 12 关系 / 8 规则 / 1 Agent</dd></div>
+    <div><dt>关系</dt><dd>完整版 v1.0 的子集</dd></div>
+  </dl>
+</header>
+
+<!-- ============ 0 摘要 ============ -->
+<section id="s0">
+  <h2><span class="num">00</span>一页纸摘要</h2>
+  <p class="lede">轻量版不是简化版完整版的缩写，而是针对当前业务阶段的独立取舍：管理颗粒度只到「里程碑 + 需求」，不建组合、不做资源买卖、不做多层治理机构。</p>
+
+  <div class="callout dark">
+    <span class="lb">核心判断</span>
+    <p><strong>当前阶段的 PMO 只需要回答四类问题：</strong>这个项目值不值得做（立项）？这个方案能不能做成（落地）？现在做得怎么样（三线：时间 / 钱 / 人天 / 需求满足）？做完了学到什么（结项回顾）？<br>本体围绕这四问设计，其余一律不做——<em>10 人天里每多做一个功能，就少一分把数据填准的机会</em>。</p>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><b>16</b><span>个类<br>完整版 52 类的子集，ID 兼容</span></div>
+    <div class="kpi"><b>8</b><span>条规则<br>每条都挡一类真实事故</span></div>
+    <div class="kpi"><b>3</b><span>道关口<br>立项 / 落地 / 结项，五选一裁决</span></div>
+    <div class="kpi"><b>1</b><span>个 Agent · 四种模式<br>暂不拆多角色</span></div>
+  </div>
+
+  <h3>与完整版（v1.0）的分工</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>维度</th><th>轻量版 v1.0-Lite（本版）</th><th>完整版 v1.0（保留）</th></tr></thead>
+    <tbody>
+      <tr><td class="k">适用阶段</td><td>项目数 &lt; 15，业务单一，管理层即治理层</td><td>项目组合化、多治理层级、跨组织资源协调</td></tr>
+      <tr><td class="k">治理结构</td><td>发起人 + PM + 评审会（一个）</td><td>ESC / PMO / 3T 多层治理机构</td></tr>
+      <tr><td class="k">管理颗粒</td><td>里程碑（≤8 个）+ 需求清单</td><td>组合 / 项目群 / WBS / 工作包 / 门禁族</td></tr>
+      <tr><td class="k">成本口径</td><td>钱 + 人天，双口径台账</td><td>三基线 + 变更控制 + 决策权矩阵</td></tr>
+      <tr><td class="k">质量口径</td><td>需求满足度（验收状态 + 客户确认）</td><td>全生命周期质量域</td></tr>
+      <tr><td class="k">技术形态</td><td>平台表格 + 单 Agent + 轻脚本</td><td>图数据库 + 编译链 + 五角色编排</td></tr>
+      <tr><td class="k">升级关系</td><td colspan="2">类 ID 与字段命名保持兼容，触发升级条件后按完整版平滑扩展（见 <a href="#s8" style="color:var(--blue)">第 08 章</a>）</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 1 关注点 ============ -->
+<section id="s1">
+  <h2><span class="num">01</span>管理关注点与总体设计</h2>
+  <p class="lede">设计从您给出的管理语言出发，而不是从方法论出发。每个关注点直接对应一组可操作的本体结构，中间不经过多余的概念转换。</p>
+
+  <h3>1.1　五个关注点 → 本体机制映射</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>关注点（原话）</th><th>本体机制</th><th>输出物</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k">立项方案是否有价值<br>是否有吸引力</td>
+        <td><code>Charter</code>（立项卡）+ <code>Scorecard</code>（立项评分卡：战略对齐 / 客户吸引力 / 财务回报 / 风险）</td>
+        <td>加权总分 + 弱项诊断 + 立项裁决建议</td>
+      </tr>
+      <tr>
+        <td class="k">具体方案是否可落地</td>
+        <td><code>Scorecard(type=落地)</code>（五维短板评审：技术 / 资源 / 依赖 / 时间 / 验收标准）</td>
+        <td>任一维 ≤2 分即短板否决，附补强清单</td>
+      </tr>
+      <tr>
+        <td class="k">时间</td>
+        <td><code>Milestone</code>（≤8 个关键里程碑：计划 / 预测 / 实际）+ 规则 LR-03</td>
+        <td>逾期与漂移预警</td>
+      </tr>
+      <tr>
+        <td class="k">成本（钱、人天）</td>
+        <td><code>CostEntry</code>（双口径：金额与人天，各记预算 / 实际 / 预测）+ 规则 LR-04</td>
+        <td>偏差率与超支升级</td>
+      </tr>
+      <tr>
+        <td class="k">质量（需求的满足程度）</td>
+        <td><code>Requirement</code>（需求清单 + 优先级 + 验收状态 + 客户确认）+ <code>ChangeEntry</code>（变更留痕）</td>
+        <td>需求满足率（按优先级加权）、变更率</td>
+      </tr>
+      <tr>
+        <td class="k">结项、回顾</td>
+        <td><code>Review(type=结项)</code>（门槛校验）+ <code>Lesson</code>（复盘教训，反哺下次立项）</td>
+        <td>结项核对清单 + 复盘四问 + 教训库</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>1.2　项目生命周期状态机</h3>
+  <p>只有一条主链、两个旁路。状态迁移由<strong>关口裁决驱动</strong>，不允许跳关——这是 8 条规则里最优先保证的一条。</p>
+
+  <div class="flow">
+    <div class="step">
+      <div class="n">S1</div>
+      <b>立项准备</b>
+      <span>填立项卡：价值、吸引力、粗估（钱 / 人天 / 周期）</span>
+    </div>
+    <div class="step">
+      <div class="n">关口①</div>
+      <b>立项评审</b>
+      <span>评分卡 ≥3.2 通过；≥4.2 可快速立项</span>
+    </div>
+    <div class="step">
+      <div class="n">S2</div>
+      <b>方案细化</b>
+      <span>里程碑 / 需求基线 / 预算分解 / 风险清单</span>
+    </div>
+    <div class="step">
+      <div class="n">关口②</div>
+      <b>落地评审</b>
+      <span>五维短板评审，任一维 ≤2 分不通过</span>
+    </div>
+    <div class="step">
+      <div class="n">S3</div>
+      <b>实施</b>
+      <span>日报周报 → 三线监控（时间 / 钱+人天 / 需求）</span>
+    </div>
+    <div class="step">
+      <div class="n">关口③</div>
+      <b>结项评审</b>
+      <span>需求满足率 + 成本偏差 + 客户确认 三道门槛</span>
+    </div>
+    <div class="step">
+      <div class="n">S4</div>
+      <b>回顾归档</b>
+      <span>复盘四问 → 教训入库 → 反哺下次立项</span>
+    </div>
+  </div>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>状态</th><th>进入条件</th><th>允许的下一状态</th><th>系统强制</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><span class="state">drafting</span> 立项准备</td><td>任何人发起</td><td>charter_review</td><td>立项卡必填字段不全，不能提交评审</td></tr>
+      <tr><td class="k"><span class="state">charter_review</span> 立项评审中</td><td>立项卡提交</td><td>approved / rejected</td><td>评审记录（人 / 结论 / 理由）留痕</td></tr>
+      <tr><td class="k"><span class="state">designing</span> 方案细化</td><td>立项通过</td><td>feasibility_review</td><td>里程碑 ≥3 个、需求基线 ≥1 条才能提交</td></tr>
+      <tr><td class="k"><span class="state">feasibility_review</span> 落地评审中</td><td>方案提交</td><td>executing / redesign</td><td>五维评分留痕，短板项生成补强任务</td></tr>
+      <tr><td class="k"><span class="state">executing</span> 实施中</td><td>落地评审通过</td><td>delivering / on_hold</td><td>周报缺失触发 LR-06；三线偏差触发预警</td></tr>
+      <tr><td class="k"><span class="state">delivering</span> 交付验收</td><td>全部里程碑实际完成</td><td>closing_review</td><td>需求逐条验收 + 客户确认记录</td></tr>
+      <tr><td class="k"><span class="state">closing_review</span> 结项评审中</td><td>交付完成</td><td>closed / executing（退回）</td><td>三道门槛校验（见 3.3）</td></tr>
+      <tr><td class="k"><span class="state">closed</span> 已结项</td><td>结项通过</td><td>retrospective</td><td>两周内未完成复盘 → 提醒发起人（LR-08）</td></tr>
+      <tr><td class="k"><span class="state">retrospective</span> 回顾中</td><td>结项完成</td><td>archived</td><td>至少产出 1 条 Lesson 才能归档</td></tr>
+      <tr><td class="k"><span class="state">on_hold / terminated</span></td><td>暂停 / 终止</td><td>恢复 / 归档</td><td>必须记录原因与决议</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="lb">一个务实的简化</span>
+    <p>不做「实施中期检查」这道关口。项目周期 &lt; 6 个月时，中期检查的形式价值大于治理价值——用<strong>三线预警规则</strong>替代：出问题随时报，而不是等到中期。这是轻量版与教科书流程的最大差异。</p>
+  </div>
+</section>
+
+<!-- ============ 2 本体 ============ -->
+<section id="s2">
+  <h2><span class="num">02</span>轻量本体：16 类</h2>
+  <p class="lede">命名与完整版保持一致（子集关系），未来升级不用改历史数据。每个类都有明确 Owner 和至少一条依附规则——不满足这两条的实体不进本体。</p>
+
+  <h3>2.1　类清单</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>#</th><th>类</th><th>关键字段</th><th>依附规则</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="k">Project</td><td><code>code, name, sponsor, pm, stage, createdAt</code></td><td>LR-01（状态机强制）</td></tr>
+      <tr><td>2</td><td class="k">Charter</td><td><code>valueProp, targetClient, expectedBenefit, successCriteria, roughCost, roughEffort, roughDuration</code></td><td>LR-01</td></tr>
+      <tr><td>3</td><td class="k">Scorecard</td><td><code>type(立项/落地), dimensions{score}, total, verdict, reviewer, reviewedAt</code></td><td>LR-01 / LR-02</td></tr>
+      <tr><td>4</td><td class="k">Milestone</td><td><code>name, plannedDate, forecastDate, actualDate, isKey</code></td><td>LR-03</td></tr>
+      <tr><td>5</td><td class="k">CostEntry</td><td><code>type(money/effort), category, budget, actual, forecast, period</code></td><td>LR-04</td></tr>
+      <tr><td>6</td><td class="k">Requirement</td><td><code>desc, priority(P0/P1/P2), acceptanceCriteria, status(基线/已交付/已验收/客户确认/取消), acceptedBy, acceptedAt</code></td><td>LR-05 / LR-07</td></tr>
+      <tr><td>7</td><td class="k">ChangeEntry</td><td><code>target, before, after, reason, approvedBy</code></td><td>LR-05</td></tr>
+      <tr><td>8</td><td class="k">Risk</td><td><code>statement, prob, impact, response, owner, isBlocking, blockedSince</code></td><td>LR-06（阻塞升级）</td></tr>
+      <tr><td>9</td><td class="k">Review</td><td><code>type(立项/落地/结项), scheduledAt, attendees, verdict, minutes</code></td><td>三道关口全走此类</td></tr>
+      <tr><td>10</td><td class="k">Decision</td><td><code>subject, option, rationale, decidedBy, decidedAt</code></td><td>评审结论必须落此类</td></tr>
+      <tr><td>11</td><td class="k">Report</td><td><code>type(日报/周报), author, period, structuredFields, narrative</code></td><td>LR-06</td></tr>
+      <tr><td>12</td><td class="k">Fact</td><td><code>subject, predicate, value, asOf, quote, sourceRef, trust(高/中/低)</code></td><td>LR-06（报告→事实）</td></tr>
+      <tr><td>13</td><td class="k">Task</td><td><code>title, assignee, dueAt, source, status</code></td><td>预警/补强任务载体</td></tr>
+      <tr><td>14</td><td class="k">Lesson</td><td><code>category(立项/技术/资源/客户/管理), what, rootCause, advice, projectRef</code></td><td>LR-08</td></tr>
+      <tr><td>15</td><td class="k">Person</td><td><code>name, role, org</code></td><td>责任落人</td></tr>
+      <tr><td>16</td><td class="k">Stakeholder</td><td><code>name, type(客户/合作方/内部), influence, expectation</code></td><td>立项吸引力的对象</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="small">关系 12 条（外键即可表达）：<code>Project 1:1 Charter</code>、<code>1:N Scorecard/Milestone/CostEntry/Requirement/Risk/Review/Report/Lesson</code>、<code>Requirement 1:N ChangeEntry</code>、<code>Review 1:N Decision</code>、<code>Report 1:N Fact</code>、<code>Task → Person</code>。</p>
+
+  <h3>2.2　四个关键结构的字段设计</h3>
+  <p>立项卡、需求、成本、复盘是这套本体里真正每天被使用的四个结构，字段逐条给出，可直接建表。</p>
+
+  <h4>① 立项卡（Charter）——回答「有没有价值、有没有吸引力」</h4>
+  <div class="tw">
+  <table>
+    <thead><tr><th>字段</th><th>说明</th><th>必填</th></tr></thead>
+    <tbody>
+      <tr><td class="k">valueProp 价值主张</td><td>一句话：为谁、解决什么问题、凭什么是我们</td><td>是</td></tr>
+      <tr><td class="k">targetClient 目标客户/受益方</td><td>具体到单位与角色，不许写「市场」</td><td>是</td></tr>
+      <tr><td class="k">attractiveness 吸引力依据</td><td>客户付费意愿 / 战略示范效应 / 复购或复制潜力，三选一起，注明证据（已有沟通记录、意向书等）</td><td>是</td></tr>
+      <tr><td class="k">expectedBenefit 预期收益</td><td>定量优先（合同额 / 降本额 / 能力沉淀），定性需说明验证方式</td><td>是</td></tr>
+      <tr><td class="k">successCriteria 成功标准</td><td>结项时如何判定「做成了」——与 Requirement 基线衔接</td><td>是</td></tr>
+      <tr><td class="k">roughCost / roughEffort / roughDuration</td><td>粗估三件套：金额、人天、周期（±50% 精度即可，方案阶段再细化）</td><td>是</td></tr>
+      <tr><td class="k">topRisks 主要风险</td><td>≥1 条，含应对思路（空着不许提交）</td><td>是</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>② 需求（Requirement）——质量的唯一载体</h4>
+  <div class="tw">
+  <table>
+    <thead><tr><th>字段</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="k">desc 需求描述</td><td>一句话可验证的表述，禁止「优化体验」这类不可验证写法</td></tr>
+      <tr><td class="k">priority</td><td>P0（不做则项目失败）/ P1（核心价值）/ P2（可协商）</td></tr>
+      <tr><td class="k">acceptanceCriteria</td><td>验收标准：什么条件下算满足。由 PM 与客户代表共同确认后冻结为基线</td></tr>
+      <tr><td class="k">status</td><td><span class="tag t-grey">基线</span> → <span class="tag t-blue">已交付</span> → <span class="tag t-cyan">已验收</span> → <span class="tag t-green">客户确认</span>；或 <span class="tag t-amber">取消</span>（须挂 ChangeEntry）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="small">需求满足率公式：<code>满足率 = Σ(已客户确认 × 权重) / Σ(基线需求 × 权重)</code>，权重 P0=3、P1=2、P2=1。取消的需求不算不满足，但计入变更率。</p>
+
+  <h4>③ 成本（CostEntry）——钱与人天双口径</h4>
+  <div class="tw">
+  <table>
+    <thead><tr><th>口径</th><th>类别示例</th><th>记录方式</th></tr></thead>
+    <tbody>
+      <tr><td class="k">money 金额</td><td>外采 / 差旅 / 云资源 / 分摊</td><td>预算（立项或方案阶段）→ 实际（凭发票/付款）→ 预测（剩余部分估算）</td></tr>
+      <tr><td class="k">effort 人天</td><td>研发 / 实施 / 管理</td><td>预算（方案阶段分解）→ 实际（周报填报）→ 预测（PM 估算）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>④ 复盘（Lesson 落库前的复盘四问）</h4>
+  <ol>
+    <li><strong>目标对照：</strong>立项卡承诺的收益 / 成本 / 周期，实际各是多少？差异主要原因？</li>
+    <li><strong>过程表现：</strong>三线偏差各发生在哪个阶段？是估算问题、执行问题还是范围问题？</li>
+    <li><strong>可复用资产：</strong>哪些做法 / 模板 / 方案值得沉淀，下次直接用？</li>
+    <li><strong>教训与建议：</strong>如果重来一次，立项和方案阶段分别会做什么不同的事？（写入 <code>Lesson</code>，带分类标签）</li>
+  </ol>
+  <div class="callout">
+    <span class="lb">轻量版最有价值的闭环</span>
+    <p><strong>教训反哺立项。</strong>新项目做立项评审时，PMO 助手自动检索同类历史项目的 Lesson，附在评分卡后面：「过去 3 个类似项目，2 个低估了 X 类人天，1 个因客户确认缺失延期验收」。这一条不需要任何复杂技术，却是完整版也难以替代的价值点。</p>
+  </div>
+</section>
+
+<!-- ============ 3 关口与评分卡 ============ -->
+<section id="s3">
+  <h2><span class="num">03</span>三道关口与评分卡</h2>
+  <p class="lede">「有价值吗、有吸引力吗、能落地吗」——这三个问题不能靠感觉回答。评分卡的作用不是替人决策，而是<strong>把分歧摆到同一个刻度上</strong>，并强制留下理由。</p>
+
+  <h3>3.1　关口①：立项评分卡（价值与吸引力）</h3>
+  <p>四个维度、固定权重、每维 1–5 分。评分人独立打分，系统算加权总分；允许异议复议一次，复议记录留痕。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>维度</th><th>权重</th><th>1 分（典型表现）</th><th>3 分</th><th>5 分</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k">战略对齐</td><td>20%</td>
+        <td>与任何主线无明确关联</td>
+        <td>与某条主线相关，但贡献方式牵强</td>
+        <td>直接支撑明确主线，缺了会有缺口</td>
+      </tr>
+      <tr>
+        <td class="k">客户/市场吸引力</td><td>30%</td>
+        <td>客户是谁说不清；纯内部设想</td>
+        <td>有明确客户与真实需求，但付费意愿未验证</td>
+        <td>客户明确 + 付费/立项意愿已验证 + 有示范或复制效应</td>
+      </tr>
+      <tr>
+        <td class="k">财务/资源回报</td><td>25%</td>
+        <td>纯投入无回报路径，且人天占用大</td>
+        <td>回报可期但周期长或不确定</td>
+        <td>回报明确可量化（合同额 / 降本 / 强制性能力），投入产出清晰</td>
+      </tr>
+      <tr>
+        <td class="k">风险可控度</td><td>25%</td>
+        <td>关键依赖全部在外部且无承诺</td>
+        <td>有识别主要风险，应对思路粗略</td>
+        <td>风险清单完整，每条有应对与触发条件，无单点致命项</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>加权总分</th><th>裁决</th><th>后续动作</th></tr></thead>
+    <tbody>
+      <tr><td class="k">≥ 4.2</td><td><span class="tag t-green">快速立项</span></td><td>发起人确认后直接进入方案细化，评审会备案即可</td></tr>
+      <tr><td class="k">3.2 – 4.2</td><td><span class="tag t-blue">立项通过 + 补强</span></td><td>列出低分维度，生成补强任务，方案阶段必须回应</td></tr>
+      <tr><td class="k">&lt; 3.2</td><td><span class="tag t-red">不立项 / 重做</span></td><td>明确缺失项；一个月内可重报一次，重报须说明变化</td></tr>
+      <tr><td class="k">任一维 = 1</td><td><span class="tag t-red">一票否决</span></td><td>不论总分——防「三维高分掩盖一维致命伤」</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warn">
+    <span class="lb">防操纵设计</span>
+    <p>评分卡最大的风险是被「打人情分」。两条对治：① <strong>每维打分必须选锚点描述</strong>（不是拖动条），理由与锚点不符时系统提示；② 分数与实际结项结果事后对照，偏差大的维度在复盘时强制检视——不追责个人，但让「系统性高估」可见。</p>
+  </div>
+
+  <h3>3.2　关口②：可落地性评分卡（五维短板评审）</h3>
+  <p>与立项卡不同，落地评审<strong>不用加权总分，用短板否决</strong>：任何一个维度 ≤ 2 分，方案不通过。原因很简单——价值再高，一块短板就能让项目死在半路。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>维度</th><th>检查问题</th><th>≤2 分的典型表现</th></tr></thead>
+    <tbody>
+      <tr><td class="k">技术路径</td><td>关键实现方案是否清晰？有没有未验证的技术假设？</td><td>核心环节「再研究」，无备选路径</td></tr>
+      <tr><td class="k">资源匹配</td><td>所需人天 / 技能与实际可用人是否对得上？</td><td>计划依赖「还没招到的人」或关键人 100% 双投</td></tr>
+      <tr><td class="k">外部依赖</td><td>依赖方是否已知并给出书面/明确承诺？</td><td>依赖客户 / 第三方的环节「对方应该没问题」</td></tr>
+      <tr><td class="k">时间合理性</td><td>里程碑跨度与工作量是否匹配？缓冲在哪？</td><td>首尾里程碑挤压全部工作量；零缓冲</td></tr>
+      <tr><td class="k">验收标准</td><td>每条需求是否可验收？客户是否确认过基线？</td><td>验收标准写「按客户满意度」</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="small">裁决同样五选一：<strong>通过 / 有条件通过</strong>（列补强项与期限）<strong>/ 暂缓</strong>（补材料）<strong>/ 调整方向 / 不通过</strong>。有条件通过的补强项自动生成 Task，到期未闭环在项目看板上亮黄。</p>
+
+  <h3>3.3　关口③：结项门槛（三道校验）</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>门槛</th><th>标准</th><th>不达标时</th></tr></thead>
+    <tbody>
+      <tr><td class="k">需求满足</td><td>P0 需求客户确认率 100%；加权满足率 ≥ 90%</td><td>不得结项；缺口逐条说明，客户书面接受偏差后方可带条件结项</td></tr>
+      <tr><td class="k">成本交代</td><td>金额与人天偏差 ≤ 20%，且超支部分有说明归因</td><td>补偏差归因（估算 / 执行 / 范围哪一种），直接进复盘议题</td></tr>
+      <tr><td class="k">无未关闭风险</td><td>阻塞型风险全部关闭或明确移交运营</td><td>移交清单 + 接收方确认</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 4 三线与规则 ============ -->
+<section id="s4">
+  <h2><span class="num">04</span>过程三线与 8 条规则</h2>
+  <p class="lede">实施期只盯三条线：时间（里程碑）、成本（钱+人天）、质量（需求满足）。8 条规则全部可以写成一个每日跑批的轻脚本，不需要规则引擎。</p>
+
+  <h3>4.1　三线监控口径</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>线</th><th>看什么</th><th>绿</th><th>黄</th><th>红</th></tr></thead>
+    <tbody>
+      <tr><td class="k">时间</td><td>关键里程碑预测日 vs 计划日</td><td>提前或 ≤3 天</td><td>推迟 4–10 天</td><td>推迟 &gt;10 天或已逾期</td></tr>
+      <tr><td class="k">成本</td><td>（实际+预测）/ 预算 − 1</td><td>≤ 5%</td><td>5% – 15%</td><td>&gt; 15%</td></tr>
+      <tr><td class="k">质量</td><td>本周新增客户确认需求 vs 计划；P0 未确认数</td><td>按计划</td><td>滞后 1 期</td><td>P0 存在未确认或客户提出争议</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="small">三线合成项目灯色：任一线红则项目红；两线黄则项目黄；其余绿。计算结果带输入快照，允许 PM 申诉一次（记录理由），申诉不改变历史快照。</p>
+
+  <h3>4.2　8 条规则</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>ID</th><th>触发条件</th><th>动作</th><th>级别</th></tr></thead>
+    <tbody>
+      <tr><td class="k">LR-01</td><td>项目试图跳过任一关口进入下一阶段</td><td>系统拒绝状态迁移；提示缺哪份评审记录</td><td><span class="tag t-red">硬</span></td></tr>
+      <tr><td class="k">LR-02</td><td>落地评审任一维 ≤2 分仍申请通过</td><td>拒绝；生成补强任务清单给 PM</td><td><span class="tag t-red">硬</span></td></tr>
+      <tr><td class="k">LR-03</td><td>里程碑预测推迟且无对应 ChangeEntry</td><td>亮黄 + 通知 PM：要么改预测并留痕，要么走变更</td><td><span class="tag t-amber">预警</span></td></tr>
+      <tr><td class="k">LR-04</td><td>成本超 15%（金额或人天任一口径）</td><td>亮红 + 通知发起人；超 20% 要求重估立项卡（是否继续）</td><td><span class="tag t-red">预警</span></td></tr>
+      <tr><td class="k">LR-05</td><td>需求范围变动但无 ChangeEntry 记录</td><td>该需求的验收状态冻结，不计入满足率——杜绝「口头改需求」</td><td><span class="tag t-red">硬</span></td></tr>
+      <tr><td class="k">LR-06</td><td>连续 2 期无周报，或关键里程碑无任何佐证</td><td>项目灯标「数据不可信」；三线计算暂停并通知 PM</td><td><span class="tag t-amber">预警</span></td></tr>
+      <tr><td class="k">LR-07</td><td>结项申请不满足 3.3 三道门槛</td><td>拒绝结项；逐条列出缺口与补救路径</td><td><span class="tag t-red">硬</span></td></tr>
+      <tr><td class="k">LR-08</td><td>结项后 2 周未完成复盘 / 未沉淀 Lesson</td><td>项目不能归档；提醒发起人；计入 PMO 月报</td><td><span class="tag t-amber">预警</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="lb">「硬」与「预警」的区别</span>
+    <p><strong>硬规则由系统拦截</strong>（状态迁移失败、验收冻结），不需要任何人盯——这是 10 人天开发里优先级最高的部分；<strong>预警规则只通知不拦截</strong>，靠响应机制闭环。先做 4 条硬规则，再补 4 条预警，开发顺序即优先级。</p>
+  </div>
+</section>
+
+<!-- ============ 5 证据 ============ -->
+<section id="s5">
+  <h2><span class="num">05</span>证据管道：日报周报</h2>
+  <p class="lede">完整版的断言体系在这里压缩成最简形态：<strong>报告 → 事实（Fact）</strong>。保留溯源与矛盾检测的骨架，去掉置信度公式——用高中低三档替代。</p>
+
+  <div class="flow">
+    <div class="step">
+      <div class="n">P1</div>
+      <b>提交</b>
+      <span>周报固定区块：里程碑 / 人天填报 / 需求进展 / 风险阻塞</span>
+    </div>
+    <div class="step">
+      <div class="n">P2</div>
+      <b>抽取</b>
+      <span>固定区块直读；叙述部分 LLM 按 schema 抽成 Fact，必须带原文引用</span>
+    </div>
+    <div class="step">
+      <div class="n">P3</div>
+      <b>比对</b>
+      <span>新 Fact 与上周同类 Fact 对照：变化进台账，矛盾进澄清队列</span>
+    </div>
+    <div class="step">
+      <div class="n">P4</div>
+      <b>汇总</b>
+      <span>刷新三线 → 跑规则 → 生成项目周报（1 页，PM 确认后发出）</span>
+    </div>
+  </div>
+
+  <h4>信任三档（替代置信度公式）</h4>
+  <div class="tw">
+  <table>
+    <thead><tr><th>档</th><th>判定</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><span class="tag t-green">高</span></td><td>有客观佐证：验收记录、付款凭证、客户确认消息、系统数据</td><td>直接支撑三线计算与结项门槛</td></tr>
+      <tr><td class="k"><span class="tag t-amber">中</span></td><td>PM 正式填报，无佐证但表述具体（有日期/数字）</td><td>支撑三线计算；里程碑达成类事实暂计「待佐证」</td></tr>
+      <tr><td class="k"><span class="tag t-red">低</span></td><td>口头转述 / 表述含糊（「基本完成」「大概下周」）</td><td>不参与计算；生成澄清问题返回 PM</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="lb">对 PM 的回报</span>
+    <p>填报的固定区块（人天、里程碑预测、需求进展）由系统<strong>自动生成周报初稿</strong>——PM 核对修改而非从零写。先给省时间的价值，再要数据的质量，这个顺序不能反。</p>
+  </div>
+</section>
+
+<!-- ============ 6 Agent ============ -->
+<section id="s6">
+  <h2><span class="num">06</span>PMO 助手：单 Agent · 四模式</h2>
+  <p class="lede">一个 Agent，按场景切四种模式（同一本体、同一工具集，提示词不同）。不拆多角色——当前规模下多角色带来的协调成本大于收益。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>模式</th><th>何时用</th><th>做什么</th><th>禁止做什么</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k"><span class="tag t-violet">立项评审助理</span></td>
+        <td>关口①前</td>
+        <td>校验立项卡完整性 → 算分并给弱项诊断 → 检索同类项目 Lesson 附历史教训 → 生成评审材料包</td>
+        <td>不得给出「立/不立」的最终结论，只给建议与依据</td>
+      </tr>
+      <tr>
+        <td class="k"><span class="tag t-cyan">过程管家</span></td>
+        <td>实施期每日/每周</td>
+        <td>周报抽取与比对 → 三线计算 → 跑 8 条规则 → 生成项目/组合周报与预警清单</td>
+        <td>不修改任何基线数据；预警只通知不拦截</td>
+      </tr>
+      <tr>
+        <td class="k"><span class="tag t-green">结项回顾助理</span></td>
+        <td>关口③前后</td>
+        <td>结项门槛逐条校验 → 生成缺口清单 → 主持复盘四问 → 起草 Lesson 草稿（人确认后入库）</td>
+        <td>Lesson 必须人工确认；不得自动归档项目</td>
+      </tr>
+      <tr>
+        <td class="k"><span class="tag t-blue">台账问答</span></td>
+        <td>随时</td>
+        <td>自然语言查台账：某项目三线？某需求变更史？历史教训？——每条回答带数据时点与出处</td>
+        <td>查不到就明说；禁止编造（无 Fact 引用则拒答）</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>工具集（5 个，全部平台原生可封装）</h4>
+  <div class="tw">
+  <table>
+    <thead><tr><th>工具</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">query_table(filter, fields)</td><td>查台账主表与子表（表格 API 即可）</td></tr>
+      <tr><td class="mono">write_fact(fact)</td><td>写入 Fact（仅过程管家模式，写前过 schema 校验）</td></tr>
+      <tr><td class="mono">compute_three_lines(project)</td><td>确定性计算三线与灯色（脚本，非 LLM）</td></tr>
+      <tr><td class="mono">check_gate(project, gate)</td><td>关口校验：材料齐备性 + 门槛逐条比对</td></tr>
+      <tr><td class="mono">search_lessons(keyword, category)</td><td>教训库检索（关键词 + 分类标签，无需向量库）</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 7 开发计划 ============ -->
+<section id="s7">
+  <h2><span class="num">07</span>10 人天开发计划</h2>
+  <p class="lede">假设 1 名工程师 + 0.2 名 PMO 业务对接。本设计文档已覆盖 D1 的设计工作，开发从建表直接开始。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>天</th><th>任务</th><th>交付物</th></tr></thead>
+    <tbody>
+      <tr><td class="k">D1</td><td>建台账：主表 + 8 张子表（按 2.2 字段清单）+ 权限</td><td>数据结构就绪</td></tr>
+      <tr><td class="k">D2</td><td>表单与状态机：立项卡表单、周报表单、状态迁移脚本（LR-01）</td><td>4 条硬规则中的第 1 条生效</td></tr>
+      <tr><td class="k">D3</td><td>需求与变更：需求基线冻结、ChangeEntry 联动（LR-05）</td><td>需求口径可用</td></tr>
+      <tr><td class="k">D4</td><td>三线脚本：compute_three_lines + 灯色（含输入快照）</td><td>三线可计算</td></tr>
+      <tr><td class="k">D5</td><td>关口脚本：check_gate（立项分数 / 落地短板 / 结项门槛，LR-02/07）</td><td>三道关口硬规则全生效</td></tr>
+      <tr><td class="k">D6</td><td>周报抽取：提示词 + Fact schema 校验 + 信任三档判定</td><td>证据管道 P1–P3</td></tr>
+      <tr><td class="k">D7</td><td>Agent 搭建：四模式提示词 + 5 个工具接线 + 拒答约束</td><td>PMO 助手可用</td></tr>
+      <tr><td class="k">D8</td><td>预警通知：LR-03/04/06/08 跑批 + 消息推送</td><td>8 条规则全生效</td></tr>
+      <tr><td class="k">D9</td><td>试点录入：2 个真实项目（1 个在实施期、1 个新立项）+ 联调</td><td>真实数据贯通</td></tr>
+      <tr><td class="k">D10</td><td>验收测试（下方 8 问）+ 一页使用手册</td><td>上线</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>7.1　验收：8 个能力问题（逐条实测）</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>#</th><th>问题</th><th>通过标准</th></tr></thead>
+    <tbody>
+      <tr><td>Q1</td><td>新项目的立项卡分数是多少？弱在哪个维度？</td><td>分数正确 + 弱项可解释 + 附历史教训</td></tr>
+      <tr><td>Q2</td><td>某项目现在时间 / 钱 / 人天 / 需求满足率各是多少？</td><td>四项都能答 + 带数据时点与出处</td></tr>
+      <tr><td>Q3</td><td>哪些里程碑预测推迟了但没有变更记录？</td><td>与台账一致（LR-03 结果）</td></tr>
+      <tr><td>Q4</td><td>哪些项目还没过立项评审就在花钱了？</td><td>能查（状态 × 成本交叉）</td></tr>
+      <tr><td>Q5</td><td>这个项目结项还差什么？</td><td>门槛逐条列出缺口（LR-07 结果）</td></tr>
+      <tr><td>Q6</td><td>过去类似项目踩过什么坑？</td><td>Lesson 检索结果带项目出处</td></tr>
+      <tr><td>Q7</td><td>本周有哪些项目亮了黄灯或红灯？原因？</td><td>三线合成结果 + 触发线</td></tr>
+      <tr><td>Q8</td><td>某条需求的变更历史？</td><td>ChangeEntry 时间线完整</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="small">Q1–Q5、Q7、Q8 应全部由确定性计算回答（Agent 只负责表述与引用）；Q6 允许检索式回答。若 Q2 这类基础问题答错，问题一定在数据不在模型——先修数据。</p>
+</section>
+
+<!-- ============ 8 衔接 ============ -->
+<section id="s8">
+  <h2><span class="num">08</span>与完整版的衔接</h2>
+  <p class="lede">轻量版是完整版的子集：类名、字段名、状态名全部兼容。升级不需要迁移数据，只需要「加」，不需要「改」。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th>触发信号</th><th>缺什么</th><th>升级动作（对应完整版章节）</th></tr></thead>
+    <tbody>
+      <tr><td class="k">在跑项目 &gt; 15 个</td><td>组合视图与优先级排序</td><td>引入 Portfolio / 战略目标链（完整版 04 章 A/B 族）</td></tr>
+      <tr><td class="k">多个项目抢同一批人</td><td>资源负载与协调</td><td>引入 Allocation / ResourceRequest（完整版 F 族）</td></tr>
+      <tr><td class="k">出现跨组织依赖纠纷</td><td>升级路径与治理机构</td><td>引入 GovernanceBody / Escalation（完整版 G 族）</td></tr>
+      <tr><td class="k">需要管收益而不只是需求</td><td>收益兑现追踪</td><td>引入 Benefit / 目标链（完整版 A 族）</td></tr>
+      <tr><td class="k">规则膨胀到 15 条以上</td><td>规则治理</td><td>规则独立成库并加版本（完整版 09/10 章）</td></tr>
+      <tr><td class="k">报告矛盾频发、信任档不够用</td><td>证据体系</td><td>升级为置信度公式 + 双轨核验（完整版 07 章）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="lb">迁移原则</span>
+    <p>轻量版跑满<strong>两个完整项目周期</strong>（立项到归档）且上述信号未出现之前，不启动升级。过早升级的代价不是钱，而是团队把注意力从「填准数据」转移到「玩转系统」——这正是 13 章失败模式里最常见的一种。</p>
+  </div>
+</section>
+
+<!-- ============ 9 附录 ============ -->
+<section id="s9">
+  <h2><span class="num">09</span>附录</h2>
+
+  <h3>9.1　与完整版的类映射</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>轻量版</th><th>完整版对应</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Charter</td><td>Charter + Benefit + Scorecard 部分</td><td>立项卡吸收了收益与吸引力评估</td></tr>
+      <tr><td class="k">Scorecard</td><td>Gate（entryCriteria 的实例化）</td><td>关口的具体化</td></tr>
+      <tr><td class="k">Milestone</td><td>Milestone</td><td>去掉 weight 与关键路径</td></tr>
+      <tr><td class="k">CostEntry</td><td>Baseline + Measurement + CostItem</td><td>双口径台账替代三基线</td></tr>
+      <tr><td class="k">Requirement + ChangeEntry</td><td>Deliverable + ChangeRequest + WBS 部分</td><td>需求清单替代 WBS 与交付物树</td></tr>
+      <tr><td class="k">Risk</td><td>Risk + Issue + Blocker</td><td>三合一，靠 isBlocking 区分</td></tr>
+      <tr><td class="k">Review + Decision</td><td>Review + Decision + Gate + Escalation</td><td>单一评审会，无多层机构</td></tr>
+      <tr><td class="k">Fact</td><td>Assertion（简化）</td><td>信任三档替代置信度公式</td></tr>
+      <tr><td class="k">Lesson</td><td>AuditRecord + 案例库</td><td>复盘教训是案例库的种子</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>9.2　下一步</h3>
+  <ol class="num-list">
+    <li>确认三道关口的<strong>分数线与权重</strong>（本文 3.1/3.2 为建议值，需按公司实际校准一次）。</li>
+    <li>确定台账载体（平台多维表格 / 腾讯文档 / 轻数据库，按 agent 平台能力定）。</li>
+    <li>选 2 个试点项目（1 个实施期 + 1 个新立项），按 D9 计划录入。</li>
+    <li>D10 验收后运行一个月，用 Q1–Q8 的实际表现决定是否微调规则阈值。</li>
+  </ol>
+</section>
+
+<div class="foot">
+  <b>PMO 本体设计方案 · 轻量版 v1.0-Lite</b>（10 人天规模）<br>
+  16 类 / 12 关系 / 8 规则 / 3 关口 / 1 Agent 四模式　　与完整版 v1.0（52 类）保持类名与字段兼容，按需平滑升级。<br>
+  配套交付：完整版《PMO本体设计方案.html》保留不动，两版并行使用。
+</div>
+</main>
+</div>
+</body>
+</html>

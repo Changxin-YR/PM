@@ -98,7 +98,7 @@ try {
   const before=assistantReads.length
   for(const qualifier of [hiddenCode,duplicateName,'合成助理范围']){
     await question.fill(`“${qualifier}”现在三线如何？`);await ask.click()
-    await expect(area.getByText(/无法确定唯一可读的项目/)).toBeVisible()
+    await expect(area.getByRole('log').getByText(/无法确定唯一可读的项目/).last()).toBeVisible()
     await expect(area.getByRole('region',{name:'台账原始结果'})).toHaveCount(0)
     expect(assistantReads.length).toBe(before)
   }
@@ -115,7 +115,7 @@ try {
     const targetDrawer=page.getByRole('region',{name:`${other.name} · 项目资料`,exact:true})
     const targetAssistant=targetDrawer.getByRole('region',{name:'项目助理',exact:true})
     await expect(targetAssistant.getByRole('region',{name:'台账原始结果'})).toBeVisible()
-    await expect(targetAssistant.getByText(/当前三线数据不可用/)).toBeVisible()
+    await expect(targetAssistant.getByRole('region',{name:'台账原始结果'}).getByText(/当前三线数据不可用/)).toBeVisible()
     const restored=answered(projectId,'health')
     await targetAssistant.getByLabel('用一句话查询台账').fill('Synthetic review 的三线如何？')
     await targetAssistant.getByRole('button',{name:'提问',exact:true}).click()

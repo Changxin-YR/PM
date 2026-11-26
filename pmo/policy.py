@@ -143,10 +143,13 @@ def isolated_schema(c) -> bool:
                  row.database_name == 'pmo' and os.getenv('PMO_TEST_DATABASE_URL') is not None))
 
 
-def synthetic_confirmation(c) -> bool:
-    schema = os.getenv('PMO_SYNTHETIC_POLICY_SCHEMA', '')
+def matches_isolated_schema(c, schema: str) -> bool:
     return bool(SYNTHETIC_SCHEMA.fullmatch(schema) and isolated_schema(c) and
                 c.scalar(sa.text('SELECT current_schema()')) == schema)
+
+
+def synthetic_confirmation(c) -> bool:
+    return matches_isolated_schema(c, os.getenv('PMO_SYNTHETIC_POLICY_SCHEMA', ''))
 
 
 def environment() -> str | None:
@@ -174,7 +177,8 @@ def selection(c, p, action: str) -> list[dict] | None:
     v, e = versions.c, events.c
     latest = sa.select(e.event).where(e.policy_id == v.id).order_by(e.sequence.desc()).limit(1).scalar_subquery()
     activated = sa.select(e.sequence).where(e.policy_id == v.id, e.event == 'active').scalar_subquery()
-    query = sa.select(versions, latest.label('state'), sa.func.clock_timestamp().label('checked_at')).where(
+    query = sa.select(v.id, v.decision_code, v.version, v.policy, v.policy_hash, v.evidence_hash,
+        v.effective_from, v.effective_until, latest.label('state'), sa.func.clock_timestamp().label('checked_at')).where(
         v.org_id == p.org_id, sa.or_(v.project_id == p.id, v.project_id.is_(None)), v.environment == target,
         v.synthetic == isolated_schema(c), v.decision_code.in_(codes), v.policy['actions'].contains([action]),
         activated.is_not(None)).order_by(v.project_id.is_not(None).desc(), activated.desc())

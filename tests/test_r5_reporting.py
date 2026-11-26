@@ -8,10 +8,32 @@ import pytest
 import sqlalchemy as sa
 
 from pmo import outbox, schema_v1 as db
-from pmo.database_roles import WORKER_ADD, WORKER_EDIT, WORKER_READ, grant
+from conftest import isolated_live_stack
+from pmo.database_roles import WORKER_ADD, WORKER_EDIT, WORKER_POLICY_READ, WORKER_READ, grant
 from pmo.weekly_delivery import DELIVER, authorizations, deliveries, inbox
 from test_reports import body, data, deny, headers, sections, team as team
 from test_weekly_report_workflow import publish
+
+
+@pytest.fixture(scope='module')
+def live_stack(tmp_path_factory):
+    # Queue ownership and crash recovery assertions need their own live worker queue.
+    yield from isolated_live_stack(tmp_path_factory)
+
+
+def consume_through(engine, delivery_ids, batch_size=50):
+    events = db.outbox_events.c
+    keys = [f'weekly-delivery:{item}' for item in delivery_ids]
+    with engine.connect() as c:
+        initial = c.scalar(sa.select(sa.func.count()).select_from(db.outbox_events).where(
+            events.status.in_(('pending', 'processing'))))
+    for _ in range(0, initial, batch_size):
+        outbox.dispatch(engine, batch_size)
+        with engine.connect() as c:
+            states = dict(c.execute(sa.select(events.dedupe_key, events.status).where(events.dedupe_key.in_(keys))).all())
+        if all(states.get(key) == 'sent' for key in keys):
+            return
+    pytest.fail(f'Expected acknowledgements for {keys} after processing a queue of {initial} events')
 
 
 def 分类(研发='2.50', 实施='3.00', 管理='1.50'):
@@ -207,7 +229,7 @@ def test_正式周报复用下载原件并区分隔离回执(team, live, monkeyp
     assert data(pm.post(path, headers=headers(report['revision']), json=send)) == first
     with team.engine.connect() as c:
         assert c.scalar(sa.select(sa.func.count()).select_from(deliveries).where(deliveries.c.project_id == team.pid)) == 1
-    outbox.dispatch(team.engine, 500)
+    consume_through(team.engine, [first['deliveryId']])
     receipt, = data(pm.get(path))['deliveries']
     assert receipt['status'] == 'delivered' and receipt['externalReceiptVerified'] is False
     assert receipt['attachmentHash'] == expected and receipt['channelReceivedAt']
@@ -237,7 +259,7 @@ def test_撤销授权或发布新版后隔离任务不得发送(team, live, monk
     publish(pm, 提交(team))
     deny(pm.post(path, headers=headers(report['revision']), json={**request, 'authorizationId': str(next_approval)}),
          422, 'DELIVERY_REQUIRES_PUBLISHED_WEEKLY')
-    outbox.dispatch(team.engine, 500)
+    consume_through(team.engine, ids)
     history = {item['deliveryId']: item for item in data(pm.get(path))['deliveries']}
     assert [history[key]['errorCode'] for key in ids] == ['RECIPIENT_AUTHORIZATION_INVALID', 'DELIVERY_REQUIRES_PUBLISHED_WEEKLY']
     assert all(item['status'] == 'blocked' for item in history.values())
@@ -267,6 +289,7 @@ def test_最小权限工作进程重启后不重复发送(team, live, monkeypatc
         for table, columns in WORKER_EDIT.items():
             grant(conn, role, table, 'UPDATE', columns, schema=env)
         for table, columns in {
+            **WORKER_POLICY_READ,
             'notifications': 'rule_event_id recipient_person_id', 'projects': 'id org_id pm_id sponsor_id stage',
             'reports': 'id project_id type version_no revision content_hash status is_current_confirmed confirmed_by '
                        'confirmed_at submitted_by submitted_at author_id structured_fields narrative period '

@@ -1,6 +1,7 @@
 """Human-controlled publication export and delivery to the isolated proof inbox."""
 from datetime import datetime
 from hashlib import sha256
+import os
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from fastapi import APIRouter
 from pydantic import Field
 from sqlalchemy.dialects.postgresql import insert
 
-from . import reports as reporting, schema_v1 as db
+from . import policy, reports as reporting, schema_v1 as db
 from .access import Auth, Key, Revision
 from .contracts import Result, Strict
 from .identity import Failure
@@ -84,6 +85,13 @@ class DeliveryView(Strict):
     channelReady: bool
 
 
+def isolated_inbox(c) -> bool:
+    scope = os.getenv('PMO_ISOLATED_DELIVERY_SCHEMA')
+    if scope is None:
+        return synthetic_confirmation(c)  # Existing shortcut-based pilots.
+    return policy.matches_isolated_schema(c, scope)
+
+
 def _now(c):
     return c.scalar(sa.select(sa.func.clock_timestamp()))
 
@@ -156,7 +164,8 @@ def listing(reportId: UUID, authorization: Auth) -> Result[DeliveryView]:
         prior = c.execute(sa.select(deliveries).where(d.project_id == p.id, d.report_id == report.id)
                           .order_by(d.queued_at.desc(), d.id)).mappings()
         history = [_view(row, _authorization(c, p, row.authorization_id)) for row in prior]
-        available = p.stage != 'archived' and report.is_current_confirmed and synthetic_confirmation(c)
+        available = (p.stage != 'archived' and report.is_current_confirmed and isolated_inbox(c)
+                     and policy.enabled(c, p, POLICY))
         choices = []
         if available:
             rows = c.execute(sa.select(authorizations).where(auth.project_id == p.id, auth.revoked_at.is_(None),
@@ -180,11 +189,11 @@ def queue(reportId: UUID, command: Send, authorization: Auth, key: Key, expected
         if p.stage == 'archived':
             raise Failure(422, 'ARCHIVED_READ_ONLY', project_id=p.id)
         guard_policy(c, p, POLICY)
-        if not synthetic_confirmation(c):
+        if not isolated_inbox(c):
             raise Failure(403, 'DELIVERY_CHANNEL_NOT_CONFIGURED', project_id=p.id)
         if prior := replay(c, a, QUEUE, key, signature, Result[Delivery]):
             return prior
-        require_policy(c, p, POLICY, rid)
+        basis = require_policy(c, p, POLICY, rid)
         if int(expected) != report.revision:
             raise Failure(409, 'VERSION_CONFLICT', project_id=p.id)
         fields = _publication(report, _now(c), current=True)
@@ -200,7 +209,7 @@ def queue(reportId: UUID, command: Send, authorization: Auth, key: Key, expected
                 authorization_hash=approval.approval_hash, recipient_key=approval.recipient_key,
                 channel=approval.channel, requested_by=a.person, status='pending').returning(*d)).mappings().one()
             c.execute(db.outbox_events.insert().values(event_type=DELIVER, dedupe_key=f'weekly-delivery:{row.id}',
-                status='pending', payload={'projectId': str(p.id), 'deliveryId': str(row.id)}))
+                status='pending', payload={'projectId': str(p.id), 'deliveryId': str(row.id), 'policyBasis': basis}))
         else:
             if prior.authorization_id != approval.id or prior.authorization_hash != approval.approval_hash:
                 raise Failure(409, 'DELIVERY_RECIPIENT_ALREADY_QUEUED', project_id=p.id)
@@ -229,7 +238,7 @@ def _state(c, delivery_id, status, **values):
 def deliver(c, payload):
     """The inbox insert and verified synthetic receipt share a commit with consumption."""
     delivery_id, pid = UUID(payload['deliveryId']), UUID(payload['projectId'])
-    if not synthetic_confirmation(c):
+    if not isolated_inbox(c):
         raise ValueError('Synthetic inbox not available outside isolated pilot')
     row = c.execute(sa.select(deliveries).where(deliveries.c.id == delivery_id, deliveries.c.project_id == pid)
                     .with_for_update()).mappings().one_or_none()
@@ -240,6 +249,13 @@ def deliver(c, payload):
     project = db.projects.c
     p = c.execute(sa.select(project.id, project.org_id, project.pm_id, project.sponsor_id, project.stage)
                   .where(project.id == pid)).mappings().one()
+    policy.lock(c, p.org_id)
+    basis = policy.selection(c, p, POLICY)
+    # Pre-R6 events lack a basis and may only use the original isolated shortcut.
+    queued = payload.get('policyBasis')
+    if not basis or (basis != queued and not (queued is None and 'synthetic' in basis[0])):
+        _state(c, row.id, 'blocked', error_code='DELIVERY_POLICY_CHANGED')
+        return
     r = reporting.r
     report = c.execute(sa.select(r.id, r.project_id, r.type, r.version_no, r.revision, r.content_hash, r.status,
         r.is_current_confirmed, r.confirmed_by, r.confirmed_at, r.submitted_by, r.submitted_at, r.author_id,

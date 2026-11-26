@@ -85,6 +85,9 @@ def login(stack, credentials, role):
 
 
 class Pilot:
+    dataset = DATASET
+    seed = SEED
+
     def __init__(self, pool, cfg, team, code, name, *, pm, money, effort, priorities):
         self.pool, self.cfg, self.team = pool, cfg, team
         self.code, self.name = code, name
@@ -92,7 +95,7 @@ class Pilot:
         self.file = f'{code}-receipts.json'
         self.evidence = local.read(self.file)
         if self.evidence is None:
-            self.evidence = dict(dataset=DATASET, seed=SEED, batch=cfg['id'],
+            self.evidence = dict(dataset=self.dataset, seed=self.seed, batch=cfg['id'],
                                  baseTime=datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(), steps={})
             local.save(self.file, self.evidence)
         self.base = datetime.fromisoformat(self.evidence['baseTime'])
@@ -108,7 +111,7 @@ class Pilot:
         step = self.steps.get(label)
         if step is not None and 'status' in step:
             return step.get('data', {})
-        key = sha256(f'{DATASET}:{SEED}:{self.cfg["id"]}:{self.code}:{label}'.encode()).hexdigest()
+        key = sha256(f'{self.dataset}:{self.seed}:{self.cfg["id"]}:{self.code}:{label}'.encode()).hexdigest()
         if step is None:
             step = self.steps[label] = dict(role=role, path=path, method=method, revision=revision, body=body, key=key)
             local.save(self.file, self.evidence)
@@ -307,6 +310,8 @@ class Pilot:
 
 
 def run():
+    if local.R6_PREVIEW:
+        raise RuntimeError('Use scripts.pilot_r6 for invitation-based R6 fixtures.')
     local.private_home()
     cfg = local.settings()
     runtime = local.read('runtime.json', {})

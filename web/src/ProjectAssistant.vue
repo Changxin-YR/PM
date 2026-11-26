@@ -1,38 +1,22 @@
 <script setup lang="ts">
-import {computed,onBeforeUnmount,shallowRef,ref,watch} from 'vue'
+import {computed,onBeforeUnmount,onMounted,reactive,shallowRef,ref,watch} from 'vue'
 import {ArrowRight,Bell,ChartNoAxesColumnIncreasing,CircleHelp,ClipboardList,Database,Download,Flag,Layers3,ListChecks,RefreshCw,Search,TriangleAlert} from 'lucide-vue-next'
 import AssistantLines from './AssistantLines.vue'
 import AssistantRequirementHistory from './AssistantRequirementHistory.vue'
 import PreapprovalSpending from './PreapprovalSpending.vue'
 import WeeklyHealthOverview from './WeeklyHealthOverview.vue'
 import WeeklyPortfolioReports from './WeeklyPortfolioReports.vue'
-import {interpretQuestion,type AssistantQuestion,type AssistantTopic,type QuestionTarget} from './assistantQuestions'
+import {interpretQuestion,type AssistantQuestion,type QuestionTarget} from './assistantQuestions'
 
-type Mode='charter'|'process'|'closing'|'ledger'
-type Topic=AssistantTopic
-type Cited={text:string;sourceRefs:string[];observedAt?:string|null}
-type Preview={status:'ready'|'manual'|'empty';items:(Cited & {prompt?:string})[];errorCode?:string}
-type Gap={code:string;message:string;sourceRefs:string[]}
-type LessonRef=Cited & {lessonId:string;projectId:string;category:string;matchedTerm?:string|null}
-type Score={total:string|null;means:Record<string,string>;sourceRefs:string[]}
-type Charter={completeness:{eligible:boolean;missing:Gap[]};scoreSummary:null|Score & {decidedAt:string};
-  pendingScore:null|Score & {observedAt:string};pendingWeaknesses:Cited[];charterFacts:Cited[];
-  weaknesses:Cited[];lessonRefs:LessonRef[];reviewDraft:Cited[];previewEnabled:boolean}
-type Process={reportId:string|null;modelEnabled:boolean;analysis:null|{status:string;errorCode:string|null};
-  factCandidates:{subject:string;quote:string;sourceRef:string;asOf:string}[];conflicts:Cited[];
-  health:{health:string;dataTrust:string;gaps:string[];timeLine:string|null;costLine:string|null;qualityLine:string|null};alerts:(Cited & {ruleId:string})[];
-  weeklyDraft:{period:string;verifiedPersonDays:string|null;structuredFields:{milestone_progress:{summary:string}[];
-    requirement_progress:{summary:string}[];risks_and_blockers:{summary:string}[]}}}
-type Closing={gateEligible:boolean|null;gateGaps:Gap[];retrospectiveKind:'normal'|'terminated'|null;
-  retrospectiveQuestions:string[];lessonDrafts:Cited[];canStartLessonDraft:boolean;previewEnabled:boolean}
-type Ledger={answer:Cited[];asOf:string;sourceRefs:string[];unknowns:string[];previewEnabled:boolean}
-type Data={charter:Charter;process:Process;closing:Closing;ledger:Ledger}
-type Packet={ [K in Mode]:{mode:K;data:Data[K];meta:{asOf:string;sourceRefs:string[];ruleVersion:string}} }[Mode]
-type Destination='reviews'|'reports'|'retrospective'|'health'
+import AssistantChat from './AssistantChat.vue'
+import {followup,type ReplyContext} from './assistantFollowups'
+import {PmoHttpError} from './api-error'
+import {makeAnswer, closingStatus, reviewQuestion, type Mode, type Topic, type Cited, type Preview, type Packet, type Answer, type Turn, type ConversationStore} from './assistantConversation'
+type Destination='reviews'|'reports'|'retrospective'|'health'|'costs'|'requirements'|'milestones'
 
-const props=defineProps<{projectId:string;projectLabel?:string;projectCode?:string;initialQuestion?:AssistantQuestion;
-  revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const emit=defineEmits<{navigate:[destination:Destination];draftLesson:[];openReport:[projectId:string,reportId:string];
+const props=defineProps<{projectId:string;stage:string;projectLabel?:string;projectCode?:string;initialQuestion?:AssistantQuestion;
+  conversations:ConversationStore;revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{navigate:[destination:Destination];draftLesson:[];reviewDraft:[answers:string[]];openReport:[projectId:string,reportId:string];
   openProjectQuestion:[projectId:string,question:AssistantQuestion]}>()
 const modes:{label:string;value:Mode}[]=[{value:'charter',label:'立项评审'},{value:'process',label:'过程管家'},
   {value:'closing',label:'结项回顾'},{value:'ledger',label:'台账问答'}]
@@ -50,7 +34,19 @@ const scores:Record<string,string>={strategicAlignment:'战略对齐',customerAt
 const initialTarget=props.initialQuestion?.target
 const mode=ref<Mode>(initialTarget?.mode??'charter'),topic=ref<Topic>(initialTarget?.mode==='ledger'?initialTarget.topic:'health')
 const keyword=ref(''),category=ref('')
-const question=ref(props.initialQuestion?.text??''),questionError=ref(''),asking=ref(false)
+const pending=ref('')
+const turns=computed(()=>{
+  let threads=props.conversations.get(props.projectId)
+  if(!threads){threads=reactive<Record<Mode,Turn[]>>({charter:[],process:[],closing:[],ledger:[]});props.conversations.set(props.projectId,threads)}
+  return threads[mode.value]
+})
+let applying=false
+function remember(question:string,answer:Answer,target?:QuestionTarget,context:ReplyContext={}){
+  const list=turns.value
+  list.push({id:(list.at(-1)?.id??0)+1,question,answer,target,...context})
+  if(list.length>40)list.shift()
+}
+function resetChat(){turns.value.splice(0)}
 const historyKeyword=ref(topic.value==='requirement_history'?initialTarget?.keyword??'':'')
 const showPortfolio=ref(false)
 const packet=shallowRef<Packet|null>(null),loading=ref(false),error=ref('')
@@ -89,9 +85,12 @@ async function load(){
   const params=query.value
   try{
     const response=await props.api(`projects/${props.projectId}/assistant/${current}${params?`?${params}`:''}`,{signal:next.signal})
-    if(request===next){packet.value={mode:current,...response};loadedQuery.value=params}
+    if(request===next){packet.value={mode:current,...response};loadedQuery.value=params;return packet.value}
   }catch(e){
-    if(request===next&&!next.signal.aborted)error.value=e instanceof Error?e.message:'暂时无法读取助理结果。'
+    if(request===next&&!next.signal.aborted){
+      if(e instanceof PmoHttpError&&[401,403,404].includes(e.status)){const threads=props.conversations.get(props.projectId);if(threads)Object.values(threads).forEach(list=>list.splice(0))}
+      error.value=e instanceof Error?e.message:'暂时无法读取助理结果。'
+    }
   }finally{
     if(request===next)loading.value=false
   }
@@ -114,64 +113,98 @@ async function suggest(){
   }finally{if(previewRequest===next)suggesting.value=false}
 }
 function changeContext(){keyword.value=nextKeyword??'';nextKeyword=undefined;category.value='';showPortfolio.value=false;void load()}
-watch([mode,topic,()=>props.projectId],changeContext,{immediate:true})
-watch(()=>props.projectId,()=>{question.value='';questionError.value='';historyKeyword.value=''})
-watch([question,mode,topic,()=>props.projectId],()=>scopeRequest?.abort(),{flush:'sync'})
+watch([mode,topic,()=>props.projectId],()=>{
+  if(applying)return
+  scopeRequest?.abort();pending.value='';changeContext()
+},{immediate:!props.initialQuestion,flush:'sync'})
+onMounted(()=>{if(props.initialQuestion)void ask(props.initialQuestion.text,props.initialQuestion.target)})
 watch([keyword,category],clearSuggestion)
 watch(()=>props.revision,()=>void load())
 onBeforeUnmount(()=>{request?.abort();previewRequest?.abort();scopeRequest?.abort()})
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
 
-function showAnswer(target:QuestionTarget){
+async function showAnswer(target:QuestionTarget,text:string,controller:AbortController,original=text){
   const nextTopic=target.mode==='ledger'?target.topic:topic.value
+  applying=true
+  mode.value=target.mode; topic.value=nextTopic
   historyKeyword.value=nextTopic==='requirement_history'?(target.keyword??''):''
-  nextKeyword=target.keyword
-  if(target.mode===mode.value&&nextTopic===topic.value){changeContext();return}
-  mode.value=target.mode
-  topic.value=nextTopic
+  keyword.value=target.keyword??'';category.value='';showPortfolio.value=false
+  applying=false
+  const result=await load()
+  if(controller.signal.aborted)return
+  if(result){
+    if(result.mode==='closing'&&/带我|逐题|开始复盘/.test(original)&&result.data.retrospectiveQuestions.length){
+      const questions=result.data.retrospectiveQuestions.map(reviewQuestion)
+      remember(text,{lines:[questions[0],'直接写下你的回答，我会接着问下一题。'],sources:[],asOf:result.meta.asOf},target,{basisQuestion:original,guided:{questions,answers:[]}})
+    }else remember(text,makeAnswer(result,original,props.stage),target,{basisQuestion:original})
+    return
+  }
+  if(target.mode==='ledger'&&(globalTopic.value||historyTopic.value)){
+    const special=await specialAnswer(target.topic,controller.signal)
+    if(!controller.signal.aborted)remember(text,special,target)
+  }else remember(text,{lines:[error.value||'资料读取已中断，请重新提问。'],sources:[]})
 }
-
+async function specialAnswer(selected:Topic,signal:AbortSignal):Promise<Answer>{
+  if(selected==='requirement_history'){
+    const filters=new URLSearchParams({page:'1',pageSize:'10','filters[keyword]':historyKeyword.value})
+    const {data,meta}=await props.api(`projects/${props.projectId}/requirements?${filters}`,{signal})
+    if(data.total!==1)return {lines:[data.total?`查到 ${data.total} 条需求，请在下方选择要核对的需求。`:'没有找到匹配的需求。可用引号标出需求名称。'],sources:[],asOf:meta?.asOf}
+    const row=data.items[0]
+    const result=await props.api(`requirements/${row.requirementId}/changes?page=1`,{signal})
+    return {lines:[`${row.desc}有 ${result.data.total} 条变更记录。`,...result.data.items.map((item:{reason:string})=>item.reason)],sources:result.meta?.sourceRefs??[],asOf:result.meta?.asOf}
+  }
+  const weekly=selected==='weekly_health'
+  const {data,meta}=await props.api(`analytics/${weekly?'weekly-health':'preapproval-spending'}?page=1`,{signal})
+  const result:Answer={lines:[weekly?`本周已采样 ${data.sampledProjects} 个可见项目，其中 ${data.total} 个出现过黄红灯或存在发布限制。`:`有权查看的项目共有 ${data.total} 条立项前支出。`],sources:[],asOf:data.asOf??meta?.asOf}
+  for(const row of data.items.slice(0,8)){
+    if(weekly){const signal=row.earlierSignal??row.latest
+      const colors=[['时间',signal.timeLine],['成本',signal.costLine],['质量',signal.qualityLine]]
+        .filter(([,color])=>color==='yellow'||color==='red').map(([name,color])=>`${name}${healthNames[color]}灯`)
+      const latest=healthNames[row.latest.health]
+      const attention=colors.join('、')||'数据待核实'
+      result.lines.push(`${row.projectName}：${row.earlierSignal?'周内早先':'最近采样'}${attention}${row.earlierSignal?`，最近总体${['green','yellow','red'].includes(row.latest.health)?latest+'灯':'待核实'}`:''}。`)
+      result.sources.push(...signal.sourceRefs,...row.latest.sourceRefs)}
+    else {result.lines.push(`${row.projectCode}：${row.amountSigned} ${row.type==='money'?'元':'人天'}。`);result.sources.push(row.sourceRef)}
+  }
+  if(data.total>8)result.lines.push(`此处列出前 8 项，其余可在下方台账翻页查看。`)
+  result.sources=[...new Set(result.sources)]
+  return result
+}
 const identityText=(value?:string)=>value?.trim().normalize('NFKC').toLowerCase()
 function matchesProject(qualifier:string,project:{code?:string;name?:string}){
   const reference=identityText(qualifier)
   return !!reference&&(reference===identityText(project.code)||reference===identityText(project.name))
 }
 
-function refuseScope(message:string){
-  request?.abort();request=undefined
-  packet.value=null;loading.value=false;clearSuggestion()
-  questionError.value=message
+function refuseScope(text:string,message:string){
+  request?.abort();request=undefined;packet.value=null;loading.value=false;clearSuggestion()
+  remember(text,{lines:[message],sources:[]})
 }
-
-async function ask(){
-  const text=question.value.trim()
-  if(!text||asking.value)return
-  const target=interpretQuestion(text)
-  if(!target){questionError.value='暂时无法识别这个问题，请选择查询主题。核验事实可在问题中用引号标出关键词。';return}
-  questionError.value=''
+async function ask(text:string,linked?:QuestionTarget){
+  if(!text.trim()||pending.value)return
+  const last=turns.value.at(-1)
+  const reply=followup(text,last)
+  if(reply){remember(text,reply.answer,last?.target,reply.context);return}
+  const repeat=/^(?:再查一次|更新一下|重新核对|刷新上一条)[？?。！!]*$/u.test(text)
+  const target=linked??(repeat?last?.target:interpretQuestion(text))
+  if(!target){remember(text,{lines:['暂时无法识别这个问题。可以从本模式的推荐问题开始，或说明想查的项目、记录和时间。'],sources:[]});return}
   const projects=target.projects??[]
-  if(projects.length>1){refuseScope('请一次指定一个项目，再查询它的台账。');return}
-  const [qualifier]=projects
-  if(!qualifier||qualifier.normalize('NFKC')===props.projectCode?.normalize('NFKC')){showAnswer(target);return}
-  const controller=new AbortController()
-  scopeRequest=controller;asking.value=true
-  const params=new URLSearchParams({page:'1',pageSize:'100','filters[keyword]':qualifier})
+  if(projects.length>1){refuseScope(text,'请一次指定一个项目，再查询它的台账。');return}
+  const [qualifier]=projects,controller=new AbortController()
+  scopeRequest=controller; pending.value=text
   const unavailable='无法确定唯一可读的项目。请核对项目编号，或从项目台账进入对应项目。'
   try{
-    const {data}:{data:{items:{projectId:string;code:string;name:string;materialsVisible:boolean}[];total:number}}=
-      await props.api('project-overview?'+params,{signal:controller.signal})
-    if(controller.signal.aborted)return
-    const matched=data.items.filter(project=>matchesProject(qualifier,project))
-    if(data.total>data.items.length||matched.length!==1||!matched[0].materialsVisible){
-      refuseScope(unavailable);return
+    if(!linked&&qualifier&&identityText(qualifier)!==identityText(props.projectCode)){
+      const params=new URLSearchParams({page:'1',pageSize:'100','filters[keyword]':qualifier})
+      const {data}:{data:{items:{projectId:string;code:string;name:string;materialsVisible:boolean}[];total:number}}=await props.api('project-overview?'+params,{signal:controller.signal})
+      if(controller.signal.aborted)return
+      const matched=data.items.filter(project=>matchesProject(qualifier,project))
+      if(data.total>data.items.length||matched.length!==1||!matched[0].materialsVisible){refuseScope(text,unavailable);return}
+      if(matched[0].projectId!==props.projectId){emit('openProjectQuestion',matched[0].projectId,{text,target});return}
     }
-    if(matched[0].projectId===props.projectId){showAnswer(target);return}
-    emit('openProjectQuestion',matched[0].projectId,{text,target})
-  }catch(e){
-    if(!controller.signal.aborted)refuseScope(unavailable)
-  }finally{
-    if(scopeRequest===controller){scopeRequest=undefined;asking.value=false}
-  }
+    await showAnswer(target,text,controller,repeat?(last?.basisQuestion??last?.question):text)
+  }catch(e){if(!controller.signal.aborted)refuseScope(text,qualifier?unavailable:'暂时无法核对记录，请重新提问。')}
+  finally{if(scopeRequest===controller){scopeRequest=undefined;pending.value=''}}
 }
 
 function downloadReview(){
@@ -200,6 +233,9 @@ function downloadReview(){
   <section class="assistant" aria-label="项目助理" :aria-busy="loading">
     <div class="panel assistant-toolbar">
       <el-segmented v-model="mode" :options="modes" aria-label="助理模式"/>
+    </div>
+    <AssistantChat class="panel" :stage="stage" :mode="mode" :turns="turns" :busy="!!pending" :pending="pending" @send="ask" @reset="resetChat" @review-draft="answers=>emit('reviewDraft',answers)" @navigate="dest=>emit('navigate',dest)"/>
+    <div class="panel assistant-toolbar"><strong>项目材料</strong>
       <form class="filters" @submit.prevent="load">
       <label v-if="mode==='ledger'">查询主题<select v-model="topic">
         <option v-for="item in topics" :key="item.value" :value="item.value">{{item.label}}</option>
@@ -211,12 +247,6 @@ function downloadReview(){
       <el-tooltip v-else-if="!historyTopic&&!globalTopic" content="重新读取"><el-button aria-label="重新读取助理结果" native-type="submit" :loading="loading" :icon="RefreshCw"/></el-tooltip>
       </form>
     </div>
-    <form v-if="mode==='ledger'" class="panel question-form" aria-label="台账自然语言查询" @submit.prevent="ask">
-      <label>用一句话查询台账<input v-model="question" maxlength="180" placeholder="例如 本周哪些项目亮了黄灯？" @input="questionError=''"/></label>
-      <el-button native-type="submit" :disabled="!question.trim()" :loading="asking"><Search :size="15"/>提问</el-button>
-      <p v-if="questionError" class="meta" role="status">{{questionError}}</p>
-      <p v-else class="meta">{{globalTopic?'查询范围为你有权查看的项目。':`当前项目 ${projectLabel??''}`}}</p>
-    </form>
     <p v-if="loading" class="meta" role="status">正在读取…</p>
     <el-alert v-if="error" type="error" :title="error" :closable="false"/>
     <AssistantRequirementHistory v-if="historyTopic" :key="`${projectId}:${historyKeyword}`" :project-id="projectId" :initial-query="historyKeyword" :api="api"/>
@@ -293,14 +323,14 @@ function downloadReview(){
     <template v-if="closing">
     <section class="panel assistant-panel">
       <div class="assistant-row"><h3>结项门槛</h3><el-button text @click="emit('navigate','reviews')">关口工作台<ArrowRight :size="14"/></el-button></div>
-      <p v-if="closing.gateEligible===null" class="meta">当前未处于结项检查阶段。</p>
+      <p v-if="closing.gateEligible===null" class="meta">{{closingStatus(stage,closing.retrospectiveKind)}}</p>
       <p v-else-if="closing.gateEligible" class="meta">未发现结项缺口 · 待人工裁决</p>
       <AssistantLines :items="closing.gateGaps.map(gap=>({text:gap.message,sourceRefs:gap.sourceRefs}))"/>
     </section>
     <section class="panel assistant-panel">
       <div class="assistant-row"><h3>{{closing.retrospectiveKind==='terminated'?'终止复盘':'复盘四问'}}</h3>
         <el-button text @click="emit('navigate','retrospective')">复盘与教训<ArrowRight :size="14"/></el-button></div>
-      <ol><li v-for="question in closing.retrospectiveQuestions" :key="question">{{question}}</li></ol>
+      <ol><li v-for="question in closing.retrospectiveQuestions" :key="question">{{reviewQuestion(question)}}</li></ol>
       <h3>待确认教训摘录</h3>
       <AssistantLines v-if="closing.lessonDrafts.length" :items="closing.lessonDrafts"/>
       <p v-else class="meta">暂无可引用的复盘回答。</p>

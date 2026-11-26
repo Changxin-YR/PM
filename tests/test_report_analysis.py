@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Thread
+from threading import Event, Thread
 from time import sleep
 from uuid import UUID
 
@@ -324,13 +324,35 @@ def test_expired_lease_and_worker_commit_failure(team, analysis_api, monkeypatch
     report = submit(pm, team.path, narrative=NARRATIVE)
     with session_at(pm, analysis_api) as user:
         job = data(request(user, report))
+        def expire(claim):
+            with team.engine.connect() as c:
+                c.execute(sa.text('SELECT pg_sleep(greatest(0, extract(epoch FROM '
+                                  '(CAST(:until AS timestamptz) - clock_timestamp()))))'),
+                          {'until': claim.row.leased_until})
+
+        locked, release = Event(), Event()
+
+        def hold_first_claim(conn, cursor, statement, params, context, many):
+            if statement.startswith('UPDATE report_analysis_runs') and not locked.is_set():
+                locked.set()
+                assert release.wait(20)
+
         monkeypatch.setattr(worker, 'LEASE', timedelta(milliseconds=180))
-        with ThreadPoolExecutor(2) as pool:
-            dead, = [work for work in pool.map(lambda _:worker.claim(team.engine), range(2)) if work is not None]
-        assert dead.row.id==UUID(job['runId']) and dead.row.attempts==1
-        assert worker.claim(team.engine) is None
-        sleep(.30)
-        monkeypatch.setattr(worker, 'LEASE', timedelta(seconds=1))
+        sa.event.listen(team.engine, 'after_cursor_execute', hold_first_claim)
+        try:
+            with ThreadPoolExecutor(1) as pool:
+                future = pool.submit(worker.claim, team.engine)
+                try:
+                    assert locked.wait(20)
+                    assert worker.claim(team.engine) is None  # Competing claim skips the locked row.
+                finally:
+                    release.set()
+                dead = future.result()
+        finally:
+            sa.event.remove(team.engine, 'after_cursor_execute', hold_first_claim)
+        assert dead.row.id == UUID(job['runId']) and dead.row.attempts == 1
+        expire(dead)
+        monkeypatch.setattr(worker, 'LEASE', timedelta(seconds=10))
         live = worker.claim(team.engine)
         assert live.row.attempts==2 and live.row.lease_id!=dead.row.lease_id
         with gateway(answer()) as (url, calls):
@@ -353,9 +375,14 @@ def test_expired_lease_and_worker_commit_failure(team, analysis_api, monkeypatch
         finally:
             with team.engine.begin() as c:
                 c.exec_driver_sql('DROP TRIGGER worker_analysis_fault ON outbox_events')
-        sleep(1.1)
+        expire(live)
         monkeypatch.setattr(worker, 'LEASE', timedelta(seconds=40))
         assert worker.dispatch(team.engine, 2)==1
         result, = history(pm, report)['items']
         assert result['status']=='manual' and result['errorCode']=='MODEL_LEASE_EXHAUSTED' and result['attempts']==2
         assert result['fallbackTaskId'] and worker.claim(team.engine) is None
+        with team.engine.connect() as c:
+            assert events(c, job) == ['report.analysis.queued', 'report.analysis.manual']
+            assert c.scalars(sa.select(db.tasks.c.id).where(db.tasks.c.project_id == team.pid)).all() == [UUID(result['fallbackTaskId'])]
+            assert c.scalar(sa.select(sa.func.count()).select_from(db.audit_logs).where(
+                db.audit_logs.c.operation_id == UUID(job['runId']), db.audit_logs.c.action == 'report.analysis.manual')) == 1

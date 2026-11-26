@@ -27,17 +27,21 @@ from pmo.model_gateway import PROTOCOLS, base_endpoint, endpoint
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'PMO_PILOT_RUNTIME'
 NATIVE = os.getenv(PROFILE) == 'native'
-R5_PREVIEW = NATIVE and os.getenv('PMO_PILOT_INSTANCE') == 'r5-preview'
-HOME = ROOT / '.local' / ('pmo-r5-preview' if R5_PREVIEW else
+INSTANCE = os.getenv('PMO_PILOT_INSTANCE', '') if NATIVE else ''
+R5_PREVIEW = INSTANCE == 'r5-preview'
+R6_PREVIEW = INSTANCE == 'r6-preview'
+HOME = ROOT / '.local' / ('pmo-r6-preview' if R6_PREVIEW else 'pmo-r5-preview' if R5_PREVIEW else
                           'pmo-synthetic-pilot-native' if NATIVE else 'pmo-synthetic-pilot')
 COMPOSE = ROOT / 'deploy' / 'pilot-db.compose.yaml'
 PYTHON = ROOT / '.venv' / 'Scripts' / 'python.exe'
-DB_PORT, WEB_PORT, API_PORT = ((55454, 18788, 18789) if R5_PREVIEW else
+DB_PORT, WEB_PORT, API_PORT = ((55456, 18790, 18791) if R6_PREVIEW else (55454, 18788, 18789) if R5_PREVIEW else
                               (55443, 18778, 18779) if NATIVE else (55441, 18775, 18776))
+WEB_DIST = HOME / 'web-dist' if R6_PREVIEW else ROOT / 'web/dist'
+R6_ENVIRONMENT = 'pmo-r6-isolated'
 API = f'http://127.0.0.1:{API_PORT}/api/v1/'
 WEB = f'http://127.0.0.1:{WEB_PORT}'
 DB_NAME = 'pmo_pilot'
-UPGRADABLE_HEADS = {('0036',), ('0037',), ('0038',), ('0039',), ('0040',), ('0041',), ('0042',)}
+UPGRADABLE_HEADS = {('0036',), ('0037',), ('0038',), ('0039',), ('0040',), ('0041',), ('0042',), ('0043',)}
 STARTUP_SECONDS = 100
 CHANNELS = {'assistant': 'PMO_ASSISTANT_PREVIEWS', 'report': 'PMO_REPORT_ANALYSIS'}
 PILOT_CODES = {'SIM-EXEC-001', 'SIM-NEW-001'}
@@ -508,7 +512,7 @@ def activation_scope(api, worker, loaded):
 
 
 def web_artifact_digest():
-    return sha256((ROOT / 'web/dist/index.html').read_bytes()).hexdigest()
+    return sha256((WEB_DIST / 'index.html').read_bytes()).hexdigest()
 
 
 def verify_runtime_database(cfg):
@@ -532,7 +536,9 @@ def serve(active):
         if not secrets.compare_digest(os.getenv('PMO_PILOT_MODEL_PERMIT', ''), permit):
             raise ModelConfigError('Model scope changed or lacks operator confirmation; run activate-models.')
     base = env_base()
-    separate = base | {'DATABASE_URL': database(cfg, 'api'), 'PMO_SYNTHETIC_POLICY_SCHEMA': schema(cfg)}
+    policy_scope = ({'PMO_POLICY_ENVIRONMENT': R6_ENVIRONMENT, 'PMO_ISOLATED_DELIVERY_SCHEMA': schema(cfg)}
+                    if R6_PREVIEW else {'PMO_SYNTHETIC_POLICY_SCHEMA': schema(cfg)})
+    separate = base | policy_scope | {'DATABASE_URL': database(cfg, 'api')}
     with bind(WEB_PORT), bind(API_PORT):
         pass  # Fail when any unrelated service owns either port.
     procs = []
@@ -548,11 +554,10 @@ def serve(active):
             ids = {'api': start([str(PYTHON), '-m', 'uvicorn', 'pmo.api:app', '--port', str(API_PORT), '--no-access-log'],
                                 ROOT, app_env | api_model),
                    'web': start(['node', str(ROOT / 'web/node_modules/vite/bin/vite.js'), 'preview', '--host',
-                                 '127.0.0.1', '--port', str(WEB_PORT), '--strictPort'], ROOT / 'web',
+                                 '127.0.0.1', '--port', str(WEB_PORT), '--strictPort', '--outDir', str(WEB_DIST)], ROOT / 'web',
                                 base | {'PMO_API_PORT': str(API_PORT)}),
                    'outbox': start([str(PYTHON), '-m', 'pmo.outbox', '--watch'], ROOT,
-                                   base | {'DATABASE_URL': database(cfg, 'outbox'),
-                                           'PMO_SYNTHETIC_POLICY_SCHEMA': schema(cfg)}),
+                                   base | policy_scope | {'DATABASE_URL': database(cfg, 'outbox')}),
                    'scheduler': start([str(PYTHON), '-m', 'pmo.rule_scan', '--watch'], ROOT,
                                       separate | {'PMO_EVIDENCE_DIR': str(evidence)}),
                    'supervisor': os.getpid()}
@@ -590,12 +595,12 @@ def stop():
 def launch(active=False, *, permit='', closing_code=None):
     if local_file('runtime.json').is_file() and not clear_stale_runtime():
         raise RuntimeError('Pilot already owns the runtime; stop it before restarting.')
-    if not (ROOT / 'web/dist/index.html').is_file():
-        raise RuntimeError('Run npm.cmd --prefix web run build before starting the pilot.')
+    if not (WEB_DIST / 'index.html').is_file():
+        raise RuntimeError(f'Build the workbench into {WEB_DIST} before starting the pilot.')
     with local_file('supervisor.log').open('a', encoding='utf-8') as log:
         child = subprocess.Popen([str(PYTHON), '-m', 'scripts.pilot_local', 'serve-models' if active else 'serve'], cwd=ROOT,
                                 env=env_base() | ({PROFILE: 'native'} if NATIVE else {}) |
-                                    ({'PMO_PILOT_INSTANCE': 'r5-preview'} if R5_PREVIEW else {}) | (
+                                    ({'PMO_PILOT_INSTANCE': INSTANCE} if INSTANCE else {}) | (
                                     {'PMO_PILOT_MODEL_PERMIT': permit, 'PMO_PILOT_CLOSING_CODE': closing_code or ''} if active else {}),
                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
@@ -615,6 +620,9 @@ def main():
     parser.add_argument('--project-id', help='Exact archived rehearsal project UUID for model registration.')
     parser.add_argument('--closing-code', help='Include an already registered archived project for closing preview in this activation.')
     args = parser.parse_args()
+    if R6_PREVIEW and args.action in ('configure-models', 'activate-models', 'serve-models',
+                                     'prepare-model-report', 'register-model-closing'):
+        parser.error('R6 persistent previews only use local deterministic assistance')
     if args.upgrade_existing and args.action != 'init':
         parser.error('--upgrade-existing is only valid with init')
     if args.action == 'register-model-closing' and not (args.code and args.project_id):

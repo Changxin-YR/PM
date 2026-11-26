@@ -1,5 +1,6 @@
 """One read-only workspace. Its modes compose existing scoped services, not authorities."""
 from datetime import datetime
+from decimal import Decimal
 import re
 from typing import Annotated, Literal
 from uuid import UUID
@@ -431,8 +432,17 @@ def _ledger(c, a, p, at, topic, keyword, category, *, for_preview=False):
             result, refs = summary_line(c, basis, kind, at)
             if refs:
                 rate = result.varianceRate
-                answer.append(Cited(text=f'{unit}：已核验净额 {result.actual}；剩余预测 {result.forecastRemaining}；'
-                    f'偏差率 {rate if rate not in (None, UNAVAILABLE) else "不可用"}', sourceRefs=refs[:100]))
+                text = (f'{unit}：已核验净额 {result.actual}；剩余预测 {result.forecastRemaining}；'
+                        f'偏差率 {rate if rate not in (None, UNAVAILABLE) else "不可用"}')
+                if basis.budget_refs(kind):
+                    measure = '元' if kind == 'money' else '人天'
+                    delta = Decimal(result.actual) - Decimal(result.budget)
+                    difference = (f'{"少用" if delta < 0 else "多用"} {abs(delta):.2f} {measure}'
+                                  if delta else '与获批预算持平')
+                    text += f'。获批预算 {result.budget} {measure}，实际{difference}。'
+                else:
+                    text += '。暂无获批预算，无法比较实际差额。'
+                answer.append(Cited(text=text, sourceRefs=refs[:100]))
             else:
                 unknowns.append(f'{unit}无可核验记录。')
     if not answer and not unknowns:

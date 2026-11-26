@@ -1,5 +1,53 @@
 # 进度与续接索引
 
+## 2026-11-26 园区试点与四模式对话交接（北京时间）
+
+当前可演示项目为 **东湖园区设备报修与回单试点**，编号 `R6-PARK-001`。该项目已通过独立归档裁决。工作台使用 `18790`，接口使用 `18791`。项目经理可进入同一项目核对四个助理模式、签收冲突、两期周报，以及 78,000 元和 78 人天的核验结果。[打开项目助理](http://127.0.0.1:18790/#project=9fd07805-5ca7-4d8e-ba9e-7c8d144622d2&tab=assistant) · [园区试点验收、回执与复现方法](../acceptance/r6/园区试点验收.md)
+
+本机后端 446 项、浏览器 35 项及 102 个规则向量的记录随验收单保存。另以这一个归档项目实测 18 个项目页签、12 个组织及个人入口、26 轮中文对话和两份单页周报。项目、组织角色和访问范围均由现有业务接口核对。真实外部收件、两端桌面联调及生产放行见目标环境清单。[目标环境验收单](../ops/target-acceptance.md)
+
+## 2026-11-26 较早交接：移动工单实施起点（北京时间）
+
+**此段为园区验收前的快照。企业移动工单管理系统 `R6-MOBILE` 当时处于实施阶段 `executing`。** 落地评审已“有条件通过”，条件任务是“抽查三张离线回单的同步记录”。交接时该项目有 0 份报告、0 笔正式周报投递。下一步由移动工单 PM 核对该任务，录入第一期实施报告，再做第二期对比和分类人天独立核验。[R6 业务回执、私密登录指引与待验清单](../acceptance/r6/README.md)
+
+- 企业行政智能问答系统的五条 HTTP 路径已核实。快速立项、普通立项、评分复议、否决后修改重报均到 `designing`，低分样本按规则停在 `rejected`。
+- 本机分支 `codex/pmo-r6`，HEAD `a773b21`。R6 改动仍在工作区，两个新试点脚本待纳入版本控制。14:43 实测 R6 Web `18790`、API `18791` 就绪，独立库 `55456` 的迁移为 `0043`，模型关闭。
+- 基线远端 CI 为 **445/446**，本机 R6 首轮全量为 **444/446**。周报积压定向复验 **1/1**、附件与报告分析复验 **14/14**。截至该次快照，最终全量、浏览器、打印和两端桌面实测均列为待办。生产放行状态为 **NO-GO**。[R6 工程证据](../acceptance/r6/README.md#工程验证) · [阻断清单](blockers.md)
+
+以下为同日较早的暂停快照，供追溯起点。
+
+## 2026-11-26 R6 暂停交接（北京时间）
+
+用户要求暂停开发和验收。R6 完成了本机基线核验、独立空库初始化及前端构建。恢复后从中文造数和版本化策略验证接着做。当前尚无 R6 工作台登录、生命周期或业务验收回执。
+
+| 项目 | 暂停时状态 |
+|---|---|
+| 仓库与代码 | `Changxin-YR/PM`。GitHub 已核实 `dev/pmo-v1` 指向 `a773b21f3528cbc2119e3efdace838e3e8cdf445`。本机从同一提交新建 `codex/pmo-r6`，HEAD 仍为该提交。现有本机 `dev/pmo-v1` 在 `7b54ed2`，与远端分叉，原分支保留。R5 产品验收基线为 `a8d628779f5c994d7bf92600f0684f030b374941`。本次未提交或推送。 |
+| 工作区 | `scripts/pilot_local.py` 有未提交的 R6 独立实例接线。仓库根目录原有四个未跟踪的中文历史文件保留原样。两份仓库原始 Lite HTML 的 SHA-256 均为 `e88d37a5e59fe2e3c14b768ab9d11ae11100b68308278c9bf9b5a0ab1c68a532`。 |
+| R5 在用现场 | Web `127.0.0.1:18788`、API `18789`、PostgreSQL `55454/pmo_pilot`。已实读就绪及 Alembic `0043`，保留原服务、数据和静态构建。[R5 工作台及私密登录指引](../acceptance/r5/workbench.md) |
+| R6 空环境 | `PMO_PILOT_RUNTIME=native` 和 `PMO_PILOT_INSTANCE=r6-preview`。PostgreSQL `127.0.0.1:55456/pmo_pilot`、schema `pmo_test_cbe33ba9ab3440d787d132e4ecd7ef5e`，迁移至 `0043`，初始化退出码 `0`。Web `18790` 和 API `18791` 尚未启动。实例目录 `.local/pmo-r6-preview/`。 |
+| 初始构建 | Vue 类型检查与生产构建退出码 `0`。独立产物位于 `.local/pmo-r6-preview/web-dist/`。最大 JS 包 `1,495.66 kB`，gzip `474.48 kB`，Vite 的 `500 kB` 告警已复现，实际加载影响待测。初始化和构建日志位于 `.local/r6-evidence/`。 |
+| 远端 CI | `a773b21` 的 push 工作流已结束，结论为失败。安装、冻结规格、mypy 和 PostgreSQL 16 客户端步骤成功，`uv run --locked pytest -q` 失败。具体失败用例和原因待查。[工作流](https://github.com/Changxin-YR/PM/actions/runs/45763424019) · [作业](https://github.com/Changxin-YR/PM/actions/runs/45763424019/job/139718547880) |
+
+### 从暂停处续接
+
+1. 先保留远端 CI 的失败日志并定位失败用例。继续分别调查 R5 报告分析 HTTP 500、短租约重复领取、Edge 登录／加载超时。R5 已通过的 `446` 项后端和 `35` 项 Edge 是历史结果。R6 尚未复现前三项，也未执行全量回归。短租约调查需要对照任务状态、数据库副作用和审计。[R5 验收记录](../acceptance/r5/verification.md)
+2. 核对 `scripts/pilot_local.py` 现有改动后启动 R6。实例设置 `PMO_POLICY_ENVIRONMENT=pmo-r6-isolated`，通过已登记并独立激活的版本化合成政策执行业务。它未启用 `PMO_SYNTHETIC_POLICY_SCHEMA` 的快捷通路。`PMO_ISOLATED_DELIVERY_SCHEMA` 目前只有启动脚本接线，产品消费端尚未实现。应在独立渠道支持完成后复验送达、未知状态查询、人工确认重试及 worker 恢复。预览模型关闭。[策略登记手册](../ops/policy-activation.md) · [R5 隔离投递证据](../acceptance/r5/reporting.md)
+3. 复用 `scripts/pilot_seed.py` 的实际登录和回执机制及 `scripts/pilot_rehearsal.py` 的生命周期步骤。两个脚本的既有造数含英文，只可复用操作逻辑。继续编写 R6 中文资料，走组织开户邀请、项目任命与资格登记，再通过 `pmo.policy_admin` 分权登记合成原件、核验和激活。先跑“企业行政智能问答系统”的快速与普通路径，以及否决、低分、重报、复议和有条件通过变体。再用“企业移动工单管理系统”验证实施至归档、两期报告、分类人天独立核验、冲突事实、变更和隔离收件。两项目都从合法阶段进入，保留独立人员、回执、审计和状态时间线。[项目接入手册](../ops/onboarding.md) · [R5 评审证据](../acceptance/r5/reviews.md)
+4. 隔离环境就绪后，补实际 Edge 角色页面、A4 中文导出、四模式中文问答及报告分析。新项目没有真实模型外发授权，使用确定性人工或隔离模拟网关。Codex Desktop、DSH Desktop 各自实测，与 SDK 或 app-server 分别记录。启动前保留原客户端配置和凭据。最终候选才执行八问、十项人机验收、102 个冻结向量、全量后端和 Edge、类型构建、升级、数据库和附件联合恢复。在 `docs/acceptance/r6/` 留存记录，并逐项更新 R5 的 102 条原文追踪、20 项差异及功能保留矩阵。[追踪矩阵](../acceptance/r5/lite-traceability.csv) · [差异复核](../acceptance/r5/differences.md) · [功能矩阵](../acceptance/r5/feature-parity.csv)
+
+恢复工作后可在仓库根目录使用以下命令。空库和首轮构建已完成。现阶段不应对 R6 执行旧脚本的完整 `seed` 操作。
+
+```powershell
+$env:PMO_PILOT_RUNTIME = 'native'
+$env:PMO_PILOT_INSTANCE = 'r6-preview'
+npm.cmd --prefix web run build -- --outDir ../.local/pmo-r6-preview/web-dist
+.venv/Scripts/python.exe -m scripts.pilot_local start
+.venv/Scripts/python.exe -m scripts.pilot_local status
+```
+
+截至暂停，R6 全中文业务闭环、本机工程验收和隔离送达均未完成。两个实际 Desktop Host 暂未复验，R6 没有新真实模型调用。真实政策、真实试点、真实外部收件和目标生产环境尚未验收，生产保持 **NO-GO**。[现有阻断清单](blockers.md) · [目标验收单](../ops/target-acceptance.md)
+
 ## 2026-11-26 R5 联合整改（北京时间）
 
 - R5 从当前恢复版 `fe7c50b` 续作。隔离预览 `127.0.0.1:18788`，API `18789`，PostgreSQL `16.14` / Alembic `0043`，独立合成库 `55454/pmo_pilot`。两组合成项目和私密登录入口见 [一页手册](../acceptance/r5/workbench.md)。

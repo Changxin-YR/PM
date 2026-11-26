@@ -98,6 +98,11 @@ WORKER_READ = frozenset({'outbox_events', 'outbox_attempts', 'project_event_inbo
     'weekly_delivery_authorizations', 'weekly_deliveries', 'weekly_delivery_inbox'})
 WORKER_ADD = frozenset({'outbox_attempts', 'project_event_inbox', 'organization_event_inbox', 'notifications',
     'weekly_delivery_inbox'})
+WORKER_POLICY_READ = {
+    'policy_versions': 'id org_id project_id environment synthetic decision_code version policy policy_hash '
+                       'evidence_hash effective_from effective_until',
+    'policy_events': 'policy_id sequence event',
+}
 WORKER_EDIT = {
     'outbox_events': 'status retry_count locked_until next_attempt_at last_error updated_at published_at',
     'outbox_attempts': 'outcome finished_at', 'rule_events': 'notified_at',
@@ -239,6 +244,8 @@ def apply_roles(conn: psycopg.Connection, api: str, worker: str, *, synthetic_sc
         grant(conn, worker, 'project_members', 'SELECT', 'project_id person_id role assignment_status accepted_at revoked_at', schema=schema)
         grant(conn, worker, 'persons', 'SELECT', 'id org_id user_id is_active', schema=schema)
         grant(conn, worker, 'user_accounts', 'SELECT', 'id is_active locked_until', schema=schema)
+        for table, columns in WORKER_POLICY_READ.items():
+            grant(conn, worker, table, 'SELECT', columns, schema=schema)
 
 
 def main() -> int:

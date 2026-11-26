@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,onMounted,ref,watch} from 'vue'
 import {FileCheck2,Pencil,Plus,RefreshCw,Save,Search} from 'lucide-vue-next'
+import {reviewQuestion} from './assistantConversation'
 import ReviewCalibration,{calibrationLabels,type Calibration,type CalibrationKey,type Deviation} from './ReviewCalibration.vue'
 
 type CostDiscussion={type:'money'|'effort';attribution:'estimate'|'execution'|'scope';sourceRef:string}
@@ -17,8 +18,8 @@ type SearchPage={items:SearchHit[];page:number;pageSize:number;total:number;asOf
 type SearchCriteria={keyword:string;category:string}
 type Intent={kind:'answers';revision:number}|{kind:'draft'}|{kind:'confirm';lessonId:string;revision:number}
 
-const props=defineProps<{projectId:string;projectRevision?:number;requestedDraft?:boolean;api:(path:string,options?:RequestInit)=>Promise<any>}>()
-const emit=defineEmits<{draftOpened:[]}>()
+const props=defineProps<{projectId:string;projectRevision?:number;requestedDraft?:boolean;requestedAnswers?:string[];api:(path:string,options?:RequestInit)=>Promise<any>}>()
+const emit=defineEmits<{draftOpened:[];answersOpened:[]}>()
 const fields=[{name:'category',label:'教训分类'},{name:'what',label:'发生了什么'},
   {name:'rootCause',label:'根因'},{name:'advice',label:'建议'}] as const
 const prompts={answers:{title:'填写项目复盘',submit:'保存复盘',icon:Save},draft:{title:'新增教训草稿',submit:'保存教训草稿',icon:Save},
@@ -27,6 +28,7 @@ const placeholders=new Set(['todo','tbd','n/a','na','none','null','unknown','待
 const state=ref<State|null>(null),lessons=ref<LessonList|null>(null),loading=ref(false),saving=ref(false),dialog=ref(false)
 const intent=ref<Intent|null>(null),answers=ref<string[]>([]),draft=ref<LessonContent>({category:'',what:'',rootCause:'',advice:''})
 const draftSource=ref<number>()
+const fromChat=ref(false)
 const notice=ref(''),error=ref(''),formError=ref('')
 const keyword=ref(''),category=ref(''),searching=ref(false),searchError=ref(''),hits=ref<SearchPage|null>(null)
 const criteria=ref<SearchCriteria|null>(null),pageSize=20
@@ -65,6 +67,7 @@ watch(()=>props.projectRevision,()=>void refresh())
 function begin(kind:Intent['kind'],lesson?:Lesson,fromAnswers=false){
   const retro=state.value
   if(busy.value||!retro)return
+  fromChat.value=false
   if(kind==='confirm'){
     if(lesson?.canConfirm!==true||lesson.status!=='draft')return
     intent.value={kind,lessonId:lesson.lessonId,revision:lesson.revision}
@@ -91,6 +94,17 @@ watch([()=>props.requestedDraft,state,busy],([requested,retro,wait])=>{
   if(!requested||!retro||retro.projectId!==props.projectId||wait)return
   if(!dialog.value&&retro.canSave&&retro.completedAt)begin('draft',undefined,true)
   emit('draftOpened')
+},{immediate:true})
+watch([()=>props.requestedAnswers,state,busy],([draft,retro,wait])=>{
+  if(!draft||!retro||retro.projectId!==props.projectId||wait)return
+  if(!retro.canSave)notice.value='本账号可查看复盘，草稿仍保留在项目助理。'
+  else if(dialog.value)notice.value='已有表单正在编辑。可以关闭它后从项目助理重新带入草稿。'
+  else if(draft.length===retro.questions.length){
+    begin('answers')
+    answers.value=[...draft]
+    fromChat.value=true
+  }
+  emit('answersOpened')
 },{immediate:true})
 const command=computed(()=>{
   const action=intent.value,retro=state.value
@@ -173,7 +187,7 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
       <p v-if="state.completedAt" class="meta">复盘版本 {{state.revision}} · 完成于 <time :datetime="state.completedAt">{{time(state.completedAt)}}</time></p>
       <el-alert v-if="state.calibrationGap" type="warning" title="评分结果或其证据已变化，请重核校准并更新复盘。" :closable="false"/>
       <dl v-if="state.answers.length" class="answers">
-        <div v-for="(question,index) in questions" :key="question"><dt>{{question}}</dt><dd>{{state.answers[index]||'—'}}</dd></div>
+        <div v-for="(question,index) in questions" :key="question"><dt>{{reviewQuestion(question)}}</dt><dd>{{state.answers[index]||'—'}}</dd></div>
       </dl>
       <p v-else class="meta">{{state.kind?'复盘答复尚未登记。':'暂无复盘记录。'}}</p>
       <ReviewCalibration v-if="state.stage==='closed'||state.kind==='normal'" :project-id="projectId" :stage="state.stage"
@@ -243,7 +257,8 @@ function turn(page:number){if(criteria.value)void loadSearch(page,criteria.value
     <form v-if="intent" class="retro-form" @submit.prevent="save">
       <fieldset :disabled="busy">
         <template v-if="intent.kind==='answers'">
-          <label v-for="(question,index) in questions" :key="question">{{question}}<textarea v-model="answers[index]" rows="2" required/></label>
+          <p v-if="fromChat" class="notice">已带入本次对话的四项答复，请核对后保存。</p>
+          <label v-for="(question,index) in questions" :key="question">{{reviewQuestion(question)}}<textarea v-model="answers[index]" rows="2" required/></label>
           <template v-for="{key,revision} in requiredDeviations" :key="key">
             <fieldset v-if="deviations[key]">
               <legend>{{calibrationLabels[key]}} · 结果版本 {{revision}}</legend>

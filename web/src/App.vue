@@ -36,11 +36,13 @@ import OrgDirectory from './OrgDirectory.vue'
 import AcceptOrgInvite from './AcceptOrgInvite.vue'
 import ProjectAssistant from './ProjectAssistant.vue'
 import ProjectOverview from './ProjectOverview.vue'
+import type {ConversationStore} from './assistantConversation'
 import type {AssistantQuestion} from './assistantQuestions'
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}
 type ProjectIdentity=Omit<Project,'createdAt'>
 type HealthSample={snapshotId:string;asOf:string;health:'green'|'yellow'|'red'|'untrusted';publication:'official'|'preview'|'withheld';ruleVersion:string}
 type OverviewRow=Project&{materialsVisible:boolean;canEditDraft:boolean;manager?:{personId:string;name:string};healthSample?:HealthSample}
+const conversations:ConversationStore=new Map()
 const user=ref(false),ready=ref(false),busy=ref(false),loading=ref(false),error=ref(''),formError=ref('')
 const username=ref(''),password=ref(''),query=ref(''),keyword=ref(''),stageFilter=ref('')
 const page=ref(1),total=ref(0),rows=ref<OverviewRow[]>([]),listReadAt=ref('')
@@ -54,6 +56,7 @@ const focusReviewId=ref<string>(),focusApprovalId=ref<string>(),focusChangeId=re
 const focusReportId=ref<string>()
 const focusAssistantQuestion=ref<AssistantQuestion>()
 const lessonDraftProject=ref<string>()
+const reviewDraft=ref<{projectId:string;answers:string[]}>()
 const entry=ref('ledger'), retainedEntries=ref(new Set<string>())
 const activeAccount=ref(''), projectError=ref(''), projectLoading=ref(false)
 const authLayout=ref<InstanceType<typeof AuthLayout>>()
@@ -104,6 +107,7 @@ function backToLedger(){
   showMaterials.value=false
   materialProject.value=null
   lessonDraftProject.value=undefined
+  reviewDraft.value=undefined
   projectLoading.value=false
   projectError.value=''
   const resumeProject=deferredProjectLink
@@ -125,6 +129,7 @@ function materials(row:Project){
   materialProject.value=row;focusTaskId.value=focusReviewId.value=focusApprovalId.value=focusChangeId.value=focusReportId.value=undefined
   focusAssistantQuestion.value=undefined
   lessonDraftProject.value=undefined
+  reviewDraft.value=undefined
   deferredProjectLink=false
   materialTab.value='overview';showMaterials.value=true;goTop()
   void nextTick(()=>projectHeading.value?.focus({preventScroll:true}))
@@ -132,6 +137,12 @@ function materials(row:Project){
 function openTask(project:Project,taskId:string){materials(project);focusTaskId.value=taskId;materialTab.value='tasks'}
 function openChange(changeId:string){focusChangeId.value=changeId;selectDestination('changes')}
 function openReviewTask(taskId:string){focusTaskId.value=taskId;selectDestination('tasks')}
+function transferReview(answers:string[]){
+  const project=materialProject.value
+  if(!project||project.stage!=='retrospective')return
+  reviewDraft.value={projectId:project.projectId,answers:[...answers]}
+  selectDestination('retrospective')
+}
 function draftLessonFromAssistant(){
   if(!materialProject.value)return
   lessonDraftProject.value=materialProject.value.projectId
@@ -189,11 +200,13 @@ const healthPublication={official:'正式快照',preview:'未正式发布',withh
 function shanghai(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
 function clearSession(){
   sequence++;materialEpoch++
+  conversations.clear()
   user.value=false;admin.value=false;activeAccount.value='';username.value='';password.value=''
   loading.value=false;rows.value=[];total.value=0;page.value=1;query.value='';keyword.value='';stageFilter.value='';listReadAt.value=''
   selected.value=null;dialog.value=false;name.value='';code.value='';description.value='';formError.value='';attempt='';lastPayload=''
   showMaterials.value=false;materialProject.value=null;projectLoading.value=false;projectError.value=''
   lessonDraftProject.value=undefined
+  reviewDraft.value=undefined
   entry.value='ledger';retainedEntries.value.clear();deferredProjectLink=false;ledgerScroll=0;ledgerTrigger=undefined
   csrf.value='';sessionStorage.removeItem('pmo.csrf')
 }
@@ -485,12 +498,13 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
       </ProjectPane>
       <ProjectPane name="retrospective" :active="materialTab==='retrospective'">
         <Retrospective :project-id="materialProject.projectId" :project-revision="materialProject.revision" :api="api"
+          :requested-answers="reviewDraft?.projectId===materialProject.projectId?reviewDraft.answers:undefined" @answers-opened="reviewDraft=undefined"
           :requested-draft="lessonDraftProject===materialProject.projectId" @draft-opened="lessonDraftProject=undefined"/>
       </ProjectPane>
       <ProjectPane name="assistant" :active="materialTab==='assistant'">
         <ProjectAssistant v-if="materialTab==='assistant'" :project-id="materialProject.projectId" :project-label="`${materialProject.code} · ${materialProject.name}`"
-          :project-code="materialProject.code" :initial-question="focusAssistantQuestion"
-          :revision="materialProject.revision" :api="api" @navigate="selectDestination" @draft-lesson="draftLessonFromAssistant"
+          :key="materialProject.projectId" :stage="materialProject.stage" :conversations="conversations" :project-code="materialProject.code" :initial-question="focusAssistantQuestion"
+          :revision="materialProject.revision" :api="api" @navigate="selectDestination" @draft-lesson="draftLessonFromAssistant" @review-draft="transferReview"
           @open-report="openPortfolioReport" @open-project-question="openProjectQuestion"/>
       </ProjectPane>
     </div>

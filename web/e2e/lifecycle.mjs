@@ -559,17 +559,23 @@ try {
       '目标对照：立项卡承诺的收益 / 成本 / 周期，实际各是多少？差异主要原因？',
       '过程表现：三线偏差各发生在哪个阶段？是估算问题、执行问题还是范围问题？',
       '可复用资产：哪些做法 / 模板 / 方案值得沉淀，下次直接用？',
-      '教训与建议：如果重来一次，立项和方案阶段分别会做什么不同的事？（写入 Lesson，带分类标签）',
+      '教训与建议：如果重来一次，立项和方案阶段分别会做什么不同的事？（记录为教训并标注分类）',
     ]
     for(const question of questions) await expect(assistant.getByText(question,{exact:true})).toBeVisible()
-    const retro=await open(pm,'复盘与教训')
-    await expect(retro.getByText('结项复盘',{exact:true})).toBeVisible()
-    await button(retro,'填写复盘').click()
-    const answers=dialog(pm,'填写项目复盘')
+    const chat=assistant.getByRole('region',exact('项目对话'))
+    await button(chat,'带我做一次复盘四问').click()
     const written=JSON.parse(process.env.PMO_TEST_ANSWERS)
-    for(const [i,q] of questions.entries()) {
-      await answers.getByLabel(q,{exact:true}).fill(written[i])
+    for(const [i,text] of written.entries()){
+      await chat.getByRole('textbox').fill('答：'+text)
+      await button(chat,'提问').click()
+      await expect(chat.getByRole('log').locator('article').last()).toContainText(i===3?'复盘草稿已整理':`已记下第 ${i+1} 问`)
     }
+    await button(chat,'带入复盘表单').click()
+    const retro=drawer(pm).getByRole('region',exact('项目复盘与教训'))
+    await expect(retro.getByText('结项复盘',{exact:true})).toBeVisible()
+    const answers=dialog(pm,'填写项目复盘')
+    for(const [i,q] of questions.entries())await expect(answers.getByLabel(q,{exact:true})).toHaveValue(written[i])
+    await expect(retro.getByText('复盘答复尚未登记。',{exact:true})).toBeVisible()
     await write(pm,'PUT','/retrospective',button(answers,'保存复盘'))
     await button(retro,'新增教训草稿').click()
     const lesson=dialog(pm,'新增教训草稿')

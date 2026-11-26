@@ -2,7 +2,7 @@ export type AssistantTopic = 'health' | 'cost' | 'requirements' | 'fact' | 'less
   'forecast' | 'spending' | 'weekly_health'
 
 export type QuestionTarget = ({ mode: 'ledger'; topic: AssistantTopic; keyword?: string } |
-  { mode: 'charter' | 'closing'; keyword?: string }) & {projects?: string[]}
+  { mode: 'charter' | 'process' | 'closing'; keyword?: string }) & {projects?: string[]}
 
 export type AssistantQuestion = {text:string; target:QuestionTarget}
 
@@ -23,7 +23,7 @@ function scopedPrefix(plain:string, marker:RegExp):string|undefined {
 }
 
 export function interpretQuestion(question: string): QuestionTarget | undefined {
-  const text = question.normalize('NFKC').trim()
+  const text = question.normalize('NFKC').trim().replace(/^(?:那(?:么)?|再帮我看看|帮我看看|请帮我看看|顺便问一下)[，,、\s]*/u,'')
   const quotePattern=/“([^”]+)”|「([^」]+)」|"([^"]+)"/gu
   const quotes=[...text.matchAll(quotePattern)].map(match=>({
     value:(match[1]??match[2]??match[3]).trim(),
@@ -36,11 +36,27 @@ export function interpretQuestion(question: string): QuestionTarget | undefined 
   function scoped(target:QuestionTarget,marker?:RegExp,keywordQuote=false):QuestionTarget {
     const prefix=marker&&(!quotes.length||keywordQuote&&!named.length)?scopedPrefix(plain,marker):undefined
     const suffix=marker?plain.replace(/[。？！?!]+$/u,'').match(projectSuffix)?.[1].trim():undefined
-    const codes=marker?[...plain.matchAll(projectCode)].map(match=>match[0]):[]
+    const codes=[...plain.matchAll(projectCode)].map(match=>match[0])
     const candidates=[...named,...(marker&&!keywordQuote?other:[]),...(prefix?[prefix]:[]),...(suffix?[suffix]:[]),...codes]
     const projects=[...new Map(candidates.map(value=>[value.toLowerCase(),value])).values()]
     return projects.length?{...target,projects}:target
   }
+  // A possessive such as “西湖工单的周报” is an explicit project, even without quotes or a project code.
+  function workProduct(mode:'charter'|'process'|'closing', marker:RegExp):QuestionTarget {
+    const target=scoped({mode}, /项目(?:编号|代码|名称)/u)
+    if(quotes.length || target.projects?.length)return target
+    const before=plain.slice(0,plain.search(marker)).trim()
+    const possessive=before.match(/^(.+?)的(?:本周|这周|上周|本期|当前|本次|最新)?$/u)
+    const namedProject=before.match(/^(.+?项目)(?:本周|这周|上周|本期|当前|本次|最新)?$/u)
+    const subject=(possessive??namedProject)?.[1]?.replace(/^(?:(?:请|帮我|给我|麻烦|我想)?(?:起草|整理|生成|看一下|看看|查询|查看|汇总|核对|准备|总结|复核)(?:一下)?|请问|我想知道|帮我)+/u,'').trim()
+    if(!subject||currentProject.test(subject)||/^(?:刚才|之前|已有|本次|这次|本周|上周|本期|最新|目前|当前)$/u.test(subject))return target
+    return {...target,projects:[subject]}
+  }
+  if (/复盘|结项教训/.test(plain)) return workProduct('closing',/复盘|结项教训/u)
+  const processWork=/周报|简报|事实冲突|澄清|待核验候选|风险预警/u
+  if (processWork.test(plain) && !/本周.*(?:红灯|黄灯)/.test(plain)) return workProduct('process',processWork)
+  const charterWork=/立项材料|立项卡|评审材料|评审建议/u
+  if (charterWork.test(plain)) return workProduct('charter',charterWork)
   if (/立项前|没.{0,6}立项|未.{0,6}立项|立项.*(?:未通过|没通过)/u.test(plain) && /花钱|支出|成本|流水/u.test(plain)) {
     return {mode:'ledger', topic:'spending'}
   }
