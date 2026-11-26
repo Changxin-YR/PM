@@ -87,4 +87,3 @@ const escape=cell=>'"'+(cell??'').replace(/"/g,'""').replace(/\r?\n/g,' ')+'"'
 fs.mkdirSync('docs/acceptance/r5',{recursive:true})
 fs.writeFileSync('docs/acceptance/r5/feature-parity.csv','\ufeff'+rows.map(row=>row.map(escape).join(',')).join('\n')+'\n')
 console.log(`${rows.length-1} control and data presentation rows`)
-
