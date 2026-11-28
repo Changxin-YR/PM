@@ -439,7 +439,12 @@ def _ledger(c, a, p, at, topic, keyword, category, *, for_preview=False):
                     delta = Decimal(result.actual) - Decimal(result.budget)
                     difference = (f'{"少用" if delta < 0 else "多用"} {abs(delta):.2f} {measure}'
                                   if delta else '与获批预算持平')
-                    text += f'。获批预算 {result.budget} {measure}，实际{difference}。'
+                    projected_delta = Decimal(result.projectedTotal) - Decimal(result.budget)
+                    forecast = (f'预计超支 {projected_delta:.2f} {measure}' if projected_delta > 0 else
+                                f'预计结余 {-projected_delta:.2f} {measure}' if projected_delta < 0 else
+                                '预计与获批预算持平')
+                    text += (f'。获批预算 {result.budget} {measure}，预计最终投入 {result.projectedTotal} {measure}，'
+                             f'{forecast}。实际{difference}。')
                 else:
                     text += '。暂无获批预算，无法比较实际差额。'
                 answer.append(Cited(text=text, sourceRefs=refs[:100]))

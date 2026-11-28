@@ -1,5 +1,6 @@
 """Four read-only workspace modes against the real PostgreSQL and HTTP stack."""
 from datetime import datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import sqlalchemy as sa
@@ -168,3 +169,24 @@ def test_ledger_lesson_never_crosses_project_membership(live, team, tmp_path):
                   {'person': people['client_representative'], 'pid': pid})
     assert data(users['client_representative'].get(next_path, params={'keyword': 'supplier'}))['lessonRefs'] == []
     assert data(users['client_representative'].get(next_path))['lessonRefs'] == []
+
+
+def test_ledger_compares_projected_money_and_effort_to_approved_budgets(live, team):
+    pid, _, users, _ = team
+    pm = users['pm']
+    project = f'projects/{pid}'
+    def ledger():
+        return data(pm.get(project + '/assistant/ledger', params={'topic': 'cost'}))
+
+    assert not ledger()['answer']
+    prepare(live, team)
+    costs = data(pm.get(project + '/costs'))
+    revision = costs['plan']['revision']
+    for kind, difference in [('money', Decimal('12.34')), ('effort', Decimal('-1.25'))]:
+        remaining = Decimal(costs[kind]['budget']) - Decimal(costs[kind]['actual']) + difference
+        revision = data(pm.put(project + '/cost-forecasts', headers=headers(revision), json={
+            'type': kind, 'forecastRemaining': str(remaining), 'reason': 'Isolated forecast comparison',
+        }))['revision']
+    money, effort = ledger()['answer']
+    assert '预计超支 12.34 元' in money['text'] and money['sourceRefs']
+    assert '预计结余 1.25 人天' in effort['text'] and effort['sourceRefs']
