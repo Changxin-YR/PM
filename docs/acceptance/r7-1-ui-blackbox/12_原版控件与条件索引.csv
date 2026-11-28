@@ -1,0 +1,991 @@
+﻿控件编号,R6组件（web/src）,行号,元素,界面标签或上下文,动作或数据绑定,条件表达式,禁用条件,用途,同一组件的业务场景索引（不代表本控件已实测）
+CTL-0001,AcceptOrgInvite.vue,27,form,接受组织邀请,input: changed / submit: accept,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0002,AcceptOrgInvite.vue,28,input,邀请码,model: invitationCode,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0003,AcceptOrgInvite.vue,29,input,显示姓名,model: displayName,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0004,AcceptOrgInvite.vue,30,input,账号,model: username,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0005,AcceptOrgInvite.vue,31,input,设置密码,model: password,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0006,AcceptOrgInvite.vue,33,input,再次输入密码,model: confirm,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0007,AcceptOrgInvite.vue,35,el-button,确认接受,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0008,AcceptOrgInvite.vue,36,el-button,返回登录,click: emit('back'),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people
+CTL-0009,AgentTokens.vue,33,el-button,签发令牌,click: newGrant,!organization&&actions.length,busy||editing||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0010,AgentTokens.vue,33,el-button,刷新令牌,click: read(page),,busy||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0011,AgentTokens.vue,34,input,一次性密钥,,secret,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0012,AgentTokens.vue,35,el-dialog,签发令牌,model: editing,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0013,AgentTokens.vue,36,form,运行时显示的控件,submit: issue,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0014,AgentTokens.vue,36,select,授权项目,model: projects,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0015,AgentTokens.vue,36,option,授权项目,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0016,AgentTokens.vue,37,select,允许动作,model: chosen,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0017,AgentTokens.vue,37,option,允许动作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0018,AgentTokens.vue,38,input,有效期（小时）,model: hours,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0019,AgentTokens.vue,40,el-button,取消,click: editing=false,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0020,AgentTokens.vue,40,el-button,确认签发,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0021,AgentTokens.vue,42,el-dialog,撤销令牌,update:model-value: (value:boolean)=>{if(!value)target=null},,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0022,AgentTokens.vue,43,form,运行时显示的控件,submit: confirm,target,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0023,AgentTokens.vue,43,input,撤销原因,model: reason,target,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0024,AgentTokens.vue,45,el-button,取消,click: target=null,target,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0025,AgentTokens.vue,45,el-button,确认撤销,,target,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0026,AgentTokens.vue,47,el-table-column,指纹,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0027,AgentTokens.vue,47,el-table-column,状态,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0028,AgentTokens.vue,47,el-table-column,授权范围,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0029,AgentTokens.vue,47,el-table-column,到期时间,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0030,AgentTokens.vue,47,el-table-column,操作,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0031,AgentTokens.vue,47,el-button,撤销令牌,click: revoke(row),!readFailed && row.state!=='revoked',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0032,AgentTokens.vue,48,el-pagination,运行时显示的控件,current-change: read,total>20,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,C4-token、TOKEN-issue、TOKEN-revoke
+CTL-0033,Alerts.vue,29,el-tabs,预警中心,model: view,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0034,Alerts.vue,30,el-button,刷新预警,click: load(page),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0035,Alerts.vue,33,input,月报归属月份,model: month / change: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0036,Alerts.vue,33,select,规则,model: rule / change: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0037,Alerts.vue,33,option,全部,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0038,Alerts.vue,33,option,规则,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0039,Alerts.vue,36,el-table-column,预警中心,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0040,Alerts.vue,44,el-table-column,项目编号,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0041,Alerts.vue,45,el-table-column,规则,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0042,Alerts.vue,46,el-table-column,关联事项,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0043,Alerts.vue,47,el-table-column,级别,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0044,Alerts.vue,48,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0045,Alerts.vue,50,el-pagination,预警中心,current-change: load,total>20,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0046,Alerts.vue,52,WeeklyPortfolioReports,预警中心,"open-report: (projectId,reportId)=>emit('openReport',projectId,reportId)",,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr03、EDGE-lr04
+CTL-0047,App.vue,345,AcceptOrgInvite,运行时显示的控件,back: enrollment(false) / accepted: accountAccepted,ready && !user && acceptingInvite,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0048,App.vue,352,form,运行时显示的控件,submit: login,ready && !user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0049,App.vue,353,input,账号,model: username,ready && !user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0050,App.vue,354,input,密码,model: password,ready && !user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0051,App.vue,356,el-button,登录,,ready && !user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0052,App.vue,357,el-button,接受组织邀请,click: enrollment(true),ready && !user,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0053,App.vue,363,AppShell,运行时显示的控件,navigate: selectDestination / back: backToLedger / logout: logout,user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0054,App.vue,373,el-button,新建项目,click: open(null),user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0055,App.vue,376,form,项目清单,submit: search,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0056,App.vue,377,input,搜索项目名称或编号,model: query,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0057,App.vue,378,select,筛选项目阶段,change: applyStage,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0058,App.vue,378,option,全部,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0059,App.vue,378,option,项目清单,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0060,App.vue,379,el-button,搜索,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0061,App.vue,379,el-button,刷新项目列表,click: load,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0062,App.vue,383,el-table-column,编号,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0063,App.vue,384,el-table-column,项目名称,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0064,App.vue,384,button,项目清单,click: materials(row),user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0065,App.vue,385,el-table-column,项目经理,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0066,App.vue,386,el-table-column,阶段,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0067,App.vue,387,el-table-column,最近健康采样,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0068,App.vue,394,el-table-column,版本,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0069,App.vue,395,el-table-column,创建日期,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0070,App.vue,396,el-table-column,操作,,user && !showMaterials && entry==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0071,App.vue,396,el-button,修改草稿名称,click: open(row),user && !showMaterials && entry==='ledger' && row.canEditDraft,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0072,App.vue,400,el-button,查看项目任命邀请,click: selectDestination('appointments'),user && !showMaterials && entry==='ledger' && listReadAt&&!loading&&!error&&!total&&!keyword&&!stageFilter,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0073,App.vue,402,el-pagination,项目清单,current-page: page / current-change: load,user && !showMaterials && entry==='ledger',loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0074,App.vue,409,PersonalApprovals,运行时显示的控件,open-approval: openApproval,user && !showMaterials && entry!=='ledger' && entry==='approvals',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0075,App.vue,410,PersonalTasks,运行时显示的控件,open-task: openTask,user && !showMaterials && entry!=='ledger' && entry==='personal-tasks',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0076,App.vue,416,Appointments,运行时显示的控件,changed: load / open-project: openAssignedProject,user && retainedEntries.has('appointments'),,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0077,App.vue,419,Alerts,运行时显示的控件,open-report: openPortfolioReport,user && retainedEntries.has('alerts'),,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0078,App.vue,436,el-button,运行时显示的控件,click: refreshProject,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0079,App.vue,448,ProjectOverview,运行时显示的控件,project-read: projectRead / navigate: selectDestination / open-change: openChange,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0080,App.vue,463,Changes,运行时显示的控件,clear-focus: focusChangeId=undefined,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0081,App.vue,475,Members,运行时显示的控件,changed: refreshProject,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0082,App.vue,484,Reviews,运行时显示的控件,stage-read: stageRead / open-task: openReviewTask,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0083,App.vue,488,ProjectLifecycle,运行时显示的控件,stage-read: stageRead / clear-focus: focusApprovalId=undefined,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0084,App.vue,491,Tasks,运行时显示的控件,clear-focus: focusTaskId=undefined,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0085,App.vue,500,Retrospective,运行时显示的控件,answers-opened: reviewDraft=undefined / draft-opened: lessonDraftProject=undefined,user && showMaterials && materialProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0086,App.vue,505,ProjectAssistant,运行时显示的控件,navigate: selectDestination / draft-lesson: draftLessonFromAssistant / review-draft: transferReview / open-report: openPortfolioReport / open-project-question: openProjectQuestion,user && showMaterials && materialProject && materialTab==='assistant',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0087,App.vue,511,el-dialog,运行时显示的控件,model: dialog / opened: focusDraftField,user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0088,App.vue,513,form,运行时显示的控件,submit: save,user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0089,App.vue,516,input,项目编号,model: code,user,!!selected,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0090,App.vue,521,input,项目名称,model: name,user,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0091,App.vue,523,textarea,说明,model: description,user && !selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0092,App.vue,526,el-button,重新读取版本,click: reread,user && selected && formError,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0093,App.vue,527,el-button,取消,click: dialog=false,user,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0094,App.vue,528,el-button,保存,,user,!!selected&&selected.stage!=='drafting',结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,BOOK-inplace、BOOK-refresh、EDGE-t01、LED-duplicate、MAIN1-create、MAIN1-link、MAIN2-create、MAIN2-link、ORG-login
+CTL-0095,AppShell.vue,75,div,运行时显示的控件,click: closeNavigation,open,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0096,AppShell.vue,76,aside,运行时显示的控件,keydown: trapNavigation,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0097,AppShell.vue,81,button,关闭导航,click: closeNavigation,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0098,AppShell.vue,84,div,运行时显示的控件,keydown: project && moveTab($event),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0099,AppShell.vue,89,button,运行时显示的控件,click: navigate(item.key),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0100,AppShell.vue,101,button,退出登录,click: emit('logout'),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0101,AppShell.vue,106,button,打开导航,click: open=true,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0102,AppShell.vue,108,button,返回项目台账,click: emit('back'),project || active!=='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,LED-search、ORG-login
+CTL-0103,Appointments.vue,122,el-button,刷新任命列表,click: refresh,,loading||projectLoading||locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0104,Appointments.vue,125,el-button,重试上次提交,click: write(retry),retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0105,Appointments.vue,128,el-button,打开已任命项目,"click: emit('openProject',acceptedProject)",notice && acceptedProject,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0106,Appointments.vue,137,el-button,接受任命,"click: decide(i,'accept')",,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0107,Appointments.vue,138,el-button,拒绝任命,"click: decide(i,'decline')",,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0108,Appointments.vue,146,el-button,发出邀请,"click: decide(i,'issue')",,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0109,Appointments.vue,152,form,人员任命,submit: propose,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0110,Appointments.vue,155,select,人员任命,model: pid,,locked||projectLoading||!projects.length,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0111,Appointments.vue,156,option,选择项目,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0112,Appointments.vue,157,option,人员任命,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0113,Appointments.vue,164,el-pagination,可提名项目分页,current-change: readProjects,projectTotal>pageSize,locked||projectLoading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0114,Appointments.vue,169,input,被提名人 ID,model: person,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0115,Appointments.vue,171,el-button,查找人员,click: openPeople,,locked||!selectedProject,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0116,Appointments.vue,176,select,项目角色,model: role,,locked||!choices.length,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0117,Appointments.vue,177,option,选择项目后查看可提名角色,,!choices.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0118,Appointments.vue,178,option,项目角色,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0119,Appointments.vue,182,el-button,提交提名,,,!selectedProject||!choices.length||!!retry||projectLoading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0120,Appointments.vue,186,el-dialog,查找被提名人,model: pickerOpen,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0121,Appointments.vue,187,form,查找被提名人,submit: searchPeople,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0122,Appointments.vue,189,input,姓名关键词,model: peopleQuery,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0123,Appointments.vue,190,el-button,搜索人员,,,peopleQuery.trim().length<2,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0124,Appointments.vue,199,el-button,选择,click: pickPerson(candidate),people.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0125,Appointments.vue,202,el-pagination,人员搜索分页,current-change: readPeople,peopleTotal>pageSize,peopleLoading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0126,AssistantChat.vue,46,button,新对话,click: emit('reset'),turns.length,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0127,AssistantChat.vue,49,button,项目对话,click: send(prompt),!turns.length&&!pending,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0128,AssistantChat.vue,54,details,项目对话,,turn.answer.sources.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0129,AssistantChat.vue,54,summary,查看本条依据（ ）,,turn.answer.sources.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0130,AssistantChat.vue,61,button,追问依据,click: send('依据呢？'),last&&!busy && last.answer.sources.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0131,AssistantChat.vue,62,button,更新这条回答,click: send('再查一次'),last&&!busy && last.target&&!last.guided,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0132,AssistantChat.vue,63,button,带入复盘表单,"click: emit('reviewDraft',[...completedReview])",last&&!busy && completedReview&&stage==='retrospective',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0133,AssistantChat.vue,64,button,项目对话,"click: emit('navigate',destination[0])",last&&!busy && destination,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0134,AssistantChat.vue,66,form,项目对话,submit: send(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0135,AssistantChat.vue,66,textarea,项目对话,model: draft / keydown: keydown,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0136,AssistantChat.vue,67,button,提问,,,!draft.trim()||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-clear、CHAT-hard-refresh、CHAT-mode-isolation、CHAT-project-isolation、CHAT-relogin、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3
+CTL-0137,AssistantLines.vue,11,details,运行时显示的控件,,item.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT1-2、EDGE-appealhealth、EDGE-snap、EDGE-t01、QUERY-sources
+CTL-0138,AssistantLines.vue,12,summary,来源,,item.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT1-2、EDGE-appealhealth、EDGE-snap、EDGE-t01、QUERY-sources
+CTL-0139,AssistantRequirementHistory.vue,44,form,需求变更历史查询,submit: search,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0140,AssistantRequirementHistory.vue,45,input,需求关键词,model: query,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0141,AssistantRequirementHistory.vue,46,el-button,查询需求,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0142,AssistantRequirementHistory.vue,51,select,选择需求,model: selectedId,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0143,AssistantRequirementHistory.vue,52,option,请选择当前项目需求,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0144,AssistantRequirementHistory.vue,53,option,·,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0145,AssistantRequirementHistory.vue,55,el-pagination,需求变更历史查询,current-change: read,!error&&total>pageSize,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-2、QUERY-nonzero、QUERY-q8
+CTL-0146,AuditLog.vue,30,el-button,返回审计记录,click: returnToList,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0147,AuditLog.vue,49,form,组织审计记录,submit: search,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0148,AuditLog.vue,49,input,请求编号,model: rid,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0149,AuditLog.vue,50,select,审计结果,model: outcome,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0150,AuditLog.vue,50,option,全部,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0151,AuditLog.vue,50,option,结果,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0152,AuditLog.vue,51,el-button,查询记录,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0153,AuditLog.vue,54,el-table-column,组织审计记录,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0154,AuditLog.vue,55,el-button,查看审计详情,click: showDetail(row),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0155,AuditLog.vue,57,el-table-column,发生时间,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0156,AuditLog.vue,58,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0157,AuditLog.vue,58,el-table-column,结果,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0158,AuditLog.vue,59,el-table-column,操作者,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0159,AuditLog.vue,60,el-table-column,错误码,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0160,AuditLog.vue,61,el-table-column,请求 / 裁决编号,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0161,AuditLog.vue,64,el-pagination,组织审计记录,current-change: load,!error,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-t07、ORG-audit、ORG-audit-trace
+CTL-0162,CategoryCosts.vue,88,el-button,编辑类别预算草稿,click: open('budget'),data.categoryEditor?.canSaveBudget,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0163,CategoryCosts.vue,89,el-button,编辑类别预测,click: open('forecast'),data.categoryEditor?.canSaveForecast,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0164,CategoryCosts.vue,90,el-button,类别预算与预测,click: open('change'),data.categoryEditor?.changeRevision,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0165,CategoryCosts.vue,92,form,类别预算与预测,submit: save,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0166,CategoryCosts.vue,95,input,类别预算与预测,model: amounts[item],action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0167,CategoryCosts.vue,98,textarea,类别预算与预测,model: reason,action && action!=='budget',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0168,CategoryCosts.vue,99,textarea,总额调整的范围、预测和立项估算说明,model: reestimate,action && action==='change'&&data.categories.mode==='classified',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0169,CategoryCosts.vue,100,el-button,取消,click: action=null,action,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0170,CategoryCosts.vue,100,el-button,类别预算与预测,,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0171,CategoryCosts.vue,110,details,类别预算与预测,,row.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0172,CategoryCosts.vue,110,summary,条来源,,row.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0173,ChangeDecision.vue,10,el-button,审核变更,click: begin,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0174,ChangeDecision.vue,10,el-dialog,审核变更,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0175,ChangeDecision.vue,10,form,运行时显示的控件,submit: submit,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0176,ChangeDecision.vue,10,select,裁决,model: verdict,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0177,ChangeDecision.vue,10,option,请选择,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0178,ChangeDecision.vue,10,option,批准并应用,,canApprove,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0179,ChangeDecision.vue,10,option,拒绝,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0180,ChangeDecision.vue,10,textarea,裁决理由,model: reason,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0181,ChangeDecision.vue,10,el-button,取消,click: open=false,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0182,ChangeDecision.vue,10,el-button,确认裁决,,,!verdict||(verdict==='approve'&&!canApprove)||reason.trim().length<3,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0183,Changes.vue,42,el-button,全部变更,click: emit('clearFocus'),focusChangeId,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0184,Changes.vue,42,el-button,申请新增需求,click: beginAddition,!focusChangeId&&additionRevision!==null,busy||form||additionOpen||formalOpen,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0185,Changes.vue,42,el-button,调整需求优先级,click: begin,!focusChangeId&&can,busy||form||additionOpen||formalOpen,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0186,Changes.vue,42,el-button,申请正式变更,click: formalOpen=true,!focusChangeId&&can,busy||form||additionOpen||formalOpen,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0187,Changes.vue,42,el-button,刷新变更,click: refresh(),,busy||form||additionOpen||formalOpen,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0188,Changes.vue,43,FormalChangeProposal,运行时显示的控件,close: formalOpen=false / saved: formalSaved,formalOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0189,Changes.vue,44,form,新增需求申请,submit: saveAddition,additionOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0190,Changes.vue,45,textarea,需求说明,model: addition.desc,additionOpen,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0191,Changes.vue,47,select,优先级,model: addition.priority,additionOpen,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0192,Changes.vue,47,option,请选择,,additionOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0193,Changes.vue,47,option,优先级,,additionOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0194,Changes.vue,48,input,计划确认日期,model: addition.plannedConfirmAt,additionOpen,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0195,Changes.vue,50,textarea,验收标准,model: addition.acceptanceCriteria,additionOpen,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0196,Changes.vue,51,textarea,新增原因,model: addition.reason,additionOpen,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0197,Changes.vue,52,el-button,取消,click: additionOpen=false,additionOpen,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0198,Changes.vue,53,el-button,送审新增需求,,additionOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0199,Changes.vue,55,form,运行时显示的控件,submit: save,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0200,Changes.vue,55,select,基线需求,model: rid / change: priority='',form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0201,Changes.vue,55,option,请选择需求,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0202,Changes.vue,55,option,·,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0203,Changes.vue,55,el-pagination,运行时显示的控件,current-change: requirements,form && reqTotal>20,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0204,Changes.vue,55,select,申请优先级,model: priority,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0205,Changes.vue,55,option,请选择,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0206,Changes.vue,55,option,申请优先级,,form,p===selected?.priority,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0207,Changes.vue,55,textarea,变更原因,model: reason,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0208,Changes.vue,55,el-button,取消,click: form=false,form,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0209,Changes.vue,55,el-button,提交变更申请,,form,!selected||!priority||reason.trim().length<3,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0210,Changes.vue,56,el-table-column,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0211,Changes.vue,58,el-table-column,资料,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0212,Changes.vue,58,el-table-column,变更原因,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0213,Changes.vue,58,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0214,Changes.vue,58,el-table-column,审批,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0215,Changes.vue,58,ChangeDecision,运行时显示的控件,saved: refresh(),decidable.includes(row.changeId),,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0216,Changes.vue,58,el-pagination,运行时显示的控件,current-change: refresh,total>20,busy||form,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8、QUERY-readonly
+CTL-0217,Charter.vue,32,el-button,重新读取立项卡,click: read,,busy||dirty,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0218,Charter.vue,38,el-button,放弃本次修改并读取新版,click: read,conflict,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0219,Charter.vue,39,form,立项卡,submit: save,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0220,Charter.vue,48,textarea,立项卡,model: card[key],,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0221,Charter.vue,60,input,粗估金额（元）,model: card.roughCost,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0222,Charter.vue,61,input,粗估人天,model: card.roughEffort,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0223,Charter.vue,62,input,预计工期（天）,model: card.roughDurationDays,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0224,Charter.vue,68,el-button,添加风险,click: addRisk,,readonly,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0225,Charter.vue,77,input,风险描述,model: risk.statement,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0226,Charter.vue,78,input,应对措施,model: risk.response,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0227,Charter.vue,80,el-button,移除风险项,"click: card.topRisks?.splice(index,1)",,readonly,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0228,Charter.vue,87,el-button,保存立项卡,,,readonly||!dirty||conflict,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-charter、MAIN2-charter
+CTL-0229,CostReassessment.vue,58,details,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0230,CostReassessment.vue,59,summary,超支重估 ·,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0231,CostReassessment.vue,69,details,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0232,CostReassessment.vue,70,summary,触发事件与成本来源,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0233,CostReassessment.vue,87,el-button,运行时显示的控件,click: open('submit'),!mode && item.canSubmit,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0234,CostReassessment.vue,88,el-button,记录投入决议,click: open('decide'),!mode && item.canDecide,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0235,CostReassessment.vue,90,form,运行时显示的控件,submit: save,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0236,CostReassessment.vue,93,textarea,原目标与当前情况,model: currentSituation,mode==='submit',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0237,CostReassessment.vue,94,select,差异归因,model: attribution,mode==='submit',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0238,CostReassessment.vue,94,option,差异归因,,mode==='submit',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0239,CostReassessment.vue,95,textarea,更新建议,model: recommendation,mode==='submit',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0240,CostReassessment.vue,96,textarea,已核验附件引用,model: evidenceRefs,mode==='submit',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0241,CostReassessment.vue,99,select,决议,model: option,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0242,CostReassessment.vue,99,option,决议,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0243,CostReassessment.vue,100,textarea,裁决理由,model: rationale,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0244,CostReassessment.vue,101,input,适用条件,model: conditions,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0245,CostReassessment.vue,105,el-button,取消,click: mode=null,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0246,CostReassessment.vue,106,el-button,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task
+CTL-0247,CostReconciliation.vue,103,select,对账范围,model: scope / change: refresh,,disabled||open,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0248,CostReconciliation.vue,104,option,项目合计,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0249,CostReconciliation.vue,104,option,类别与项目合计,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0250,CostReconciliation.vue,106,el-button,签署对账,click: begin,state?.canCreate===true,disabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0251,CostReconciliation.vue,107,el-button,刷新成本对账,click: refresh,,disabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0252,CostReconciliation.vue,128,details,成本对账,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0253,CostReconciliation.vue,129,summary,独立对账凭据与预测来源,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0254,CostReconciliation.vue,132,a,成本对账,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0255,CostReconciliation.vue,147,details,成本对账,,current && line[base.key].sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0256,CostReconciliation.vue,148,summary,来源,,current && line[base.key].sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0257,CostReconciliation.vue,154,details,成本对账,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0258,CostReconciliation.vue,155,summary,签署回执版本与标识,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0259,CostReconciliation.vue,163,el-dialog,签署成本对账,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0260,CostReconciliation.vue,165,form,运行时显示的控件,submit: save,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0261,CostReconciliation.vue,167,ScopedEvidencePicker,已核验成本来源 JSON,model: evidenceRefs,,signDisabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0262,CostReconciliation.vue,172,select,运行时显示的控件,model: reasons[kind],,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0263,CostReconciliation.vue,173,option,未填写,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0264,CostReconciliation.vue,173,option,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0265,CostReconciliation.vue,180,el-button,取消,click: open=false,,saving||!!retry,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0266,CostReconciliation.vue,181,el-button,重试上次提交,click: send(retry),retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0267,CostReconciliation.vue,182,el-button,确认签署对账,,,signDisabled||!evidenceRefs.length,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reconcile
+CTL-0268,Costs.vue,25,el-button,刷新成本,click: refresh,,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0269,Costs.vue,29,el-button,修改预算草稿,"click: open(k,'budget')",data && data.canSaveBudget,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0270,Costs.vue,29,el-button,修改预测,"click: open(k,'forecast')",data && data.canSaveForecast,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0271,Costs.vue,30,form,运行时显示的控件,submit: save,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0272,Costs.vue,30,input,·,model: value,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0273,Costs.vue,31,textarea,预测原因,model: reason,action && action==='forecast',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0274,Costs.vue,31,el-button,取消,click: action='',action,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0275,Costs.vue,31,el-button,保存成本,,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0276,Costs.vue,32,CategoryCosts,运行时显示的控件,changed: refresh,data?.categories,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0277,Costs.vue,35,Postings,运行时显示的控件,changed: refresh,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-freeze、MAIN1-budget、MONEY-forecast
+CTL-0278,Evidence.vue,38,el-button,上传附件,click: begin('upload'),,busy||!!mode||stage==='archived',结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0279,Evidence.vue,38,el-button,刷新附件,click: refresh(),,busy||!!mode,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0280,Evidence.vue,40,form,运行时显示的控件,submit: save,mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0281,Evidence.vue,41,select,关联类型,model: kind / change: changeKind,mode && mode==='upload',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0282,Evidence.vue,41,option,关联类型,,mode && mode==='upload',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0283,Evidence.vue,42,select,关联里程碑,model: target,mode && mode==='upload' && kind==='milestone',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0284,Evidence.vue,42,option,请选择,,mode && mode==='upload' && kind==='milestone',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0285,Evidence.vue,42,option,关联里程碑,,mode && mode==='upload' && kind==='milestone',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0286,Evidence.vue,43,input,关联项目,,mode && mode==='upload' && kind==='project',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0287,Evidence.vue,44,input,关联资源编号,model: target,mode && mode==='upload',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0288,Evidence.vue,45,input,运行时显示的控件,change: selectFile,mode && mode==='upload',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0289,Evidence.vue,46,textarea,附件说明,model: note,mode && mode==='upload',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0290,Evidence.vue,48,a,下载核对原文件,,mode && mode==='verify'&&chosen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0291,Evidence.vue,48,textarea,核验说明,model: note,mode && mode==='verify'&&chosen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0292,Evidence.vue,48,input,已核对原文件与关联资料,model: checked,mode && mode==='verify'&&chosen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0293,Evidence.vue,49,input,实际完成日期,model: day,mode && chosen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0294,Evidence.vue,49,textarea,完成说明,model: note,mode && chosen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0295,Evidence.vue,49,el-button,取消,click: mode='',mode,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0296,Evidence.vue,49,el-button,运行时显示的控件,,mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0297,Evidence.vue,51,el-table-column,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0298,Evidence.vue,56,el-table-column,文件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0299,Evidence.vue,59,el-table-column,关联资料,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0300,Evidence.vue,60,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0301,Evidence.vue,63,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0302,Evidence.vue,65,a,下载原文件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0303,Evidence.vue,66,el-button,核验附件,"click: begin('verify',row)",row.canVerify,!!mode||busy||stage==='archived',结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0304,Evidence.vue,67,el-button,登记里程碑完成,"click: begin('complete',row)",canComplete&&row.status==='verified'&&milestone(row)&&!milestone(row)?.actualDate,!!mode||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0305,Evidence.vue,71,el-pagination,运行时显示的控件,current-change: refresh,total>20,busy||!!mode,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、GAPS-close、MONEY-evidence、MONEY-file、TARGET-original-charter、TARGET-original-decision、TARGET-original-report、TARGET-original-requirement、TARGET-original-review、TARGET-original-risk
+CTL-0306,FormalChangeProposal.vue,134,el-dialog,申请正式变更,update:model-value: (visible:boolean)=>{if(!visible)close()},,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0307,FormalChangeProposal.vue,136,form,正式变更申请,submit: confirm,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0308,FormalChangeProposal.vue,138,select,变更资料类型,model: kind,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0309,FormalChangeProposal.vue,139,option,选择要变更的资料类型,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0310,FormalChangeProposal.vue,140,option,变更资料类型,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0311,FormalChangeProposal.vue,146,select,变更目标,model: targetId,kind,locked||reading||stale,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0312,FormalChangeProposal.vue,147,option,选择变更目标,,kind,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0313,FormalChangeProposal.vue,148,option,变更目标,,kind,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0314,FormalChangeProposal.vue,150,el-pagination,变更目标分页,current-change: read,kind && total>pageSize,locked||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0315,FormalChangeProposal.vue,152,el-button,重新读取当前资料,click: read(),kind && readError||stale,locked||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0316,FormalChangeProposal.vue,157,input,里程碑名称,model: milestone.name,selected && selected.kind==='milestone',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0317,FormalChangeProposal.vue,158,input,计划日期,model: milestone.plannedDate,selected && selected.kind==='milestone',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0318,FormalChangeProposal.vue,159,input,关键里程碑,model: milestone.isKey,selected && selected.kind==='milestone',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0319,FormalChangeProposal.vue,162,input,正式变更申请,model: budget,selected && selected.kind==='budget',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0320,FormalChangeProposal.vue,166,textarea,正式变更申请,model: charter[field],selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0321,FormalChangeProposal.vue,169,input,粗估金额（元）,model: charter.roughCost,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0322,FormalChangeProposal.vue,170,input,粗估人天,model: charter.roughEffort,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0323,FormalChangeProposal.vue,171,input,预计工期（天）,model: charter.roughDuration,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0324,FormalChangeProposal.vue,176,textarea,风险描述,model: risk.statement,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0325,FormalChangeProposal.vue,177,textarea,应对措施,model: risk.response,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0326,FormalChangeProposal.vue,178,el-button,移除风险,"click: charter.topRisks.splice(index,1)",selected,locked||stale||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0327,FormalChangeProposal.vue,180,el-button,添加风险,"click: charter.topRisks.push({statement:'',response:''})",selected,locked||stale||reading||charter.topRisks.length>=100,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0328,FormalChangeProposal.vue,183,textarea,变更原因,model: reason,selected,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0329,FormalChangeProposal.vue,188,el-button,取消,click: close,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0330,FormalChangeProposal.vue,189,el-button,重试上次提交,click: send(retry),retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0331,FormalChangeProposal.vue,190,el-button,提交正式变更申请,,,reading||stale||!delta.changed||delta.missing||reason.trim().length<3,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-lr05、GAPS-baseline、GAPS-freeze、MAIN1-budget、MONEY-forecast、QUERY-nonzero、QUERY-q8
+CTL-0332,Health.vue,89,el-button,记录本次快照,click: refresh,current?.canRefresh,loading||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0333,Health.vue,90,el-button,重读健康,click: read(page),,loading||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0334,Health.vue,109,el-button,声明零 预算,"click: start('zero',current,kind)",current && Object.keys(current.zeroBudgetHashes??{}).length,saving||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0335,Health.vue,113,details,当前健康,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0336,Health.vue,113,summary,本次来源与规则版本,,current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0337,Health.vue,126,el-button,申请复核,"click: start('appeal',row)",row.canAppeal,loading||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0338,Health.vue,133,el-button,复核申诉,"click: start('review',row)",row.appeal?.canReview,loading||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0339,Health.vue,134,details,历史快照与申诉,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0340,Health.vue,134,summary,快照指标与来源,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0341,Health.vue,142,el-pagination,历史快照与申诉,current-change: read,total>10,loading||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0342,Health.vue,143,el-dialog,历史快照与申诉,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0343,Health.vue,144,form,历史快照与申诉,submit: send,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0344,Health.vue,145,select,复核结果,model: verdict,intent?.mode==='review',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0345,Health.vue,145,option,维持原快照,,intent?.mode==='review',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0346,Health.vue,145,option,按新材料重新计算,,intent?.mode==='review',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0347,Health.vue,146,textarea,历史快照与申诉,model: reason,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0348,Health.vue,148,el-button,取消,click: open=false,,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0349,Health.vue,148,el-button,确认提交,,,reason.trim().length<5,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-appealhealth、EDGE-lr02、EDGE-lr03、EDGE-lr04、EDGE-lr05、EDGE-lr06、EDGE-lr07、EDGE-lr08、EDGE-snap、QUERY-sources
+CTL-0350,IncomingRisk.vue,27,form,风险接收入口,submit: lookup,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0351,IncomingRisk.vue,28,input,接收请求编号,model: code / input: invalid=false,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0352,IncomingRisk.vue,30,el-button,打开接收请求,,,open,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0353,IncomingRisk.vue,33,RiskResolution,风险接收,model: open,request,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0354,Members.vue,70,el-button,刷新项目成员,click: load(),,loading||locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0355,Members.vue,75,el-table-column,姓名,,!error,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0356,Members.vue,76,el-table-column,项目角色,,!error,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0357,Members.vue,77,el-table-column,生效日期,,!error,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0358,Members.vue,78,el-table-column,操作,,!error && members.some(member=>member.canRevoke),,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0359,Members.vue,80,el-button,撤销角色,click: begin(row),!error && members.some(member=>member.canRevoke) && row.canRevoke,loading||locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0360,Members.vue,85,el-pagination,运行时显示的控件,current-change: load,total>pageSize,loading||locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0361,Members.vue,86,el-dialog,撤销项目角色,update:model-value: (value:boolean)=>{if(!value)close()},,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0362,Members.vue,88,form,撤销项目角色,submit: confirm,target,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0363,Members.vue,90,textarea,撤销原因,model: reason,target,locked||stale,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0364,Members.vue,94,el-button,取消,click: close,target,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0365,Members.vue,95,el-button,重试上次提交,click: revoke(retry),target && retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0366,Members.vue,96,el-button,确认撤销项目角色,,target,stale||reason.trim().length<4,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ROLE-nom、ROLE-stale.R、XMEM-accept、XMEM-decline、XMEM-revoke
+CTL-0367,Milestones.vue,25,el-button,新增里程碑,click: open(null),canDraft,items.length>=8 || form || !!prediction,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0368,Milestones.vue,25,el-button,刷新里程碑,click: read,,busy||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0369,Milestones.vue,27,form,运行时显示的控件,submit: save,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0370,Milestones.vue,27,input,里程碑名称,model: name,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0371,Milestones.vue,27,input,计划日期,model: plan,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0372,Milestones.vue,27,input,预测日期,model: forecast,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0373,Milestones.vue,27,input,关键里程碑,model: keyMilestone,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0374,Milestones.vue,27,el-button,取消,click: form=false,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0375,Milestones.vue,27,el-button,保存里程碑,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0376,Milestones.vue,28,form,运行时显示的控件,submit: saveForecast,prediction,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0377,Milestones.vue,28,input,新预测日期,model: forecast,prediction,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0378,Milestones.vue,28,textarea,预测调整原因,model: reason,prediction,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0379,Milestones.vue,28,el-button,取消,click: prediction=null,prediction,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0380,Milestones.vue,28,el-button,保存预测,,prediction,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0381,Milestones.vue,29,el-table-column,里程碑,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0382,Milestones.vue,29,el-table-column,计划日期,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0383,Milestones.vue,29,el-table-column,预测日期,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0384,Milestones.vue,29,el-table-column,实际日期,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0385,Milestones.vue,29,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0386,Milestones.vue,29,el-button,编辑里程碑,click: open(row),canDraft,form||!!prediction,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0387,Milestones.vue,29,el-button,修改预测,click: changeForecast(row),canForecast&&!row.actualDate,form||!!prediction,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-schedule、MAIN1-milestones、MILE-date-recovery、MILE-existing-date、MORE-cap
+CTL-0388,OrgDirectory.vue,78,el-tabs,组织人员,tab-change: (name:string|number)=>navigate(name as Tab),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0389,OrgDirectory.vue,86,el-button,邀请人员,click: startIssue,tab==='invitations',busy||issueForm,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0390,OrgDirectory.vue,87,el-button,刷新组织人员,click: read(),,busy||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0391,OrgDirectory.vue,93,input,一次性邀请码,,secret,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0392,OrgDirectory.vue,94,el-button,复制邀请码,click: copy,secret,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0393,OrgDirectory.vue,97,el-dialog,邀请人员,update:model-value: (value:boolean)=>{if(!value&&issueForm)clear()},,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0394,OrgDirectory.vue,98,form,邀请人员,submit: invite,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0395,OrgDirectory.vue,99,input,受邀邮箱,model: email,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0396,OrgDirectory.vue,100,select,职务提示,model: role,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0397,OrgDirectory.vue,100,option,职务提示,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0398,OrgDirectory.vue,103,el-button,取消,click: clear,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0399,OrgDirectory.vue,104,el-button,签发邀请,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0400,OrgDirectory.vue,107,el-dialog,确认组织操作,update:model-value: (value:boolean)=>{if(!value&&target)clear()},,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0401,OrgDirectory.vue,108,form,确认组织操作,submit: confirm,target,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0402,OrgDirectory.vue,110,input,原因,model: reason,target,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0403,OrgDirectory.vue,112,el-button,取消,click: clear,target,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0404,OrgDirectory.vue,113,el-button,确认变更,,target,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0405,OrgDirectory.vue,118,el-table-column,账号,,!readFailed && tab==='users',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0406,OrgDirectory.vue,119,el-table-column,姓名,,!readFailed && tab==='users',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0407,OrgDirectory.vue,120,el-table-column,状态,,!readFailed && tab==='users',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0408,OrgDirectory.vue,121,el-table-column,版本,,!readFailed && tab==='users',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0409,OrgDirectory.vue,122,el-table-column,操作,,!readFailed && tab==='users',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0410,OrgDirectory.vue,123,el-button,组织人员,"click: edit({kind:'user',item:row})",!readFailed && tab==='users' && row.canChangeStatus && (row.isActive || row.personActive),busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0411,OrgDirectory.vue,127,el-table-column,姓名,,!readFailed && tab==='members',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0412,OrgDirectory.vue,128,el-table-column,职务（资料）,,!readFailed && tab==='members',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0413,OrgDirectory.vue,129,el-table-column,人员 ID,,!readFailed && tab==='members',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0414,OrgDirectory.vue,130,el-table-column,档案,,!readFailed && tab==='members',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0415,OrgDirectory.vue,133,el-table-column,受邀邮箱,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0416,OrgDirectory.vue,134,el-table-column,状态,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0417,OrgDirectory.vue,135,el-table-column,过期时间,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0418,OrgDirectory.vue,136,el-table-column,操作,,!readFailed,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0419,OrgDirectory.vue,136,el-button,撤销,"click: edit({kind:'invitation',item:row})",!readFailed && row.state==='pending',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0420,OrgDirectory.vue,138,el-pagination,组织人员,current-change: read,!readFailed && total>20,reading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ORG-account-deny、ORG-account-disable、ORG-account-restore、ORG-invite、ORG-invite-withdraw、ORG-people、ORG-reissue、ORG-revoked-code
+CTL-0421,PersonalApprovals.vue,42,el-button,刷新审批收件箱,click: load(state?.page),,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、ORG-approvals
+CTL-0422,PersonalApprovals.vue,56,el-button,打开记录,click: select(item),state?.items.length,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、ORG-approvals
+CTL-0423,PersonalApprovals.vue,60,el-pagination,我的审批收件箱,current-change: load,state&&state.total>state.pageSize,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、ORG-approvals
+CTL-0424,PersonalTasks.vue,38,el-button,刷新补强待办,click: load(state?.page),,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0425,PersonalTasks.vue,50,el-button,查看任务,click: select(entry),state?.items.length,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0426,PersonalTasks.vue,54,el-pagination,我的补强待办,current-change: load,state&&state.total>state.pageSize,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0427,Postings.vue,55,select,凭证类别,model: filter / change: refresh(1),,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0428,Postings.vue,56,option,全部,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0429,Postings.vue,56,option,未分类,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0430,Postings.vue,57,option,凭证类别,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0431,Postings.vue,58,option,凭证类别,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0432,Postings.vue,59,el-button,登记候选凭证,click: open('propose'),can,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0433,Postings.vue,59,el-button,刷新凭证,click: refresh(),,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0434,Postings.vue,61,form,成本凭证,submit: save,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0435,Postings.vue,61,select,凭证口径,model: kind / change: category='',action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0436,Postings.vue,61,option,金额（元）,,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0437,Postings.vue,61,option,人天,,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0438,Postings.vue,62,select,登记类别,model: category,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0439,Postings.vue,62,option,未分类,,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0440,Postings.vue,63,option,登记类别,,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0441,Postings.vue,64,input,凭证数额,model: amount,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0442,Postings.vue,64,input,统计月份（UTC）,model: period,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0443,Postings.vue,64,input,凭证来源,model: source,action && action==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0444,Postings.vue,67,select,补录类别,model: category,action && action==='classify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0445,Postings.vue,67,option,请选择,,action && action==='classify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0446,Postings.vue,68,option,补录类别,,action && action==='classify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0447,Postings.vue,71,el-button,选择已核验凭证附件,click: showEvidence=true,action && action==='verify'&&row?.type==='money'&&!row.postingOfId && !showEvidence,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0448,Postings.vue,72,ScopedEvidencePicker,发票或付款凭证,model: evidence,action && action==='verify'&&row?.type==='money'&&!row.postingOfId,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0449,Postings.vue,75,input,实际发生时间（UTC）,model: when,action && action==='verify'&&!row?.postingOfId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0450,Postings.vue,75,textarea,成本凭证,model: reason,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0451,Postings.vue,76,el-button,取消,click: action='',action,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0452,Postings.vue,76,el-button,成本凭证,,action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0453,Postings.vue,77,el-table-column,成本凭证,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0454,Postings.vue,78,el-table-column,来源,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0455,Postings.vue,78,el-table-column,类别,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0456,Postings.vue,78,el-table-column,月份,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0457,Postings.vue,78,el-table-column,数额,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0458,Postings.vue,78,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0459,Postings.vue,79,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0460,Postings.vue,79,el-button,核验凭证,"click: open('verify',r)",r.canVerify,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0461,Postings.vue,79,el-button,全额冲销,"click: open('reverse',r)",r.canReverse,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0462,Postings.vue,80,el-button,补录分类,"click: open('classify',r)",r.canClassify,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0463,Postings.vue,80,el-button,核验分类,"click: open('verifyClassification',r)",r.pendingClassificationId,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0464,Postings.vue,81,el-pagination,成本凭证,current-change: refresh,total>20,busy||!!action,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-amort、MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0465,PreapprovalSpending.vue,13,el-button,刷新支出,click: load(page),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0466,PreapprovalSpending.vue,14,el-table-column,项目编号,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0467,PreapprovalSpending.vue,14,el-table-column,凭证来源,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0468,PreapprovalSpending.vue,14,el-table-column,数额,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0469,PreapprovalSpending.vue,15,el-table-column,实际发生时间,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0470,PreapprovalSpending.vue,15,el-table-column,立项通过时间,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0471,PreapprovalSpending.vue,16,el-pagination,立项前支出,current-change: load,total>20,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-reverse.verify、MONEY-verify
+CTL-0472,ProjectAssistant.vue,235,el-segmented,助理模式,model: mode,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0473,ProjectAssistant.vue,237,AssistantChat,项目助理,"send: ask / reset: resetChat / review-draft: answers=>emit('reviewDraft',answers) / navigate: dest=>emit('navigate',dest)",,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0474,ProjectAssistant.vue,239,form,项目助理,submit: load,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0475,ProjectAssistant.vue,240,select,查询主题,model: topic,mode==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0476,ProjectAssistant.vue,241,option,查询主题,,mode==='ledger',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0477,ProjectAssistant.vue,244,input,项目助理,model: keyword,useKeyword,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0478,ProjectAssistant.vue,245,input,教训分类,model: category,useCategory,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0479,ProjectAssistant.vue,246,el-button,查询,,useKeyword,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0480,ProjectAssistant.vue,247,el-button,重新读取助理结果,,!historyTopic&&!globalTopic,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0481,ProjectAssistant.vue,259,el-button,下载评审材料,click: downloadReview,charter,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0482,ProjectAssistant.vue,260,el-button,关口工作台,"click: emit('navigate','reviews')",charter,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0483,ProjectAssistant.vue,286,el-button,日报周报,"click: emit('navigate','reports')",process,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0484,ProjectAssistant.vue,307,el-button,项目助理,click: showPortfolio=!showPortfolio,process,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0485,ProjectAssistant.vue,309,WeeklyPortfolioReports,项目助理,"open-report: (projectId,reportId)=>emit('openReport',projectId,reportId)",process && showPortfolio,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0486,ProjectAssistant.vue,325,el-button,关口工作台,"click: emit('navigate','reviews')",closing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0487,ProjectAssistant.vue,332,el-button,复盘与教训,"click: emit('navigate','retrospective')",closing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0488,ProjectAssistant.vue,337,el-button,从复盘起草教训,click: emit('draftLesson'),closing && closing.canStartLessonDraft,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0489,ProjectAssistant.vue,342,el-button,三线明细,"click: emit('navigate','health')",ledger && topic==='health',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0490,ProjectAssistant.vue,350,el-button,生成预览,click: suggest,enabled,loading||loadedQuery!==query,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0491,ProjectAssistant.vue,365,details,项目助理,,packet,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0492,ProjectAssistant.vue,366,summary,截至 · 依据,,packet,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT-mode-isolation、CHAT-review-source、CHAT0-2、CHAT1-4、CHAT2-7、CHAT3-3、GAPS-retro、LESSON-read、QUERY-q6、QUERY-q8
+CTL-0493,ProjectLifecycle.vue,133,el-button,查看全部流转,click: emit('clearFocus'),focusApprovalId,busy||dialog,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0494,ProjectLifecycle.vue,134,el-button,申请阶段流转,click: begin('request'),!focusApprovalId&&destinations.length,locked||outdated,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0495,ProjectLifecycle.vue,135,el-button,退回草稿重提,click: begin('resubmit'),!focusApprovalId&&state?.canResubmit,locked||outdated,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0496,ProjectLifecycle.vue,136,el-button,刷新阶段流转,click: refresh(),,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0497,ProjectLifecycle.vue,159,details,项目生命周期,,state?.items.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0498,ProjectLifecycle.vue,159,summary,记录来源,,state?.items.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0499,ProjectLifecycle.vue,171,el-button,执行阶段流转,"click: begin('execute',item)","state?.items.length && eligible('execute',item)||eligible('decide',item) && eligible('execute',item)",locked||outdated,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0500,ProjectLifecycle.vue,172,el-button,裁决阶段流转,"click: begin('decide',item)","state?.items.length && eligible('execute',item)||eligible('decide',item) && eligible('decide',item)",locked||outdated,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0501,ProjectLifecycle.vue,177,el-pagination,项目生命周期,current-change: refresh,state&&state.total>state.pageSize,busy||dialog,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0502,ProjectLifecycle.vue,182,el-dialog,运行时显示的控件,model: dialog,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0503,ProjectLifecycle.vue,184,form,运行时显示的控件,submit: save,intent,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0504,ProjectLifecycle.vue,188,select,目标阶段,model: destination,intent && intent.mode==='request',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0505,ProjectLifecycle.vue,189,option,请选择,,intent && intent.mode==='request',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0506,ProjectLifecycle.vue,189,option,目标阶段,,intent && intent.mode==='request',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0507,ProjectLifecycle.vue,191,select,流转裁决,model: decision,intent && intent.mode==='decide',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0508,ProjectLifecycle.vue,192,option,请选择,,intent && intent.mode==='decide',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0509,ProjectLifecycle.vue,192,option,流转裁决,,intent && intent.mode==='decide',awaitsInitiator,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0510,ProjectLifecycle.vue,192,option,拒绝,,intent && intent.mode==='decide',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0511,ProjectLifecycle.vue,195,textarea,运行时显示的控件,model: reason,intent && intent.mode!=='execute',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0512,ProjectLifecycle.vue,197,input,暂停至（本地时间）,model: holdUntil,intent && needsHold,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0513,ProjectLifecycle.vue,201,el-button,取消,click: dialog=false,intent,saving||!!retry,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0514,ProjectLifecycle.vue,202,el-button,重试上次提交,click: send(retry),intent && retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0515,ProjectLifecycle.vue,203,el-button,运行时显示的控件,,intent,locked||!command,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0516,ProjectOverview.vue,63,el-button,三线健康,"click: emit('navigate','health')",data && data.indicators,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0517,ProjectOverview.vue,90,el-button,查看任务,"click: emit('navigate','tasks')",data && data.overdueConditions?.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0518,ProjectOverview.vue,102,el-button,阶段流转,"click: emit('navigate','lifecycle')",data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0519,ProjectOverview.vue,117,el-button,风险台账,"click: emit('navigate','risks')",data && item.kind==='risk_created',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0520,ProjectOverview.vue,118,el-button,查看变更,"click: emit('openChange',item.resourceId)",data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0521,ProjectOverview.vue,123,details,项目概览,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0522,ProjectOverview.vue,123,summary,数据来源,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-reviewwork、EDGE-t01、MAIN1-link、MAIN2-link
+CTL-0523,ReportAnalysis.vue,55,el-button,报告分析,click: request,page?.canAnalyze,Boolean(page.activeRunId)||page.reportRevision!==revision||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EXT-model、MODEL-analysis、MODEL-todo
+CTL-0524,ReportAnalysis.vue,57,el-button,刷新报告分析,click: read(),,reading||sending,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EXT-model、MODEL-analysis、MODEL-todo
+CTL-0525,ReportAnalysis.vue,72,el-button,选用为候选,"click: emit('choose',suggestion)",page?.canAnalyze&&item.reportRevision===revision,!canSelect,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EXT-model、MODEL-analysis、MODEL-todo
+CTL-0526,ReportAnalysis.vue,79,el-pagination,报告分析,current-change: read,page&&page.total>page.pageSize,reading||sending,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EXT-model、MODEL-analysis、MODEL-todo
+CTL-0527,ReportFacts.vue,161,el-button,Fact 证据与澄清,click: toggle,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0528,ReportFacts.vue,163,el-button,提报候选,click: start('propose'),expanded && page?.canPropose,working||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0529,ReportFacts.vue,164,el-button,刷新 Fact,click: error='';read(),expanded,working||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0530,ReportFacts.vue,170,ReportAnalysis,Fact 证据与澄清,choose: choose,expanded && page?.canReadAnalysis,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0531,ReportFacts.vue,173,el-button,引用 人天,click: chooseEffort(line),expanded && page?.canPropose&&currentWeekly&&classified.length,working||reading||!!mode,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0532,ReportFacts.vue,176,WeeklyFactReview,Fact 证据与澄清,requested: read(),expanded && currentWeekly,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0533,ReportFacts.vue,177,form,Fact 证据与澄清,submit: submit,expanded && mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0534,ReportFacts.vue,179,input,主题,model: subject,expanded && mode && mode==='propose',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0535,ReportFacts.vue,180,input,属性,model: predicate,expanded && mode && mode==='propose',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0536,ReportFacts.vue,181,input,业务时点（上海）,model: at,expanded && mode && mode==='propose',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0537,ReportFacts.vue,182,select,值类型,model: kind / change: value='',expanded && mode && mode==='propose',working||!!selectedEffort,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0538,ReportFacts.vue,183,option,文本或十进制值,,expanded && mode && mode==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0539,ReportFacts.vue,183,option,是/否,,expanded && mode && mode==='propose',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0540,ReportFacts.vue,185,select,值,model: value,expanded && mode && mode==='propose' && kind==='bool',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0541,ReportFacts.vue,185,option,请选择,,expanded && mode && mode==='propose' && kind==='bool',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0542,ReportFacts.vue,185,option,是,,expanded && mode && mode==='propose' && kind==='bool',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0543,ReportFacts.vue,185,option,否,,expanded && mode && mode==='propose' && kind==='bool',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0544,ReportFacts.vue,186,input,值,model: value,expanded && mode && mode==='propose',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0545,ReportFacts.vue,188,el-button,采用数值,click: value=quotedAmount,expanded && mode && mode==='propose' && quotedAmount!==undefined,working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0546,ReportFacts.vue,191,textarea,原话,model: quote,expanded && mode && mode==='propose',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0547,ReportFacts.vue,196,select,可信等级,model: trust,expanded && mode && selected && mode==='verify',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0548,ReportFacts.vue,196,option,中 · PM 正式填报,,expanded && mode && selected && mode==='verify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0549,ReportFacts.vue,197,option,高 · 客观凭证,,expanded && mode && selected && mode==='verify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0550,ReportFacts.vue,197,option,低 · 待补证,,expanded && mode && selected && mode==='verify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0551,ReportFacts.vue,198,ScopedEvidencePicker,报告客观凭证,model: evidence,expanded && mode && selected && mode==='verify'&&trust==='high',working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0552,ReportFacts.vue,200,textarea,Fact 证据与澄清,model: reason,expanded && mode && selected,working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0553,ReportFacts.vue,203,el-button,Fact 证据与澄清,,expanded && mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0554,ReportFacts.vue,204,el-button,取消,click: cancel,expanded && mode,working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0555,ReportFacts.vue,215,el-button,核验,"click: start('verify',item)",expanded && page?.canVerify&&item.validationStatus!=='rejected',working||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0556,ReportFacts.vue,216,el-button,澄清,"click: start('clarify',item)",expanded && page?.canClarify&&item.validationStatus==='disputed'&&item.trust!=='low',working||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0557,ReportFacts.vue,217,el-button,核验历史,click: toggleLog(item.factId),expanded,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0558,ReportFacts.vue,218,el-button,对照上周,click: toggleComparison(item.factId),expanded && item.validationStatus==='verified'&&item.trust!=='low',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0559,ReportFacts.vue,239,el-pagination,Fact 证据与澄清,"current-change: (n:number)=>showLog(item.factId,n)",expanded && historyFor===item.factId && log&&log.total>log.pageSize,logLoading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0560,ReportFacts.vue,243,el-pagination,Fact 证据与澄清,current-change: read,expanded && page&&page.total>page.pageSize,reading||working,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0561,Reports.vue,228,select,筛选报告类型,model: filter / change: changeFilter,,busy||!!editor||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0562,Reports.vue,229,option,全部,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0563,Reports.vue,229,option,周报,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0564,Reports.vue,229,option,日报,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0565,Reports.vue,232,el-button,生成周报初稿,click: startGeneration,generationRevision!==null,busy||loading||!!editor||reading||generating,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0566,Reports.vue,233,el-button,新建报告草稿,click: begin(),canCreate,busy||!!editor||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0567,Reports.vue,234,el-button,刷新报告,click: refresh,,busy||loading||!!editor,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0568,Reports.vue,240,form,生成周报,submit: generate,generating,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0569,Reports.vue,242,input,周内日期,model: generationDay,generating,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0570,Reports.vue,245,el-button,取消,click: cancel,generating,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0571,Reports.vue,246,el-button,生成草稿,,generating,generationRevision===null,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0572,Reports.vue,251,form,报告草稿,submit: save,editor,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0573,Reports.vue,255,select,填报类型,model: editor.type,editor && !editor.item,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0574,Reports.vue,255,option,周报,,editor && !editor.item,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0575,Reports.vue,255,option,日报,,editor && !editor.item,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0576,Reports.vue,256,input,报告草稿,model: editor.day,editor && !editor.item,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0577,Reports.vue,257,input,申报人天,model: editor.effort,editor,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0578,Reports.vue,261,input,填写人天分类,model: editor.classified,editor && editor.type==='weekly',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0579,Reports.vue,265,input,人天,model: line.personDays,editor && editor.type==='weekly' && editor.classified,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0580,Reports.vue,266,input,投入依据,model: line.basis,editor && editor.type==='weekly' && editor.classified,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0581,Reports.vue,276,select,里程碑,"model: entry.milestoneId / change: setRefs(entry,[])",editor && section.key==='milestone_progress',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0582,Reports.vue,277,option,请选择,,editor && section.key==='milestone_progress',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0583,Reports.vue,278,option,里程碑,,editor && section.key==='milestone_progress' && entry.milestoneId&&!milestones.some(m=>m.milestoneId===entry.milestoneId),,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0584,Reports.vue,279,option,里程碑,,editor && section.key==='milestone_progress',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0585,Reports.vue,281,select,申报类型,model: entry.claim,editor && section.key==='milestone_progress',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0586,Reports.vue,281,option,备注,,editor && section.key==='milestone_progress' && !entry.claim,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0587,Reports.vue,281,option,进展,,editor && section.key==='milestone_progress',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0588,Reports.vue,281,option,完工申报,,editor && section.key==='milestone_progress',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0589,Reports.vue,282,el-select,附件引用,"update:model-value: (value: string[])=>setRefs(entry,value)",editor && section.key==='milestone_progress' && entry.milestoneId,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0590,Reports.vue,286,textarea,说明,model: entry.summary,editor,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0591,Reports.vue,287,el-button,删除条目,"click: editor.fields[section.key].splice(index,1)",editor,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0592,Reports.vue,290,el-button,报告草稿,click: add(section.key),editor,busy||editor.fields[section.key].length>=100,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0593,Reports.vue,292,textarea,补充说明,model: editor.narrative,editor,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0594,Reports.vue,293,el-button,取消,click: cancel,editor,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0595,Reports.vue,294,el-button,保存草稿,,editor,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0596,Reports.vue,298,el-table-column,报告周期,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0597,Reports.vue,299,el-table-column,版本,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0598,Reports.vue,300,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0599,Reports.vue,303,el-table-column,提交时间（上海）,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0600,Reports.vue,304,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0601,Reports.vue,304,el-button,查看,click: open(row.reportId),,busy||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0602,Reports.vue,306,el-pagination,日报与周报,current-change: list,!editor&&total>size,loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0603,Reports.vue,312,el-button,编辑草稿,click: begin(detail),detail&&!editor && detail.canEdit,busy||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0604,Reports.vue,313,el-button,提交报告,click: submitDraft(detail),detail&&!editor && detail.canSubmit,reading||!detail.structuredFields?.effort_person_days,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0605,Reports.vue,314,el-popconfirm,日报与周报,confirm: publish(detail),detail&&!editor && detail.canConfirm,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0606,Reports.vue,316,el-button,确认并发布,,detail&&!editor && detail.canConfirm,reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0607,Reports.vue,318,el-button,下载后可打印为 A4 一页,click: downloadWeeklyReport(detail),detail&&!editor && publishedWeek(detail),busy||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0608,Reports.vue,319,el-button,关闭报告详情,click: detail=null,detail&&!editor,busy||reading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0609,Reports.vue,337,details,日报与周报,,detail&&!editor && detail.weeklyBasis,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0610,Reports.vue,338,summary,生成依据 · （上海） ·,,detail&&!editor && detail.weeklyBasis,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0611,Reports.vue,359,details,日报与周报,,detail&&!editor && detail.weeklyBasis,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0612,Reports.vue,359,summary,来源引用（ ）,,detail&&!editor && detail.weeklyBasis,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-date-correct、REPORT-date-invalid、REPORT-date-repeat、REPORT-export、REPORT-publish、VERSION-second
+CTL-0613,RequirementAction.vue,60,el-button,运行时显示的控件,click: begin,steps[row.status]&&actions.includes(steps[row.status][0]),locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0614,RequirementAction.vue,63,el-dialog,运行时显示的控件,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0615,RequirementAction.vue,65,form,运行时显示的控件,submit: submit,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0616,RequirementAction.vue,69,select,已核验证据,model: selected,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0617,RequirementAction.vue,70,option,已核验证据,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0618,RequirementAction.vue,71,option,·,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0619,RequirementAction.vue,74,el-pagination,运行时显示的控件,current-change: load,total>20,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0620,RequirementAction.vue,78,el-button,取消,click: open=false,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0621,RequirementAction.vue,79,el-button,重试上次提交,click: send(retry),retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0622,RequirementAction.vue,80,el-button,确认提交,,,locked||!canSubmit,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0623,RequirementBaseline.vue,16,el-button,重读基线,click: load,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0624,RequirementBaseline.vue,22,el-table-column,优先级,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0625,RequirementBaseline.vue,22,el-table-column,需求,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0626,RequirementBaseline.vue,22,el-table-column,验收标准,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0627,RequirementBaseline.vue,22,el-table-column,计划确认日,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0628,RequirementBaseline.vue,22,el-table-column,版本,,data,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0629,RequirementBaseline.vue,23,form,运行时显示的控件,submit: sign,data && data.canSignAs,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0630,RequirementBaseline.vue,23,textarea,确认说明,model: reason,data && data.canSignAs,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0631,RequirementBaseline.vue,23,input,已核对本版本的全部需求和验收标准,model: reviewed,data && data.canSignAs,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0632,RequirementBaseline.vue,23,el-button,运行时显示的控件,,data && data.canSignAs,!reviewed||reason.trim().length<4,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、SYNC-baseline
+CTL-0633,RequirementDisputes.vue,45,el-button,客户争议,click: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0634,RequirementDisputes.vue,46,el-dialog,客户争议,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0635,RequirementDisputes.vue,60,el-button,撤回此争议,"click: begin(dispute.revision,dispute.disputeId)",history && !edit && history.withdrawableIds.includes(dispute.disputeId),,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0636,RequirementDisputes.vue,64,el-pagination,运行时显示的控件,current-change: load,history && history.total>10,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0637,RequirementDisputes.vue,66,el-button,提出正式争议,click: begin(history.requirementRevision),history && history.canOpen&&!edit,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0638,RequirementDisputes.vue,70,form,运行时显示的控件,submit: submit,edit,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0639,RequirementDisputes.vue,71,textarea,运行时显示的控件,model: reason,edit,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0640,RequirementDisputes.vue,73,el-button,取消,click: edit=null,edit,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0641,RequirementDisputes.vue,74,el-button,运行时显示的控件,,edit,reason.trim().length<4,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-isolate
+CTL-0642,RequirementExceptionReceipt.vue,12,details,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate
+CTL-0643,RequirementExceptionReceipt.vue,13,summary,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate
+CTL-0644,RequirementExceptionReceipt.vue,23,a,下载核验原件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate
+CTL-0645,RequirementExceptions.vue,92,el-button,重读需求例外,click: load,,saving||loading||!!retry,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0646,RequirementExceptions.vue,96,el-button,重试上次提交,click: send(retry),retry,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0647,RequirementExceptions.vue,103,form,运行时显示的控件,submit: submit(),state && gaps.length&&!state.current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0648,RequirementExceptions.vue,108,textarea,具体接受的偏差,model: deviations[gap.requirementId],state && gaps.length&&!state.current && state.canSign,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0649,RequirementExceptions.vue,111,input,接受有效截至（本地时间）,model: expires,state && gaps.length&&!state.current && state.canSign,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0650,RequirementExceptions.vue,112,details,运行时显示的控件,,state && gaps.length&&!state.current && state.canSign && written,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0651,RequirementExceptions.vue,113,summary,未签署的偏差文本,,state && gaps.length&&!state.current && state.canSign && written,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0652,RequirementExceptions.vue,115,el-button,复制未签署文本,click: copy,state && gaps.length&&!state.current && state.canSign && written,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0653,RequirementExceptions.vue,117,ScopedEvidencePicker,已核验的书面 PDF 原件,model: proofs,state && gaps.length&&!state.current && state.canSign,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0654,RequirementExceptions.vue,119,input,我作为客户代表明确接受所列需求偏差。,model: accept,state && gaps.length&&!state.current && state.canSign,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0655,RequirementExceptions.vue,120,el-button,签署书面例外,,state && gaps.length&&!state.current && state.canSign,locked||!scope||!proofs.length||!accept,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0656,RequirementExceptions.vue,123,form,运行时显示的控件,submit: submit(true),state && state.canRevoke,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0657,RequirementExceptions.vue,124,textarea,撤销原因,model: revocation,state && state.canRevoke,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0658,RequirementExceptions.vue,125,el-button,撤销书面例外,,state && state.canRevoke,locked||!statement(clean(revocation)),结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-condclose、EDGE-isolate、GAPS-exceptions
+CTL-0659,RequirementHistory.vue,20,el-button,需求变更历史,click: load(1),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0660,RequirementHistory.vue,23,el-dialog,需求变更历史,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0661,RequirementHistory.vue,46,details,运行时显示的控件,,sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0662,RequirementHistory.vue,46,summary,本页来源,,sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0663,RequirementHistory.vue,47,el-pagination,运行时显示的控件,current-change: load,!error&&total>10,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-baseline、QUERY-nonzero、QUERY-q8
+CTL-0664,RequirementMetrics.vue,13,el-button,刷新需求指标,click: load,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-confirm、GAPS-quality
+CTL-0665,Requirements.vue,24,form,运行时显示的控件,submit: search,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0666,Requirements.vue,24,input,搜索需求,model: query,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0667,Requirements.vue,24,el-button,查询,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0668,Requirements.vue,24,el-button,新增需求,click: begin(null),"['drafting','designing'].includes(stage)",form,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0669,Requirements.vue,26,form,运行时显示的控件,submit: save,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0670,Requirements.vue,26,textarea,需求描述,model: desc,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0671,Requirements.vue,26,textarea,验收标准,model: criteria,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0672,Requirements.vue,26,select,优先级,model: priority,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0673,Requirements.vue,26,option,P0,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0674,Requirements.vue,26,option,P1,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0675,Requirements.vue,26,option,P2,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0676,Requirements.vue,26,input,计划确认日期,model: date,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0677,Requirements.vue,26,el-button,取消,click: form=false,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0678,Requirements.vue,26,el-button,保存需求,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0679,Requirements.vue,28,el-table-column,运行时显示的控件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0680,Requirements.vue,39,RequirementDisputes,运行时显示的控件,saved: read,row.baselineVersion,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0681,Requirements.vue,43,el-table-column,优先级,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0682,Requirements.vue,46,el-table-column,需求描述,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0683,Requirements.vue,49,el-table-column,基线,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0684,Requirements.vue,52,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0685,Requirements.vue,55,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0686,Requirements.vue,59,RequirementAction,运行时显示的控件,saved: read,row.baselineVersion,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0687,Requirements.vue,60,el-button,编辑需求,click: begin(row),"!row.baselineVersion&&['drafting','designing'].includes(stage)",,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0688,Requirements.vue,65,el-pagination,运行时显示的控件,current-page: page / current-change: read,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MAIN1-requirements、MAIN2-requirements
+CTL-0689,Retrospective.vue,179,el-button,项目复盘与教训,click: begin('answers'),state?.canSave,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0690,Retrospective.vue,180,el-button,刷新复盘和教训,click: refresh,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0691,Retrospective.vue,193,ReviewCalibration,项目复盘与教训,loaded: calibration=$event / saved: refresh,state && state.stage==='closed'||state.kind==='normal',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0692,Retrospective.vue,215,el-button,新增教训草稿,click: begin('draft'),state?.canSave,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0693,Retrospective.vue,216,el-button,从复盘答复起草,"click: begin('draft',undefined,true)",state?.canSave&&state.completedAt,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0694,Retrospective.vue,227,el-button,独立确认教训,"click: begin('confirm',item)",lessons?.items.length && item.canConfirm&&item.status==='draft',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0695,Retrospective.vue,234,form,已确认教训检索,submit: search,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0696,Retrospective.vue,235,input,关键词,model: keyword,,searching,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0697,Retrospective.vue,236,input,分类,model: category,,searching,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0698,Retrospective.vue,237,el-button,检索教训,,,searching,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0699,Retrospective.vue,246,details,已确认教训检索,,hits&&!searching && hits.items.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0700,Retrospective.vue,246,summary,已确认教训来源,,hits&&!searching && hits.items.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0701,Retrospective.vue,249,el-pagination,已确认教训检索,current-change: turn,hits&&!searching && hits.total>hits.pageSize,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0702,Retrospective.vue,255,el-dialog,运行时显示的控件,model: dialog,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0703,Retrospective.vue,257,form,运行时显示的控件,submit: save,intent,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0704,Retrospective.vue,261,textarea,运行时显示的控件,model: answers[index],intent && intent.kind==='answers',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0705,Retrospective.vue,265,textarea,偏差解释,model: deviations[key].explanation,intent && intent.kind==='answers' && deviations[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0706,Retrospective.vue,266,textarea,改进措施,model: deviations[key].improvement,intent && intent.kind==='answers' && deviations[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0707,Retrospective.vue,273,input,运行时显示的控件,model: draft.category,intent && intent.kind==='draft' && field.name==='category',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0708,Retrospective.vue,274,textarea,运行时显示的控件,model: draft[field.name],intent && intent.kind==='draft',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0709,Retrospective.vue,283,el-button,取消,click: dialog=false,intent,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0710,Retrospective.vue,284,el-button,运行时显示的控件,,intent,busy||!command,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT2-7、GAPS-retro、LESSON-read、QUERY-q6、QUERY-readonly
+CTL-0711,ReviewCalibration.vue,118,el-button,立项评分结果校准,click: openPlan,show && state?.canPlan&&!editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0712,ReviewCalibration.vue,119,el-button,刷新校准,click: read,show && !editing,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0713,ReviewCalibration.vue,128,form,立项评分结果校准,submit: save,show && editing==='plan',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0714,ReviewCalibration.vue,132,textarea,预期及评估依据,model: plan[key].expected,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0715,ReviewCalibration.vue,134,input,目标（适用时）,model: plan[key].objective,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0716,ReviewCalibration.vue,135,input,单位（适用时）,model: plan[key].unit,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0717,ReviewCalibration.vue,136,input,观察日期,model: plan[key].observeAfter,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0718,ReviewCalibration.vue,137,select,评价责任人,model: plan[key].reviewerId,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0719,ReviewCalibration.vue,138,option,选择独立评审人,,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0720,ReviewCalibration.vue,139,option,评价责任人,,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0721,ReviewCalibration.vue,142,textarea,补充已核验附件引用,model: plan[key].refs,show && editing==='plan' && plan[key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0722,ReviewCalibration.vue,145,el-button,取消,click: editing=null,show && editing==='plan',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0723,ReviewCalibration.vue,146,el-button,保存立项预期,,show && editing==='plan',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0724,ReviewCalibration.vue,163,details,立项评分结果校准,,show && state?.plan,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0725,ReviewCalibration.vue,164,summary,·,,show && state?.plan,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0726,ReviewCalibration.vue,177,details,立项评分结果校准,,show && state?.plan && state.dimensions[key]?.originalScores?.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0727,ReviewCalibration.vue,178,summary,原始评分与证据,,show && state?.plan && state.dimensions[key]?.originalScores?.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0728,ReviewCalibration.vue,186,details,立项评分结果校准,,show && state?.plan,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0729,ReviewCalibration.vue,187,summary,版本 · ·,,show && state?.plan,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0730,ReviewCalibration.vue,196,el-button,登记结果,click: openResult(key),show && state?.plan && state.dimensions[key]?.canEvaluate&&!editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0731,ReviewCalibration.vue,197,form,立项评分结果校准,submit: save,show && state?.plan && editing===key,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0732,ReviewCalibration.vue,199,select,结果状态,model: result.status,show && state?.plan && editing===key,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0733,ReviewCalibration.vue,200,option,结果状态,,show && state?.plan && editing===key,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0734,ReviewCalibration.vue,202,textarea,评价说明,model: result.reasoning,show && state?.plan && editing===key,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0735,ReviewCalibration.vue,203,input,结果评分,model: result.score,show && state?.plan && editing===key && result.status==='evaluated',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0736,ReviewCalibration.vue,207,textarea,已核验附件引用,model: result.refs,show && state?.plan && editing===key,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0737,ReviewCalibration.vue,209,input,跟进期限,model: result.followUpBy,show && state?.plan && editing===key && result.status==='pending',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0738,ReviewCalibration.vue,210,textarea,证据计划,model: result.evidencePlan,show && state?.plan && editing===key && result.status==='pending',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0739,ReviewCalibration.vue,213,textarea,偏差解释（绝对差值达到 1.00 分时必填）,model: result.explanation,show && state?.plan && editing===key && stage==='archived'&&result.status==='evaluated',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0740,ReviewCalibration.vue,214,textarea,改进措施（绝对差值达到 1.00 分时必填）,model: result.improvement,show && state?.plan && editing===key && stage==='archived'&&result.status==='evaluated',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0741,ReviewCalibration.vue,217,el-button,取消,click: editing=null,show && state?.plan && editing===key,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0742,ReviewCalibration.vue,218,el-button,保存结果,,show && state?.plan && editing===key,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、GAPS-retro、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0743,ReviewMeeting.vue,70,el-button,评审会议资料,click: begin,!editing&&(state?.canSchedule||state?.canRecordMinutes),disabled||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0744,ReviewMeeting.vue,78,el-button,评审会议资料,click: cancel,error&&!navigationLocked,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0745,ReviewMeeting.vue,85,form,评审会议资料,submit: save(),state&&editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0746,ReviewMeeting.vue,88,input,会议时间（北京时间）,model: datetime,state&&editing && state.canSchedule,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0747,ReviewMeeting.vue,89,select,参会人,model: attendeeIds,state&&editing && state.canSchedule,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0748,ReviewMeeting.vue,90,option,·,,state&&editing && state.canSchedule,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0749,ReviewMeeting.vue,93,textarea,会议纪要,model: minutes,state&&editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0750,ReviewMeeting.vue,96,el-button,取消,click: cancel,state&&editing,navigationLocked||disabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0751,ReviewMeeting.vue,97,el-button,重试保存会议资料,click: save(retry),state&&editing && retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0752,ReviewMeeting.vue,98,el-button,保存会议资料,,state&&editing,disabled||navigationLocked||(!state.canSchedule&&!minutes.trim()),结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0753,ReviewWorkbench.vue,278,section,关口人工工作台,keydown: close,open,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0754,ReviewWorkbench.vue,282,el-button,返回评审记录,click: close,open,navigationLocked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0755,ReviewWorkbench.vue,290,el-button,重读工作台,click: refresh,open,busy||!!retry,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0756,ReviewWorkbench.vue,293,el-button,重试上次提交,click: submit(retry),open && retry,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0757,ReviewWorkbench.vue,324,details,关口人工工作台,,open && view && materialRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0758,ReviewWorkbench.vue,325,summary,送审材料引用 ·,,open && view && materialRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0759,ReviewWorkbench.vue,329,el-button,关口人工工作台,click: selectAction(action.id),open && view && available.length,workDisabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0760,ReviewWorkbench.vue,334,form,关口人工工作台,submit: submit(),open && view && current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0761,ReviewWorkbench.vue,340,select,评分,model: scoreDraft[dimension.key].score / change: resetAnchor(dimension),open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0762,ReviewWorkbench.vue,341,option,请选择分值,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0763,ReviewWorkbench.vue,342,option,分,,open && view && current && current.id==='score',!dimension.anchors[anchorCodes[n]],结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0764,ReviewWorkbench.vue,344,select,评分锚点,model: scoreDraft[dimension.key].selectedAnchorCode,open && view && current && current.id==='score',!scoreDraft[dimension.key].score,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0765,ReviewWorkbench.vue,345,option,请选择锚点,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0766,ReviewWorkbench.vue,346,option,评分锚点,,open && view && current && current.id==='score' && scoreDraft[dimension.key].score,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0767,ReviewWorkbench.vue,352,textarea,评分理由,model: scoreDraft[dimension.key].rationale,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0768,ReviewWorkbench.vue,353,details,关口人工工作台,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0769,ReviewWorkbench.vue,354,summary,材料引用（至少一项） · 已选 /,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0770,ReviewWorkbench.vue,357,input,关口人工工作台,model: scoreDraft[dimension.key].evidenceRefs,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0771,ReviewWorkbench.vue,361,input,补充已核验附件引用（可选）,model: scoreDraft[dimension.key].attachment,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0772,ReviewWorkbench.vue,364,select,关口人工工作台,model: scoreDraft[dimension.key].answers[criterion.key],open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0773,ReviewWorkbench.vue,365,option,未知,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0774,ReviewWorkbench.vue,365,option,是,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0775,ReviewWorkbench.vue,365,option,否,,open && view && current && current.id==='score',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0776,ReviewWorkbench.vue,369,select,判断来源,model: scoreDraft[dimension.key].sources[criterion.key],open && view && current && current.id==='score' && scoreDraft[dimension.key].answers[criterion.key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0777,ReviewWorkbench.vue,370,option,判断来源,,open && view && current && current.id==='score' && scoreDraft[dimension.key].answers[criterion.key],,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0778,ReviewWorkbench.vue,380,textarea,保留分数的理由,model: scoreDraft[dimension.key].retainedReason,open && view && current && current.id==='score' && needsDisposition(dimension)||currentChecks?.[dimension.key]?.kind==='conflict'||currentChecks?.[dimension.key]?.kind==='unknown',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0779,ReviewWorkbench.vue,385,select,裁决,model: verdict / change: changeVerdict,open && view && current && current.id==='decide',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0780,ReviewWorkbench.vue,386,option,请选择裁决,,open && view && current && current.id==='decide',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0781,ReviewWorkbench.vue,387,option,裁决,,open && view && current && current.id==='decide',"(charterRejectOnly&&option!=='reject')||(fastFiling&&(option==='pass'||option==='conditional_pass'))||
+                    (view.review.type==='closing'&&((option==='conditional_pass'&&!view.requirementException)||(option==='pass'&&!!view.requirementException)))",结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0782,ReviewWorkbench.vue,393,textarea,裁决理由,model: reason,open && view && current && current.id==='decide',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0783,ReviewWorkbench.vue,397,input,条件标题,model: condition.title,open && view && current && current.id==='decide' && verdict==='conditional_pass'&&view.review.type!=='closing',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0784,ReviewWorkbench.vue,399,input,负责人 ID,model: condition.assigneeId,open && view && current && current.id==='decide' && verdict==='conditional_pass'&&view.review.type!=='closing',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0785,ReviewWorkbench.vue,400,input,截止时间（本地）,model: condition.dueAt,open && view && current && current.id==='decide' && verdict==='conditional_pass'&&view.review.type!=='closing',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0786,ReviewWorkbench.vue,403,input,书面回应须提供已核验证据,model: condition.evidenceRequired,open && view && current && current.id==='decide' && verdict==='conditional_pass'&&view.review.type!=='closing' && view.review.type==='charter',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0787,ReviewWorkbench.vue,405,el-button,移除条件,"click: conditions.splice(index,1)",open && view && current && current.id==='decide' && verdict==='conditional_pass'&&view.review.type!=='closing',conditions.length===1||workDisabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0788,ReviewWorkbench.vue,407,el-button,添加条件,click: addCondition,open && view && current && current.id==='decide' && verdict==='conditional_pass'&&view.review.type!=='closing',workDisabled||conditions.length>=maxConditions,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0789,ReviewWorkbench.vue,412,textarea,确认与备案说明,model: reason,open && view && current && current.id==='initiator'&&fastFiling,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0790,ReviewWorkbench.vue,415,textarea,关口人工工作台,model: reason,open && view && current,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0791,ReviewWorkbench.vue,419,el-button,核对评分理由,click: checkDraft,open && view && current && current.id==='score',workDisabled||!checkRequest,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0792,ReviewWorkbench.vue,421,el-button,取消,click: selected='',open && view && current,saving || !!retry,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0793,ReviewWorkbench.vue,422,el-button,关口人工工作台,,open && view && current,workDisabled||!command,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0794,ReviewWorkbench.vue,431,details,裁决记录,,open && view && view.decision||view.review.verdict && view.decision && view.decision.fastTrackFiling,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0795,ReviewWorkbench.vue,432,summary,快速立项备案,,open && view && view.decision||view.review.verdict && view.decision && view.decision.fastTrackFiling,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0796,ReviewWorkbench.vue,438,details,裁决记录,,open && view && view.decision||view.review.verdict && view.decision && view.decision.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0797,ReviewWorkbench.vue,439,summary,裁决来源,,open && view && view.decision||view.review.verdict && view.decision && view.decision.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0798,ReviewWorkbench.vue,461,details,评分历史,,open && view,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0799,ReviewWorkbench.vue,462,summary,第 轮 ·,,open && view,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0800,ReviewWorkbench.vue,478,details,立项补强书面回应,,open && view && view.reinforcementResponses?.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0801,ReviewWorkbench.vue,479,summary,· 回应版本,,open && view && view.reinforcementResponses?.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、ORG-approvals、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting、ROUND-meaning
+CTL-0802,Reviews.vue,110,el-button,重读阶段与材料,click: refresh,!workbenchOpen,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0803,Reviews.vue,114,ReviewCalibration,关口送审,saved: refresh,!workbenchOpen && gate==='charter',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0804,Reviews.vue,120,el-button,打开补强任务,click: openStrengtheningTask(gap.sourceRefs),!workbenchOpen && gate && draft && draft.gateCheck.missing.length && gap.code==='CHARTER_STRENGTHENING_RESPONSE_REQUIRED',locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0805,Reviews.vue,122,details,关口送审,,!workbenchOpen && gate && draft && draft.gateCheck.missing.length && gap.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0806,Reviews.vue,122,summary,出处,,!workbenchOpen && gate && draft && draft.gateCheck.missing.length && gap.sourceRefs.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0807,Reviews.vue,125,details,关口送审,,!workbenchOpen && gate && draft && draft.draftMaterials.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0808,Reviews.vue,125,summary,预检材料引用,,!workbenchOpen && gate && draft && draft.draftMaterials.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0809,Reviews.vue,126,el-button,提交 评审,click: confirm=true,!workbenchOpen && gate && draft && allowed,locked || !revision,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0810,Reviews.vue,130,el-table-column,关口,,!workbenchOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0811,Reviews.vue,131,el-table-column,状态,,!workbenchOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0812,Reviews.vue,132,el-table-column,评审编号,,!workbenchOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0813,Reviews.vue,133,el-table-column,操作,,!workbenchOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0814,Reviews.vue,134,el-button,打开评审工作台,"click: openWorkbench(row.reviewId,$event)",!workbenchOpen,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0815,Reviews.vue,138,el-dialog,确认送审,model: confirm,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0816,Reviews.vue,142,el-button,取消,click: confirm=false,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0817,Reviews.vue,143,el-button,重试上次提交,click: send(retry),retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0818,Reviews.vue,144,el-button,确认送审,click: submit,,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0819,Reviews.vue,147,ReviewWorkbench,运行时显示的控件,model: workbenchOpen / saved: refresh,workbenchId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AP-decision、BOUND-appeal、MAIN1-precheck、MAIN2-precheck、REV-decide、REV-fast、REV-file、REV-ordinary、REVIEW-meeting
+CTL-0820,RiskResolution.vue,154,el-dialog,运行时显示的控件,model: open,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0821,RiskResolution.vue,163,el-button,风险处置详情,click: refresh,!confirmedHere,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0822,RiskResolution.vue,170,input,接收请求编号,,issued,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0823,RiskResolution.vue,171,el-button,复制接收请求编号,click: copy(issued),issued,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0824,RiskResolution.vue,176,el-button,风险处置详情,click: begin(mode),state && projectView&&(projectView.canClose||projectView.canRequestAcceptance||projectView.canVerifyAcceptance),locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0825,RiskResolution.vue,179,form,风险处置详情,submit: save,state && action,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0826,RiskResolution.vue,183,input,接收人 ID,model: receiver,state && action && action==='close'||action==='request'||action==='verify' && action!=='close',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0827,RiskResolution.vue,184,textarea,接收范围,model: scope,state && action && action==='close'||action==='request'||action==='verify' && action!=='close',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0828,RiskResolution.vue,185,ScopedEvidencePicker,风险处置详情,model: evidenceRefs,state && action && action==='close'||action==='request'||action==='verify' && projectView,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0829,RiskResolution.vue,189,input,接收时间（本地）,model: acceptedAt,state && action && action==='close'||action==='request'||action==='verify' && action==='verify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0830,RiskResolution.vue,190,textarea,身份核验依据,model: identity,state && action && action==='close'||action==='request'||action==='verify' && action==='verify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0831,RiskResolution.vue,191,details,风险处置详情,,state && action && action==='close'||action==='request'||action==='verify' && action==='verify' && externalClause,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0832,RiskResolution.vue,191,summary,PDF 必须匹配的接收条款,,state && action && action==='close'||action==='request'||action==='verify' && action==='verify' && externalClause,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0833,RiskResolution.vue,192,textarea,PDF 接收声明原文,model: excerpt,state && action && action==='close'||action==='request'||action==='verify' && action==='verify',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0834,RiskResolution.vue,204,el-button,取消,click: reset,state && action,locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0835,RiskResolution.vue,205,el-button,重试上次提交,click: send(retry),state && action && retry,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0836,RiskResolution.vue,206,el-button,风险处置详情,,state && action,locked||!command,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0837,RiskResolution.vue,218,a,处置回执,,state && projectView && projectView.resolution,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0838,RiskResolution.vue,220,details,处置回执,,state && projectView && projectView.resolution,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0839,RiskResolution.vue,221,summary,回执标识,,state && projectView && projectView.resolution,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0840,RiskResolution.vue,244,details,接收记录,,state,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0841,RiskResolution.vue,245,summary,记录来源,,state,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0842,RiskResolution.vue,249,input,接收请求编号,,state && projectView&&item.status==='pending'&&item.kind==='requested'&&issued?.acceptanceId!==item.acceptanceId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0843,RiskResolution.vue,250,el-button,复制接收请求编号,click: copy(item),state && projectView&&item.status==='pending'&&item.kind==='requested'&&issued?.acceptanceId!==item.acceptanceId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0844,RiskResolution.vue,254,el-button,本人认证接收,"click: begin('confirm',item)",state && canConfirm(item)||canHandoff(item) && canConfirm(item),locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0845,RiskResolution.vue,255,el-button,复核签署移交,"click: begin('handoff',item)",state && canConfirm(item)||canHandoff(item) && canHandoff(item),locked,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox、XR-recover
+CTL-0846,Risks.vue,43,el-button,登记风险,click: open(null),canCreate,form||loading||!!escalation,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0847,Risks.vue,43,el-button,刷新风险,click: load(),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0848,Risks.vue,44,form,运行时显示的控件,submit: save,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0849,Risks.vue,45,textarea,风险描述,model: statement,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0850,Risks.vue,46,input,概率,model: prob,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0851,Risks.vue,46,input,影响,model: impact,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0852,Risks.vue,47,textarea,应对措施,model: response,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0853,Risks.vue,47,input,阻塞风险,model: blocking,form && !edit,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0854,Risks.vue,48,el-button,取消,click: form=false,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0855,Risks.vue,48,el-button,保存风险,,form,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0856,Risks.vue,49,form,升级阻塞风险,submit: escalate,escalation,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0857,Risks.vue,51,textarea,升级原因,model: escalationReason,escalation,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0858,Risks.vue,52,el-button,取消,click: escalation=null,escalation,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0859,Risks.vue,53,el-button,确认升级为阻塞,,escalation,escalationReason.trim().length<4,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0860,Risks.vue,55,el-table-column,风险,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0861,Risks.vue,56,el-table-column,概率,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0862,Risks.vue,56,el-table-column,影响,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0863,Risks.vue,56,el-table-column,应对措施,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0864,Risks.vue,56,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0865,Risks.vue,57,el-table-column,负责人 ID,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0866,Risks.vue,60,el-table-column,阻塞起始（北京时间）,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0867,Risks.vue,66,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0868,Risks.vue,67,el-button,编辑风险,click: open(row),row.canEdit,busy||!!escalation,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0869,Risks.vue,68,el-button,升级为阻塞,click: openEscalation(row),row.canEscalate,form||busy||!!escalation,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0870,Risks.vue,69,el-button,风险处置,click: showResolution(row),,form||busy||!!escalation,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0871,Risks.vue,71,el-pagination,运行时显示的控件,current-change: load,total>20,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0872,Risks.vue,72,RiskResolution,运行时显示的控件,model: resolutionOpen / saved: load(),resolutionId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,EDGE-externalrisk、RISK-close、RISK-escalate、RISK-handoff、RISK-inbox
+CTL-0873,ScopedEvidencePicker.vue,46,el-button,重读已核验附件,click: load(),,disabled||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、EDGE-externalrisk、FCL-resolve、GAPS-close、MONEY-evidence、MONEY-file、XR-reject
+CTL-0874,ScopedEvidencePicker.vue,52,el-button,运行时显示的控件,click: remove(ref),selected.length,disabled,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、EDGE-externalrisk、FCL-resolve、GAPS-close、MONEY-evidence、MONEY-file、XR-reject
+CTL-0875,ScopedEvidencePicker.vue,59,input,运行时显示的控件,change: selected.includes(item.evidenceRef)?remove(item.evidenceRef):pick(item),,disabled||loading||((limit??1)>1&&selected.length>=(limit??1)&&!selected.includes(item.evidenceRef)),结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、EDGE-externalrisk、FCL-resolve、GAPS-close、MONEY-evidence、MONEY-file、XR-reject
+CTL-0876,ScopedEvidencePicker.vue,63,a,下载原件,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、EDGE-externalrisk、FCL-resolve、GAPS-close、MONEY-evidence、MONEY-file、XR-reject
+CTL-0877,ScopedEvidencePicker.vue,66,el-pagination,运行时显示的控件,current-change: load,total>pageSize,disabled||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,ATT-cross-scope、EDGE-externalrisk、FCL-resolve、GAPS-close、MONEY-evidence、MONEY-file、XR-reject
+CTL-0878,Stakeholders.vue,32,el-button,登记联系人,click: open,"['drafting','designing'].includes(stage)",editing,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0879,Stakeholders.vue,33,el-button,刷新联系人,click: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0880,Stakeholders.vue,36,form,运行时显示的控件,submit: save,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0881,Stakeholders.vue,37,input,联系人姓名,model: name,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0882,Stakeholders.vue,38,select,联系人类别,model: type,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0883,Stakeholders.vue,38,option,类别,,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0884,Stakeholders.vue,39,input,影响力,model: influence,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0885,Stakeholders.vue,40,textarea,期望,model: expectation,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0886,Stakeholders.vue,41,el-button,取消,click: editing=false,editing,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0887,Stakeholders.vue,41,el-button,保存联系人,,editing,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0888,Stakeholders.vue,44,el-table-column,姓名,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0889,Stakeholders.vue,45,el-table-column,类别,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0890,Stakeholders.vue,46,el-table-column,影响力,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0891,Stakeholders.vue,46,el-table-column,期望,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0892,Stakeholders.vue,48,el-pagination,运行时显示的控件,current-change: load,total>pageSize,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-binding、AUX-contact
+CTL-0893,Tasks.vue,150,el-button,查看全部任务,click: emit('clearFocus'),focusTaskId,!!mode||loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0894,Tasks.vue,151,el-button,新建补强任务,click: openForm(null),canCreate,!!mode||loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0895,Tasks.vue,152,el-button,刷新补强任务,click: refresh,,!!mode||loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0896,Tasks.vue,156,form,补强任务,submit: save,mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0897,Tasks.vue,160,textarea,书面回应,model: responseText,mode && mode==='respond',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0898,Tasks.vue,163,textarea,已核验附件引用,model: responseRefs,mode && mode==='respond',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0899,Tasks.vue,167,input,标题,model: title,mode && mode==='create',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0900,Tasks.vue,169,el-select,来源类型,change: changeSource,mode && mode==='create',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0901,Tasks.vue,170,el-option,来源类型,,mode && mode==='create',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0902,Tasks.vue,174,el-select,来源记录,model: sourceId,mode && mode==='create',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0903,Tasks.vue,176,el-option,来源记录,,mode && mode==='create',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0904,Tasks.vue,181,el-select,责任人,model: assigneeId,mode && mode==='create',busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0905,Tasks.vue,183,el-option,责任人,,mode && mode==='create',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0906,Tasks.vue,189,select,任务状态,model: status,mode,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0907,Tasks.vue,190,option,状态,,mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0908,Tasks.vue,193,input,到期时间,model: due,mode && mode!=='respond',,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0909,Tasks.vue,197,el-button,取消,click: closeForm,mode,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0910,Tasks.vue,198,el-button,补强任务,,mode,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0911,Tasks.vue,204,el-button,收起重估,click: reassessmentId=null,selectedReassessment?.reassessment,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0912,Tasks.vue,206,CostReassessment,超支重估详情,saved: load(),selectedReassessment?.reassessment,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0913,Tasks.vue,210,el-table-column,任务,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0914,Tasks.vue,213,details,补强任务,,row.writtenResponse,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0915,Tasks.vue,214,summary,回应版本,,row.writtenResponse,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0916,Tasks.vue,221,el-table-column,状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0917,Tasks.vue,224,el-table-column,责任人,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0918,Tasks.vue,227,el-table-column,到期 / 完成,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0919,Tasks.vue,233,el-table-column,来源,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0920,Tasks.vue,236,el-table-column,操作,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0921,Tasks.vue,238,el-button,补强任务,click: openResponse(row),row.canRespond,!!mode||busy||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0922,Tasks.vue,239,el-button,查看重估,click: reassessmentId=row.taskId,row.reassessment,!!mode||busy||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0923,Tasks.vue,241,el-button,编辑任务,click: openForm(row),row.canUpdate,!!mode||busy||loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0924,Tasks.vue,245,el-pagination,补强任务,current-change: load,total>pageSize,!!mode||loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-reassess、GAPS-strength、MODEL-todo、QUERY-task、TASK-risk-assign、TASK-risk-finish
+CTL-0925,TerminationConfirmations.vue,51,form,我的终止确认,submit: confirm,active,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0926,TerminationConfirmations.vue,55,textarea,确认理由,model: reason,active,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0927,TerminationConfirmations.vue,56,el-button,返回,click: returnToList,active,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0928,TerminationConfirmations.vue,57,el-button,确认终止申请,,active,reason.trim().length<4,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0929,TerminationConfirmations.vue,60,el-button,刷新待确认,click: load,,loading,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0930,TerminationConfirmations.vue,63,el-button,处理,click: openForm(item),items.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,GAPS-lifecycle、GAPS-refile、LR01-ui、ORG-terminate
+CTL-0931,WeeklyDelivery.vue,69,el-button,刷新送达回执,click: load,,loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0932,WeeklyDelivery.vue,76,el-button,登记送达,click: review,info && info.recipients.length,loading||busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0933,WeeklyDelivery.vue,78,el-table-column,授权收件人,,info && info.deliveries.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0934,WeeklyDelivery.vue,79,el-table-column,发布版本,,info && info.deliveries.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0935,WeeklyDelivery.vue,80,el-table-column,送达状态,,info && info.deliveries.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0936,WeeklyDelivery.vue,86,el-table-column,渠道回执,,info && info.deliveries.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0937,WeeklyDelivery.vue,87,details,正式周报送达,,info && info.deliveries.length && row.providerMessageId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0938,WeeklyDelivery.vue,88,summary,正式周报送达,,info && info.deliveries.length && row.providerMessageId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0939,WeeklyDelivery.vue,93,el-table-column,实际收件证据,,info && info.deliveries.length,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0940,WeeklyDelivery.vue,97,el-dialog,确认周报送达,model: dialog,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0941,WeeklyDelivery.vue,102,select,已授权收件人,model: chosen,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0942,WeeklyDelivery.vue,103,option,请选择,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0943,WeeklyDelivery.vue,104,option,· 到期,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0944,WeeklyDelivery.vue,109,el-button,取消,click: dialog=false,,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0945,WeeklyDelivery.vue,110,el-button,确认登记,click: queue,,!chosen,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-formatprint、REPORT-channel、REPORT-export
+CTL-0946,WeeklyEffortPosting.vue,103,el-button,刷新周报凭证,click: load,,readBusy||writeBusy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0947,WeeklyEffortPosting.vue,118,el-table-column,类别,,preview && preview.breakdown,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0948,WeeklyEffortPosting.vue,119,el-table-column,申报人天,,preview && preview.breakdown,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0949,WeeklyEffortPosting.vue,120,el-table-column,已核验人天,,preview && preview.breakdown,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0950,WeeklyEffortPosting.vue,121,el-table-column,待提报差额,,preview && preview.breakdown,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0951,WeeklyEffortPosting.vue,122,el-table-column,本期依据,,preview && preview.breakdown,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0952,WeeklyEffortPosting.vue,123,el-table-column,凭证,,preview && preview.breakdown,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0953,WeeklyEffortPosting.vue,125,el-button,提报 凭证,click: open(row),preview && preview.breakdown && row.canPropose,readBusy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0954,WeeklyEffortPosting.vue,134,el-button,提报待核验凭证,click: open(),preview && preview.canPropose&&!preview.breakdown,readBusy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0955,WeeklyEffortPosting.vue,139,el-dialog,提报周报凭证,model: dialog,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0956,WeeklyEffortPosting.vue,144,select,凭证归属月份（UTC）,model: period,,writeBusy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0957,WeeklyEffortPosting.vue,145,option,请选择实际发生月份,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0958,WeeklyEffortPosting.vue,146,option,凭证归属月份（UTC）,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0959,WeeklyEffortPosting.vue,150,el-button,取消,click: dialog=false,,writeBusy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0960,WeeklyEffortPosting.vue,151,el-button,确认提报,click: confirm,,!period,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,MONEY-propose、MONEY-reverse、MONEY-verify、REPORT-finance
+CTL-0961,WeeklyFactReview.vue,96,el-button,逐报告跨周对照,click: toggle,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0962,WeeklyFactReview.vue,97,el-button,刷新跨周对照,click: load(),expanded,busy||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0963,WeeklyFactReview.vue,123,el-button,转入澄清,click: begin(row),expanded && row.canRequestClarification,busy||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0964,WeeklyFactReview.vue,127,el-pagination,逐报告跨周 Fact 对照,current-change: load,expanded && result&&result.total>result.pageSize,busy||saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0965,WeeklyFactReview.vue,131,el-dialog,转入 Fact 澄清,model: dialog,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0966,WeeklyFactReview.vue,133,form,运行时显示的控件,submit: submit,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0967,WeeklyFactReview.vue,136,textarea,澄清原因,model: reason,,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0968,WeeklyFactReview.vue,137,input,确认将本周事实转入人工澄清,model: confirmed,,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0969,WeeklyFactReview.vue,140,el-button,取消,click: dialog=false,,saving,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0970,WeeklyFactReview.vue,141,el-button,确认转办,,,!confirmed||reason.length<5,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,AUX-weekcompare、FCL-resolve、REPORT-fact
+CTL-0971,WeeklyHealthOverview.vue,47,input,周起始日（周一）,model: week / change: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、QUERY-sources
+CTL-0972,WeeklyHealthOverview.vue,48,el-button,本周,click: week='';load(),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、QUERY-sources
+CTL-0973,WeeklyHealthOverview.vue,49,el-button,刷新周采样,click: load(),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、QUERY-sources
+CTL-0974,WeeklyHealthOverview.vue,70,details,每周三线,,result,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、QUERY-sources
+CTL-0975,WeeklyHealthOverview.vue,71,summary,· 原因和出处,,result,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、QUERY-sources
+CTL-0976,WeeklyHealthOverview.vue,91,el-pagination,每周三线,current-change: paging,result && result.total>result.pageSize,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、QUERY-sources
+CTL-0977,WeeklyPortfolioReports.vue,77,input,周起始日（周一）,model: week / change: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0978,WeeklyPortfolioReports.vue,78,el-select,筛选项目,model: project / change: load(),,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0979,WeeklyPortfolioReports.vue,80,el-option,组合周报,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0980,WeeklyPortfolioReports.vue,82,el-button,本周,click: week=''; load(),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0981,WeeklyPortfolioReports.vue,83,el-button,刷新组合周报,click: load(result?.page),,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0982,WeeklyPortfolioReports.vue,97,el-table-column,项目,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0983,WeeklyPortfolioReports.vue,100,el-table-column,周报状态,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0984,WeeklyPortfolioReports.vue,106,el-table-column,里程碑 / 需求 / 风险申报,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0985,WeeklyPortfolioReports.vue,109,el-table-column,申报人天,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0986,WeeklyPortfolioReports.vue,110,el-table-column,来源,,,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0987,WeeklyPortfolioReports.vue,111,el-button,查看周报,"click: emit('open-report', row.projectId, row.reportId)",row.reportId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0988,WeeklyPortfolioReports.vue,133,el-button,查看周报,"click: emit('open-report', row.projectId, row.reportId)",result?.items.length && row.reportId,,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
+CTL-0989,WeeklyPortfolioReports.vue,141,el-pagination,组合周报,"current-change: (n:number)=>load(n,true)",result&&result.total>result.pageSize,busy,结构盘点。逐次操作、角色和阶段的实测结果见02矩阵。,CHAT3-3、LED-duplicate、MAIN1-create、MAIN2-create、ORG-login、PORT-week、REPORT-channel
