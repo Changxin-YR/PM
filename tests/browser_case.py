@@ -86,7 +86,12 @@ def vite(api_port):
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     root=Path(__file__).resolve().parents[1]/'web'
     url=f'http://127.0.0.1:{port}'
-    proc=subprocess.Popen(['node','node_modules/vite/bin/vite.js','--port',str(port)],cwd=root,env={**os.environ,'PMO_API_PORT':str(api_port)})
+    command = ['node', 'node_modules/vite/bin/vite.js']
+    if os.getenv('PMO_BROWSER_BUILD') == '1':
+        assert (root / 'dist/index.html').is_file(), 'Build the frontend before testing its production bundle'
+        command.append('preview')
+    proc=subprocess.Popen([*command,'--host','127.0.0.1','--strictPort','--port',str(port)],cwd=root,
+                          env={**os.environ,'PMO_API_PORT':str(api_port)})
     try:
         with httpx.Client(trust_env=False) as client:
             for _ in range(100):

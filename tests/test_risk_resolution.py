@@ -310,6 +310,7 @@ def test_handoff_pending_and_receiver_confirmation(scenario):
 
     assert ok(owner.patch(f'risks/{row.id}', headers=headers(), json={'fieldsRisk': {'response': 'Revised mitigation plan'}}))['revision'] == 2
     rejected(receiver.get(f'risks/{row.id}/resolution'), 404, 'RESOURCE_NOT_FOUND')
+    assert ok(receiver.get('me/risk-acceptances'))['items'] == []
     updated = ok(reviewer.get(f'risks/{row.id}/resolution'))
     assert updated['risk']['revision'] == 2 and updated['status'] == 'unresolved' and updated['acceptances'] == []
     rejected(receiver.post(step, headers=headers(), json=confirm), 409, 'VERSION_CONFLICT')
@@ -407,6 +408,15 @@ def test_resolution_read_scopes_nominees_and_reports_effective_capabilities(scen
     other_nominee = ok(reviewer.post(step, headers=headers(), json={**shared, 'receiverPersonId': outsider_id,
         'acceptanceScope': 'A different acceptance scope'}))
 
+    inbox = 'me/risk-acceptances'
+    rejected(s.api.get('/api/v1/' + inbox), 401, 'UNAUTHORIZED')
+    rejected(s.api.get('/api/v1/' + inbox, headers=s.bearer), 403, 'FORBIDDEN')
+    own_item, = ok(receiver.get(inbox))['items']
+    assert set(own_item) == {'riskId', 'acceptanceId', 'acceptanceScope', 'createdAt'}
+    assert own_item['acceptanceId'] == own['acceptanceId'] and own_item['acceptanceScope'] == SCOPE
+    assert ok(receiver.get(inbox, params={'after': own_item['acceptanceId']}))['items'] == []
+    assert [i['acceptanceId'] for i in ok(outsider.get(inbox))['items']] == [other_nominee['acceptanceId']]
+    assert all(ok(client.get(inbox))['items'] == [] for client in (reviewer, foreign))
     counts = lambda c: [c.scalar(sa.select(sa.func.count()).select_from(table)) for table in
         (db.audit_logs, db.idempotency_keys, db.outbox_events, acceptances, resolutions)]
     with s.engine.connect() as c:
@@ -437,6 +447,7 @@ def test_resolution_read_scopes_nominees_and_reports_effective_capabilities(scen
     binding = {'receiverPersonId': receiver_id, 'acceptanceEvidenceRef': proof['evidenceRef']}
     accepted = ok(receiver.post(step, headers=headers(), json={**binding, 'kind': 'confirm', 'decision': 'accept', 'acceptanceScope': SCOPE}))
     rejected(receiver.get(path), 404, 'RESOURCE_NOT_FOUND')
+    assert ok(receiver.get(inbox))['items'] == []
     live_state = ok(reviewer.get(path))
     assert live_state['status'] == 'accepted' and 'resolution' not in live_state
     confirmed, still_pending = live_state['acceptances']

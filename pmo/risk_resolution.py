@@ -25,6 +25,7 @@ CLOSE = 'human_risk_close'
 HANDOFF = 'human_risk_handoff'
 ACCEPTANCE = 'human_risk_handoff_acceptance'
 GET = 'human_risk_resolution_get'
+INBOX = 'human_risk_acceptance_inbox'
 PATH = '/risks/{riskId}'
 ACCEPTANCE_LIMIT = 20
 router = APIRouter(prefix='/api/v1', tags=['Risks'])
@@ -611,3 +612,56 @@ def _read_resolution(c, a, risk_id):
 @router.get(PATH + '/resolution', operation_id=GET, response_model_exclude_none=True, openapi_extra=HUMAN)
 def get_resolution(riskId: UUID, authorization: Auth) -> Result[ResolutionState]:
     return run(authorization, GET, lambda c, a, _: _read_resolution(c, a, riskId))
+
+
+class IncomingRequest(Strict):
+    riskId: UUID
+    acceptanceId: UUID
+    acceptanceScope: str
+    createdAt: datetime
+
+
+class IncomingPage(Strict):
+    items: list[IncomingRequest] = Field(max_length=20)
+    nextCursor: UUID | None = None
+
+
+@router.get('/me/risk-acceptances', operation_id=INBOX, openapi_extra=HUMAN, response_model_exclude_none=True)
+def incoming_requests(authorization: Auth, after: UUID | None = None) -> Result[IncomingPage]:
+    def listing(c, actor, _):
+        t, r, p = acceptances.c, db.risks.c, db.projects.c
+        candidates = sa.select(t.id, t.risk_id).select_from(acceptances.join(db.risks, sa.and_(
+            r.id == t.risk_id, r.project_id == t.project_id)).join(db.projects, p.id == r.project_id)).where(
+            p.org_id == actor.org, t.receiver_id == actor.person, t.kind == 'requested',
+            t.risk_revision == r.revision, r.status.in_(('open', 'mitigated')), p.stage.in_(WRITABLE))
+        items: list[IncomingRequest] = []
+        cursor = after
+        while True:
+            query = candidates if cursor is None else candidates.where(t.id > cursor)
+            batch = c.execute(query.order_by(t.id).limit(32)).all()
+            if not batch:
+                break
+            # A nomination alone grants no project read access. Return exactly the requests
+            # the current detail view would allow this receiver to confirm.
+            validated: dict[UUID, dict[UUID, IncomingRequest]] = {}
+            for receipt_id, risk_id in batch:
+                if risk_id not in validated:
+                    try:
+                        state = _read_resolution(c, actor, risk_id).data
+                    except Failure as error:
+                        if error.status != 404:
+                            raise
+                        validated[risk_id] = {}
+                    else:
+                        validated[risk_id] = {item.acceptanceId: IncomingRequest(riskId=risk_id,
+                            acceptanceId=item.acceptanceId, acceptanceScope=item.acceptanceScope, createdAt=item.createdAt)
+                            for item in state.acceptances if item.canConfirm and item.receiverPersonId == actor.person}
+                item = validated[risk_id].get(receipt_id)
+                if item is not None:
+                    if len(items) == 20:
+                        return Result[IncomingPage](data=IncomingPage(items=items, nextCursor=items[-1].acceptanceId), meta=meta(INBOX, []))
+                    items.append(item)
+            cursor = batch[-1].id
+        return Result[IncomingPage](data=IncomingPage(items=items), meta=meta(INBOX, []))
+
+    return run(authorization, INBOX, listing)
