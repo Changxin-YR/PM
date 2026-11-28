@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from argon2 import PasswordHasher
 from pmo import schema_v1 as db
 from test_lifecycle import ANSWERS, close_materials, complete_milestones, execution_fixture, stage
+from test_risk_resolution import scenario as risk_scenario
 from test_reviews import team as team
 from test_tasks import team as task_team
 
@@ -728,3 +729,20 @@ def test_browser_成本超支重估与独立继续投入裁决(live, team, tmp_p
                 'projectName': stage(pm, project)['name'], 'evidenceRef': material['evidenceRefs'][0]})})
     assert 任务(pm, project)['reassessment']['history'][0]['decision']['option'] == 'continue'
     assert sample(pm, project)['costLine'] == 'red'
+
+
+def test_browser_external_risk_proof_feedback(live, risk_scenario):
+    from datetime import timedelta
+    from test_risk_resolution import SCOPE, TEST_ACCEPTED, TEST_EXCERPT, TEST_RECEIVER, TEST_RISK, _pdf
+
+    s = risk_scenario
+    with s.engine.begin() as c:
+        c.execute(db.persons.insert().values(id=TEST_RECEIVER, org_id=s.org, created_by=s.people['owner'],
+            name='Isolated receipt test recipient', is_active=True))
+    risk = s.risk(risk_id=TEST_RISK, created_at=TEST_ACCEPTED - timedelta(days=1))
+    item = s.upload(risk, _pdf(TEST_EXCERPT))
+    with vite(live[2]) as (root, url):
+        run_browser(root, url, 'risk-receipt-feedback', {
+            'PMO_TEST_SESSIONS': json.dumps(browser_sessions(s.clients, 'reviewer')),
+            'PMO_TEST_PROOF': json.dumps(dict(project=str(s.project), recipient=str(TEST_RECEIVER),
+                scope=SCOPE, accepted=TEST_ACCEPTED.isoformat(), excerpt=TEST_EXCERPT, proof=item['evidenceRef']))})
