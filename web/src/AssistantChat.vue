@@ -3,7 +3,7 @@ import {computed,nextTick,ref,watch} from 'vue'
 import {ArrowUp,BookOpen,MessageCircle,SquarePen} from 'lucide-vue-next'
 import {starters,type Mode,type Turn} from './assistantConversation'
 const props=defineProps<{mode:Mode;stage:string;turns:Turn[];busy:boolean;pending:string}>()
-const emit=defineEmits<{send:[text:string];reset:[];reviewDraft:[answers:string[]];navigate:[target:'reviews'|'reports'|'retrospective'|'health'|'costs'|'requirements'|'milestones']}>()
+const emit=defineEmits<{send:[text:string];reset:[];reviewDraft:[answers:string[]];navigate:[target:'reviews'|'reports'|'retrospective'|'health'|'costs'|'requirements'|'milestones'|'risks']}>()
 const draft=ref(''),log=ref<HTMLElement>(),editor=ref<HTMLTextAreaElement>()
 const names:Record<Mode,string>={charter:'立项评审助理',process:'过程管家',closing:'结项回顾助理',ledger:'台账问答'}
 const last=computed(()=>props.turns.at(-1))
@@ -11,7 +11,7 @@ const completedReview=computed(()=>{
   const guided=last.value?.guided
   return guided&&guided.answers.length===guided.questions.length?guided.answers:undefined
 })
-const sourceNames:Record<string,string>={project:'项目档案',charter:'立项卡',decision:'评审裁决',review:'评审记录',report:'项目报告',milestone:'里程碑',
+const sourceNames:Record<string,string>={risk:'风险记录',project:'项目档案',charter:'立项卡',decision:'评审裁决',review:'评审记录',report:'项目报告',milestone:'里程碑',
   requirement:'需求',fact:'核验事实',lesson:'教训记录',retrospective:'复盘记录','cost-plan':'成本计划','cost-entry':'预算台账','cost-posting':'核验流水',
   'health-snapshot':'三线快照','project-transition':'阶段流转','review-snapshot':'送审快照','review-decision-snapshot':'裁决快照',approval:'审批记录'}
 const sourceName=(reference:string)=>sourceNames[reference.split(':')[0]]??'来源记录'
@@ -19,6 +19,7 @@ const destination=computed(()=>{
   const target=last.value?.target
   if(!target)return
   if(target.mode==='charter')return ['reviews','查看评审材料'] as const
+  if(target.riskRegister)return ['risks','查看风险台账'] as const
   if(target.mode==='process')return ['reports','查看项目报告'] as const
   if(target.mode==='closing')return ['retrospective','打开复盘记录'] as const
   if(target.mode!=='ledger')return

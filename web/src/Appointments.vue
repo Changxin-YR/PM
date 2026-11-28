@@ -3,7 +3,7 @@ import {computed,ref,watch} from 'vue'
 import {Mail, RefreshCw, Search, Send} from 'lucide-vue-next'
 import {isUnconfirmedWrite} from './api-error'
 
-const roleLabels={pm:'项目经理',sponsor:'Sponsor',member:'项目成员',reviewer:'评审人',client_representative:'客户代表'}
+const roleLabels={pm:'项目经理',sponsor:'项目出资负责人',member:'项目成员',reviewer:'评审人',client_representative:'客户代表'}
 type Role=keyof typeof roleLabels
 type Item={invitationId:string;projectId:string;projectName:string;nomineeName:string;role:Role;revision:number}
 type ProjectChoice={projectId:string;name:string;code:string;revision:number;stage:string;roles:Role[]}

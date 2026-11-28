@@ -18,7 +18,12 @@ export function followup(text:string, previous?:Turn):Followup|undefined {
   }
   const section=short.match(/^(?:展开|解释|说说)第\s*([1-9]\d?)\s*[条项点]$/)
   if(section&&previous){
-    const line=previous.answer.lines[Number(section[1])-1]
+    const index=Number(section[1])-1
+    if(previous.answer.items){
+      const item=previous.answer.items[index]
+      return item ? reply([item.detail],item.sources) : reply([`上一条回答列出了 ${previous.answer.items.length} 条记录。`],[])
+    }
+    const line=previous.answer.lines[index]
     return reply([line??`上一条回答只有 ${previous.answer.lines.length} 项。`])
   }
   const guided=previous?.guided

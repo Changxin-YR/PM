@@ -51,7 +51,11 @@ const externalClause=computed(()=>{
 })
 
 function time(iso:string){return new Date(iso).toLocaleString('zh-CN',{hour12:false})}
-function message(e:unknown,fallback:string){return e instanceof Error?e.message:fallback}
+function message(e:unknown,fallback:string){
+  const text=e instanceof Error?e.message:fallback
+  if(text.includes('EXPLICIT_RISK_ACCEPTANCE_EVIDENCE_REQUIRED'))return '请核对已选 PDF 中的接收声明、风险版本和接收范围。请按“PDF 必须匹配的接收条款”逐字填写，并确认接收时间介于风险登记与附件核验之间。'
+  return text
+}
 function validText(value:string,min:number,max:number){const text=value.trim(),length=Array.from(text).length;return !text.includes('\0')&&length>=min&&length<=max}
 function requestCode(item:AcceptanceReceipt){return `risk-request:${item.riskId}:${item.acceptanceId}`}
 async function copy(item:AcceptanceReceipt){
@@ -142,7 +146,7 @@ async function send(attempt:Attempt){
       retry.value=null;issued.value=null
       try{await read()}catch{state.value=null;reset()}
       if(!action.value)error.value=e.message
-      else formError.value=e.message
+      else formError.value=message(e,'未能提交风险处置。')
     }else{
       retry.value=null;formError.value=message(e,'未能提交风险处置。')
     }

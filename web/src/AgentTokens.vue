@@ -31,6 +31,7 @@ async function confirm(){const row=target.value;if(!row||busy.value)return;const
 <template>
 <section class="panel" :aria-label="organization?'组织令牌':'我的 Agent 令牌'">
   <div class="toolbar"><span v-if="!readFailed&&!loading">令牌 · {{total}}</span><el-button v-if="!organization&&actions.length" type="primary" :disabled="busy||editing||loading" @click="newGrant"><Plus :size="15"/>签发令牌</el-button><el-button aria-label="刷新令牌" title="刷新令牌" :disabled="busy||loading" @click="read(page)"><RefreshCw :size="15"/> 刷新</el-button></div>
+  <p v-if="!organization&&!readFailed&&!loading&&!actions.length">当前账号没有可签发的委托动作。如需签发，请联系组织授权负责人核对委托资格与可授权范围。</p>
   <el-alert v-if="error&&!editing&&!target" type="error" :title="error" :closable="false" show-icon/><p v-if="notice" role="status">{{notice}}</p><label v-if="secret" class="token-secret">一次性密钥<input aria-label="一次性密钥" readonly autocomplete="off" :value="secret"></label>
   <el-dialog v-model="editing" title="签发令牌" width="min(560px,94vw)" :close-on-click-modal="false" :show-close="!busy" :close-on-press-escape="!busy">
     <form @submit.prevent="issue"><label>授权项目<select v-model="projects" aria-label="授权项目" multiple><option v-for="p in props.projects" :key="p.projectId" :value="p.projectId">{{p.name}}</option></select></label>

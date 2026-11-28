@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {PmoHttpError} from './api-error'
-import {computed,nextTick,onMounted,ref} from 'vue'
+import {computed,nextTick,onBeforeUnmount,onMounted,ref} from 'vue'
 import {ArrowRight,FolderKanban,LockKeyhole,Pencil,Plus,RefreshCw,Search} from 'lucide-vue-next'
 import AppShell from './AppShell.vue'
 import AuthLayout from './AuthLayout.vue'
@@ -201,7 +201,7 @@ function shanghai(value:string){return new Date(value).toLocaleString('zh-CN',{t
 function clearSession(){
   sequence++;materialEpoch++
   conversations.clear()
-  user.value=false;admin.value=false;activeAccount.value='';username.value='';password.value=''
+  user.value=false;admin.value=false;activeAccount.value='';username.value='';password.value='';loginNotice.value=''
   loading.value=false;rows.value=[];total.value=0;page.value=1;query.value='';keyword.value='';stageFilter.value='';listReadAt.value=''
   selected.value=null;dialog.value=false;name.value='';code.value='';description.value='';formError.value='';attempt='';lastPayload=''
   showMaterials.value=false;materialProject.value=null;projectLoading.value=false;projectError.value=''
@@ -237,7 +237,7 @@ async function api(path:string,options:RequestInit={},receiveHeaders?:(h:Headers
       ROLE_OCCUPIED:'该项目角色已有有效任命，请重新选择。',INVITATION_EXISTS:'该人员已有同一项目角色的提名或邀请。',
       INVITATION_EXPIRED:'该项目任命邀请已过期。',INVITATION_NOT_ACTIONABLE:'该任命邀请的状态或项目阶段已变化。',
       AUTHORITY_INACTIVE:'发出此邀请的任命授权已失效，请联系该项目的任命负责人。',
-      ROLE_REQUIRES_INDEPENDENT_PERSON:'评审人和客户代表须独立于项目发起人、项目经理和 Sponsor。',
+      ROLE_REQUIRES_INDEPENDENT_PERSON:'评审人和客户代表须独立于项目发起人、项目经理和项目出资负责人。',
       MEMBERSHIP_STAGE_LOCKED:'项目当前阶段不接受成员撤销，请重新读取项目状态。',
     }
     const code=typeof body.code==='string'?body.code:''
@@ -275,7 +275,13 @@ async function openLinkedWorkbench(defaultProject=''){
       focusReportId.value=tab==='reports'&&uuid.test(report)?report:undefined
       materialTab.value=tab
     }
-  }catch(e){if(!implicit&&user.value&&session===csrf.value)error.value=message(e)}
+  }catch(e){
+    if(!implicit&&user.value&&session===csrf.value){
+      error.value=e instanceof PmoHttpError&&e.code==='RESOURCE_NOT_FOUND'
+        ? '无法打开此项目书签。请在当前账号的项目台账中按编号搜索，或向项目负责人核对访问权限。'
+        : message(e)
+    }
+  }
 }
 async function openAssignedProject(projectId:string){
   await openProjectFromEntry(projectId,'appointments')
@@ -324,7 +330,7 @@ function enrollment(show:boolean){
   void nextTick(()=>authLayout.value?.focusForm())
 }
 function accountAccepted(name:string){enrollment(false);username.value=name;loginNotice.value='账号已开通，请登录。'}
-async function login(){if(busy.value)return;busy.value=true;error.value='';try{const r=await api('auth/login',{method:'POST',body:JSON.stringify({username:username.value,password:password.value})});csrf.value=r.csrfToken;sessionStorage.setItem('pmo.csrf',csrf.value);await startSession()}catch(e){error.value=message(e)}finally{password.value='';busy.value=false}}
+async function login(){if(busy.value)return;busy.value=true;error.value='';loginNotice.value='';try{const r=await api('auth/login',{method:'POST',body:JSON.stringify({username:username.value,password:password.value})});csrf.value=r.csrfToken;sessionStorage.setItem('pmo.csrf',csrf.value);await startSession()}catch(e){error.value=message(e)}finally{password.value='';busy.value=false}}
 async function logout(){try{await api('auth/logout',{method:'POST'});clearSession();error.value=''}catch(e){error.value=message(e)}}
 function search(){page.value=1;keyword.value=query.value.trim();void load()}
 function applyStage(event:Event){stageFilter.value=(event.currentTarget as HTMLSelectElement).value;search()}
@@ -337,7 +343,18 @@ async function reread(){const row=selected.value;if(!row)return;try{const {data}
 async function save(){if(busy.value)return;if(!name.value.trim()||(!selected.value&&!/^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$/.test(code.value))){formError.value='请填写项目名称及有效编号（2–60 个字符，以字母或数字开头，可包含下划线和短横线）。';return}
   busy.value=true;formError.value='';const row=selected.value;const body=JSON.stringify(row?{fields:{name:name.value.trim()}}:{code:code.value,name:name.value.trim(),description:description.value});const sig=body+':'+(row?.revision??0);if(!attempt||sig!==lastPayload){attempt=crypto.randomUUID();lastPayload=sig}
   try{await api(row?'projects/'+row.projectId:'projects',{method:row?'PATCH':'POST',headers:{'Idempotency-Key':attempt,...(row?{'If-Match':String(row.revision)}:{})},body});dialog.value=false;await load()}catch(e){formError.value=message(e)}finally{busy.value=false}}
-onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=message(e)}finally{ready.value=true}})
+function onProjectBookmark(event:HashChangeEvent){
+  const link=new URLSearchParams(location.hash.slice(1))
+  if(!user.value||!uuid.test(link.get('project')??'')||!['overview','assistant','reports'].includes(link.get('tab')??'overview'))return
+  if(!window.confirm('打开项目书签将离开当前页面。若有未保存的资料，请先取消并保存。现在打开书签？')){
+    window.history.replaceState(window.history.state,'',event.oldURL)
+    return
+  }
+  // A fresh document uses the same authorization and project loading as a new bookmark tab.
+  window.location.reload()
+}
+onBeforeUnmount(()=>window.removeEventListener('hashchange',onProjectBookmark))
+onMounted(async()=>{window.addEventListener('hashchange',onProjectBookmark);try{if(csrf.value)await startSession()}catch(e){error.value=message(e)}finally{ready.value=true}})
 </script>
 
 <template>
@@ -454,7 +471,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
         <Requirements :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/>
       </ProjectPane>
       <ProjectPane name="baseline" :active="materialTab==='baseline'">
-        <RequirementBaseline :project-id="materialProject.projectId" :api="api"/>
+        <RequirementBaseline :active="materialTab==='baseline'" :project-id="materialProject.projectId" :api="api"/>
       </ProjectPane>
       <ProjectPane v-if="exceptionsAvailable||exceptionView?.navigationLocked" name="exceptions" :active="showingExceptions">
         <RequirementExceptions ref="exceptionView" :project-id="materialProject.projectId" :stage="materialProject.stage" :api="api"/>
@@ -478,7 +495,7 @@ onMounted(async()=>{try{if(csrf.value)await startSession()}catch(e){error.value=
         <Risks :project-id="materialProject.projectId" :api="api"/>
       </ProjectPane>
       <ProjectPane name="costs" :active="materialTab==='costs'">
-        <Costs :project-id="materialProject.projectId" :api="api"/>
+        <Costs :active="materialTab==='costs'" :project-id="materialProject.projectId" :api="api"/>
       </ProjectPane>
       <ProjectPane name="reviews" :active="materialTab==='reviews'">
         <Reviews ref="reviewsView" :project-id="materialProject.projectId" :project-revision="materialProject.revision" :active="materialTab==='reviews'"

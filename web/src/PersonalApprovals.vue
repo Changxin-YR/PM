@@ -3,7 +3,7 @@ import {onMounted,ref} from 'vue'
 import {ArrowRight,Inbox,RefreshCw} from 'lucide-vue-next'
 
 const gates={charter:'立项评审',feasibility:'落地评审',closing:'结项评审'}
-const labels={score:'待评分',decide:'可裁决',confirm_sponsor:'待 Sponsor 确认',confirm_initiator:'待发起人确认',
+const labels={score:'可提交评分',decide:'可裁决',confirm_sponsor:'待项目出资负责人确认',confirm_initiator:'待发起人确认',
   approve_transition:'可批准',reject_transition:'可拒绝',approve_change:'可批准',reject_change:'可拒绝'}
 const changeTargets={requirement:'需求',milestone:'里程碑',budget:'预算',charter:'立项卡'}
 type Project={projectId:string;code:string;name:string;stage:string;revision:number;createdAt:string}

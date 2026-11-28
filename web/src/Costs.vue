@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted,ref} from 'vue'
+import {onMounted,ref,watch} from 'vue'
 import {Pencil,RefreshCw,Save} from 'lucide-vue-next'
 import CategoryCosts from './CategoryCosts.vue'
 import CostReconciliation from './CostReconciliation.vue'
@@ -8,7 +8,7 @@ type Kind='money'|'effort'
 type Measure={budget:string;actual:string;forecastRemaining:string;projectedTotal:string;varianceRate?:string;color:string}
 type CategoryData=InstanceType<typeof CategoryCosts>['$props']['data']
 type Summary=Partial<Pick<CategoryData,'categories'|'categoryEditor'>>&{money:Measure;effort:Measure;plan:{revision:number;moneyBudget?:string;effortBudget?:string};canSaveBudget:boolean;canSaveForecast:boolean}
-const props=defineProps<{projectId:string;api:(p:string,o?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{projectId:string;active?:boolean;api:(p:string,o?:RequestInit)=>Promise<any>}>()
 const path=`projects/${props.projectId}/cost`,kinds:Kind[]=['money','effort'],labels={money:'金额（元）',effort:'人天'},colors:Record<string,string>={untrusted:'数据不可信',green:'绿',yellow:'黄',red:'红'}
 const data=ref<Summary|null>(null),busy=ref(false),error=ref(''),notice=ref(''),kind=ref<Kind>('money'),action=ref<''|'budget'|'forecast'>(''),value=ref(''),reason=ref('')
 let key='',signature='',revision=0
@@ -20,6 +20,9 @@ async function save(){busy.value=true;error.value='';try{const budget=action.val
  await props.api(path+(budget?'-budgets':'-forecasts'),{method:'PUT',headers:{'If-Match':String(revision),'Idempotency-Key':key},body});action.value='';await load();notice.value='已保存'
  }catch(e){error.value=String(e)}finally{busy.value=false}}
 onMounted(refresh)
+watch(() => props.active, active => {
+  if (active && !busy.value && !action.value) void refresh()
+})
 </script>
 <template><section class="panel cost-summary">
 <div class="toolbar"><h3>成本与人天</h3><el-button aria-label="刷新成本" title="刷新成本" :disabled="busy||!!action" @click="refresh"><RefreshCw :size="15"/></el-button></div>
@@ -32,7 +35,7 @@ onMounted(refresh)
 <CategoryCosts v-if="data?.categories" :project-id="projectId" :api="api" :busy="busy||!!action" :data="{...data,categories:data.categories}" @changed="refresh"/>
 </section>
 <CostReconciliation :project-id="projectId" :api="api" :costs-busy="busy||!!action"/>
-<Postings :project-id="projectId" :api="api" @changed="refresh"/></template>
+<Postings :active="active" :project-id="projectId" :api="api" @changed="refresh"/></template>
 <style scoped>
 .columns {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:16px}
 .columns section,.cost-summary form {min-width:0;background:var(--pmo-bg);border:1px solid var(--pmo-line);border-radius:8px;padding:16px}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted,ref} from 'vue'
+import {onMounted,ref,watch} from 'vue'
 import {Check,Plus,RefreshCw,Undo2} from 'lucide-vue-next'
 import ScopedEvidencePicker from './ScopedEvidencePicker.vue'
 type Kind='money'|'effort'
@@ -10,13 +10,14 @@ const categories={
 type Row={postingId:string;type:Kind;amountSigned:string;sourceRef:string;status:string;revision:number;period:string;category?:string;occurredAt?:string;postingOfId?:string;canVerify:boolean;canReverse:boolean;reversalReason?:string;verificationNote?:string;reportWeekStart?:string;reportWeekEnd?:string;
   classificationId?:string;canClassify?:boolean;pendingClassificationId?:string;pendingCategory?:string;pendingClassificationReason?:string}
 type Action='propose'|'verify'|'reverse'|'classify'|'verifyClassification'
-const props=defineProps<{projectId:string;api:(p:string,o?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{projectId:string;active?:boolean;api:(p:string,o?:RequestInit)=>Promise<any>}>()
 const emit=defineEmits<{changed:[]}>()
 const path=`projects/${props.projectId}/cost-postings`,items=ref<Row[]>([]),page=ref(1),total=ref(0),can=ref(false),busy=ref(false),error=ref('')
 const action=ref<''|Action>(''),row=ref<Row|null>(null),kind=ref<Kind>('money'),category=ref(''),filter=ref(''),amount=ref(''),period=ref(''),source=ref(''),reason=ref(''),when=ref('')
 const evidence=ref<string[]>([]),showEvidence=ref(false)
 let key='',signature=''
 const workflowErrors:Record<string,string>={
+ POSITIVE_POSTING_REQUIRED:'凭证数额必须大于零。原记录需要更正时，请使用全额冲销。',
  WEEKLY_EFFORT_REQUIRES_CURRENT_PUBLICATION:'此凭证对应的周报版本已变化，请核对最新发布周报。',
  WEEKLY_EFFORT_OCCURRENCE_OUTSIDE_WEEK:'实际发生时间须在来源周报的北京时间报告周内。',
  WEEKLY_EFFORT_BALANCE_CHANGED:'当周已核验净人天已变化，请联系项目经理按最新差额提报。',
@@ -50,6 +51,9 @@ function pendingName(row:Row){
 const actionLabels={propose:'提交候选凭证',verify:'确认核验',reverse:'申请全额冲销',classify:'提交分类申请',verifyClassification:'确认类别核验'}
 const reasonLabels={propose:'凭证说明',verify:'核验说明',reverse:'冲销原因',classify:'补分类依据',verifyClassification:'类别核验说明'}
 onMounted(()=>refresh(1))
+watch(() => props.active, active => {
+  if (active && !busy.value && !action.value) void refresh()
+})
 </script>
 <template><section aria-label="成本凭证" class="panel postings"><div class="toolbar"><h3>成本凭证 · {{total}}</h3>
 <label class="category-filter">凭证类别<select v-model="filter" :disabled="busy||!!action" @change="refresh(1)">

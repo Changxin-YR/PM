@@ -12,7 +12,7 @@ import AssistantChat from './AssistantChat.vue'
 import {followup,type ReplyContext} from './assistantFollowups'
 import {PmoHttpError} from './api-error'
 import {makeAnswer, closingStatus, reviewQuestion, type Mode, type Topic, type Cited, type Preview, type Packet, type Answer, type Turn, type ConversationStore} from './assistantConversation'
-type Destination='reviews'|'reports'|'retrospective'|'health'|'costs'|'requirements'|'milestones'
+type Destination='reviews'|'reports'|'retrospective'|'health'|'costs'|'requirements'|'milestones'|'risks'
 
 const props=defineProps<{projectId:string;stage:string;projectLabel?:string;projectCode?:string;initialQuestion?:AssistantQuestion;
   conversations:ConversationStore;revision:number;api:(path:string,options?:RequestInit)=>Promise<any>}>()
@@ -123,6 +123,22 @@ watch(()=>props.revision,()=>void load())
 onBeforeUnmount(()=>{request?.abort();previewRequest?.abort();scopeRequest?.abort()})
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}
 
+type RiskRow = {riskId:string; statement:string; response:string; isBlocking:boolean; status:string}
+async function riskAnswer(signal:AbortSignal):Promise<Answer>{
+  const {data,meta}=await props.api(`projects/${props.projectId}/risks?page=1&pageSize=100`,{signal})
+  const rows:RiskRow[]=data.items
+  const active=rows.filter(row=>row.isBlocking && !['closed','transferred'].includes(row.status))
+  const partial=data.total>rows.length
+  const lines=[partial?`先列出前 ${rows.length} 条风险记录中的 ${active.length} 项未关闭、未移交的阻塞风险。其余请在风险台账翻页核对。`:
+    active.length?`台账里有 ${active.length} 项未关闭、未移交的阻塞风险。`:'台账里没有未关闭、未移交的阻塞风险。']
+  const items=active.map((row,i)=>{
+    lines.push(`${i+1}. ${row.statement}`)
+    const sources:string[]=(meta?.sourceRefs??[]).filter((ref:string)=>ref.split('@')[0]===`risk:${row.riskId}`)
+    return {detail:`${row.statement}。应对措施为${row.response||'尚未填写'}。`,sources}
+  })
+  return {lines,items,sources:items.flatMap(item=>item.sources),asOf:meta?.asOf}
+}
+
 async function showAnswer(target:QuestionTarget,text:string,controller:AbortController,original=text){
   const nextTopic=target.mode==='ledger'?target.topic:topic.value
   applying=true
@@ -132,6 +148,11 @@ async function showAnswer(target:QuestionTarget,text:string,controller:AbortCont
   applying=false
   const result=await load()
   if(controller.signal.aborted)return
+  if(result && target.riskRegister){
+    const answer=await riskAnswer(controller.signal)
+    if(!controller.signal.aborted)remember(text,answer,target,{basisQuestion:original})
+    return
+  }
   if(result){
     if(result.mode==='closing'&&/带我|逐题|开始复盘/.test(original)&&result.data.retrospectiveQuestions.length){
       const questions=result.data.retrospectiveQuestions.map(reviewQuestion)
@@ -155,7 +176,7 @@ async function specialAnswer(selected:Topic,signal:AbortSignal):Promise<Answer>{
   }
   const weekly=selected==='weekly_health'
   const {data,meta}=await props.api(`analytics/${weekly?'weekly-health':'preapproval-spending'}?page=1`,{signal})
-  const result:Answer={lines:[weekly?`本周已采样 ${data.sampledProjects} 个可见项目，其中 ${data.total} 个出现过黄红灯或存在发布限制。`:`有权查看的项目共有 ${data.total} 条立项前支出。`],sources:[],asOf:data.asOf??meta?.asOf}
+  const result:Answer={lines:[weekly?`本周已采样 ${data.sampledProjects} 个可见项目，其中 ${data.total} 个出现过黄红灯或存在发布限制。`:`有权查看的项目共有 ${data.total} 条立项前支出。`],sources:[],items:[],asOf:data.asOf??meta?.asOf}
   for(const row of data.items.slice(0,8)){
     if(weekly){const signal=row.earlierSignal??row.latest
       const colors=[['时间',signal.timeLine],['成本',signal.costLine],['质量',signal.qualityLine]]
@@ -163,8 +184,15 @@ async function specialAnswer(selected:Topic,signal:AbortSignal):Promise<Answer>{
       const latest=healthNames[row.latest.health]
       const attention=colors.join('、')||'数据待核实'
       result.lines.push(`${row.projectName}：${row.earlierSignal?'周内早先':'最近采样'}${attention}${row.earlierSignal?`，最近总体${['green','yellow','red'].includes(row.latest.health)?latest+'灯':'待核实'}`:''}。`)
-      result.sources.push(...signal.sourceRefs,...row.latest.sourceRefs)}
-    else {result.lines.push(`${row.projectCode}：${row.amountSigned} ${row.type==='money'?'元':'人天'}。`);result.sources.push(row.sourceRef)}
+      const sources=[...new Set<string>([...signal.sourceRefs,...row.latest.sourceRefs])]
+      result.sources.push(...sources)
+      result.items!.push({detail:`${result.lines.at(-1)} 可在周健康台账核对本次采样。`,sources})}
+    else {
+      const entry=`${row.projectCode}：${row.amountSigned} ${row.type==='money'?'元':'人天'}`
+      result.lines.push(`${result.items!.length+1}. ${entry}。`)
+      result.items!.push({detail:`${entry}。发生时间（上海）${time(row.occurredAt)}，${row.approvedAt?'立项通过时间（上海）'+time(row.approvedAt):'项目尚未通过立项'}。`,sources:[row.sourceRef]})
+      result.sources.push(row.sourceRef)
+    }
   }
   if(data.total>8)result.lines.push(`此处列出前 8 项，其余可在下方台账翻页查看。`)
   result.sources=[...new Set(result.sources)]

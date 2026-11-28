@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import {onMounted,ref} from 'vue'
+import {onMounted,ref,watch} from 'vue'
 import {RefreshCw,Signature} from 'lucide-vue-next'
 import RequirementMetrics from './RequirementMetrics.vue'
 type Line={requirementId:string;revision:number;priority:string;desc:string;acceptanceCriteria:string;plannedConfirmAt?:string}
 type State={projectId:string;revision:number;contentHash:string;items:Line[];status:'draft'|'awaiting_customer'|'frozen';canSignAs?:'pm'|'client_representative';pmSignedAt?:string;customerSignedAt?:string}
-const props=defineProps<{projectId:string;api:(p:string,o?:RequestInit)=>Promise<any>}>()
+const props=defineProps<{projectId:string;active?:boolean;api:(p:string,o?:RequestInit)=>Promise<any>}>()
 const path=`projects/${props.projectId}/requirement-baseline`,data=ref<State|null>(null),busy=ref(false),error=ref(''),reason=ref(''),reviewed=ref(false)
 let key='',signature=''
 async function load(){busy.value=true;error.value='';try{data.value=(await props.api(path)).data;reason.value='';reviewed.value=false;key=''}catch(e){error.value=String(e);data.value=null}finally{busy.value=false}}
@@ -12,6 +12,9 @@ async function sign(){const d=data.value;if(!d?.canSignAs||!reviewed.value)retur
  data.value=(await props.api(path+'/sign',{method:'POST',headers:{'If-Match':String(d.revision),'Idempotency-Key':key},body})).data;reason.value='';reviewed.value=false
  }catch(e){error.value=String(e)}finally{busy.value=false}}
 onMounted(load)
+watch(() => props.active, active => {
+  if (active && !busy.value && !reviewed.value && !reason.value.trim()) void load()
+})
 </script>
 <template><section class="panel baseline-panel"><div class="toolbar"><h3>初始需求基线</h3><el-tag v-if="data">{{{draft:'草稿',awaiting_customer:'待客户确认',frozen:'已冻结'}[data.status]}}</el-tag><el-button class="baseline-reload" aria-label="重读基线" title="重读基线" :disabled="busy" @click="load"><RefreshCw :size="15"/></el-button></div><el-alert v-if="error" type="error" :title="error" :closable="false"/>
 <template v-if="data"><el-alert v-if="data.status!=='frozen'&&data.items.some(i=>!i.plannedConfirmAt)" type="warning" title="部分需求缺少计划确认日，暂不能签署。" :closable="false"/>

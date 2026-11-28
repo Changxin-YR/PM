@@ -21,7 +21,7 @@ type Closing={gateEligible:boolean|null;gateGaps:Gap[];retrospectiveKind:'normal
 type Ledger={answer:Cited[];asOf:string;sourceRefs:string[];unknowns:string[];previewEnabled:boolean}
 type Data={charter:Charter;process:Process;closing:Closing;ledger:Ledger}
 export type Packet={ [K in Mode]:{mode:K;data:Data[K];meta:{asOf:string;sourceRefs:string[];ruleVersion:string}} }[Mode]
-export type Answer = {lines:string[]; sources:string[]; asOf?:string}
+export type Answer = {lines:string[]; sources:string[]; asOf?:string; items?:{detail:string; sources:string[]}[]}
 export type Turn = {id:number; question:string; answer:Answer; target?:QuestionTarget} & ReplyContext
 export type ConversationStore = Map<string, Record<Mode,Turn[]>>
 export const starters:Record<Mode,string[]> = {
@@ -51,7 +51,7 @@ export function makeAnswer(packet:Packet, question:string, stage:string):Answer 
     case 'charter': {
       const data=packet.data,score=data.pendingScore??data.scoreSummary
       if(/教训|经验/.test(question))cite(data.lessonRefs,'没有查到可引用的已确认教训。')
-      else if(/评[分审]|弱项|多少分/.test(question)&&!/材料/.test(question)){
+      else if(/评[分审]|弱项|多少分|最低分|薄弱维度|补强/.test(question)&&!/材料/.test(question)){
         add(score?`${data.pendingScore?'本轮待裁决':'正式评审'}总分为 ${score.total??'暂无记录'}。`:'项目还没有可见的评分记录。',score?.sourceRefs)
         cite(data.pendingScore?data.pendingWeaknesses:data.weaknesses,'当前评分记录未列出弱项。')
       }else{
@@ -65,7 +65,7 @@ export function makeAnswer(packet:Packet, question:string, stage:string):Answer 
     }
     case 'process': {
       const data=packet.data
-      if(/周报|小结|简报/.test(question)){
+      if(/周报|小结|简报|本周项目进展/.test(question)){
         const draft=data.weeklyDraft, fields=draft.structuredFields
         add(`${draft.period} 周报草稿`)
         for(const [label,rows] of [['里程碑',fields.milestone_progress],['需求进展',fields.requirement_progress],['风险阻塞',fields.risks_and_blockers]] as const){
@@ -93,7 +93,7 @@ export function makeAnswer(packet:Packet, question:string, stage:string):Answer 
     }
     case 'ledger': {
       for(const item of packet.data.answer){
-        const text=item.text.replace(/^金额（CNY）/u,'金额（元）').replace(/^时间线：(green|yellow|red)$/u,(_,lamp:string)=>`时间线：${lights[lamp]}`)
+        const text=item.text.replace(/金额（CNY）/gu,'金额（元）').replace(/\bCNY\b/gu,'元').replace(/^时间线：(green|yellow|red)$/u,(_,lamp:string)=>`时间线：${lights[lamp]}`)
         add(text,item.sourceRefs)
       }
       packet.data.unknowns.forEach(item=>add(item))
@@ -103,7 +103,7 @@ export function makeAnswer(packet:Packet, question:string, stage:string):Answer 
   }
   if(!answer.lines.length)add('当前没有可引用的记录。')
   // Empty searches and built-in prompts have no supporting business record.
-  const usePacketSources=(packet.mode==='process'&&/周报|小结|简报|风险|预警/.test(question)) ||
+  const usePacketSources=(packet.mode==='process'&&/周报|小结|简报|本周项目进展|风险|预警/.test(question)) ||
     (packet.mode==='closing'&&!/教训|四问|复盘/.test(question))
   answer.sources=[...new Set(answer.sources.length||!usePacketSources?answer.sources:packet.meta.sourceRefs)]
   return answer
