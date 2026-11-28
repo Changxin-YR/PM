@@ -25,10 +25,11 @@ function lookup(){
 <template>
   <section class="panel incoming-risk" aria-label="风险接收">
     <form class="lookup" aria-label="风险接收入口" @submit.prevent="lookup">
-      <label>接收请求编号<input ref="input" v-model="code" :aria-invalid="invalid" autocomplete="off" autocapitalize="off"
+      <label>接收请求编号<input ref="input" v-model="code" :aria-invalid="invalid" aria-describedby="incoming-risk-help" autocomplete="off" autocapitalize="off"
         spellcheck="false" required maxlength="96" @input="invalid=false"/></label>
       <el-button type="primary" native-type="submit" :disabled="open"><ArrowRight :size="15"/>打开接收请求</el-button>
-      <el-alert v-if="invalid" class="lookup-error" type="error" title="接收请求编号格式无效。" :closable="false" show-icon/>
+      <p id="incoming-risk-help" class="lookup-help">风险评审人发起移交后，会在风险处置记录或授权通知中取得接收请求编号。请向发起人索取完整编号后粘贴到这里。当前页面按编号打开请求，并保留原有权限核验。</p>
+      <el-alert v-if="invalid" class="lookup-error" type="error" title="接收请求编号格式无效，请粘贴完整编号。" :closable="false" show-icon/>
     </form>
     <RiskResolution v-if="request" :key="`${request.riskId}:${request.acceptanceId}`" v-model="open"
       :risk-id="request.riskId" :acceptance-id="request.acceptanceId" :api="props.api"/>
@@ -38,5 +39,6 @@ function lookup(){
 <style scoped>
 .lookup{display:flex;align-items:end;flex-wrap:wrap;gap:12px}
 .lookup label{flex:1 1 15rem;min-width:0;max-width:34rem}
+.lookup-help{flex-basis:100%;max-width:52rem;margin:0;color:var(--pmo-muted);font-size:13px;line-height:1.55}
 .lookup-error{flex-basis:100%;margin:0}
 </style>

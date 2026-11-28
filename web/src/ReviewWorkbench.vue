@@ -10,7 +10,7 @@ const gates={charter:'立项',feasibility:'落地',closing:'结项'}
 const statuses={draft:'草稿',pending:'待评审',decided:'已裁决'}
 const verdicts={pass:'通过',conditional_pass:'有条件通过',defer:'暂缓',redirect:'转向',reject:'拒绝'}
 const classifications={veto:'触发否决项',below_threshold:'未达阈值',normal:'常规',fast_track:'快速通道',shortfall:'存在短板',feasible:'可行'}
-const roles={sponsor:'Sponsor',initiator:'发起人'}
+const roles={sponsor:'项目出资负责人',initiator:'发起人'}
 const stages:Record<string,string>={drafting:'草稿',designing:'方案细化',rejected:'已拒绝',executing:'执行中',delivering:'交付验收',closed:'已结项',terminated:'已终止'}
 const anchorCodes={1:'score_1',2:'between_1_3',3:'score_3',4:'between_3_5',5:'score_5'} as const
 const scoreValues=[1,2,3,4,5] as const
@@ -51,7 +51,7 @@ const actions=[
   {id:'score',flag:'canScore',label:'填写评分',submit:'提交评分',success:'已提交评分。',endpoint:'scores',icon:ClipboardPenLine},
   {id:'decide',flag:'canDecide',label:'登记裁决',submit:'确认裁决',success:'已登记裁决。',endpoint:'decisions',icon:Gavel},
   {id:'appeal',flag:'canAppeal',label:'申请复审',submit:'提交复审申请',success:'已提交复审申请。',endpoint:'appeals',icon:RotateCcw},
-  {id:'sponsor',flag:'canConfirmSponsor',label:'Sponsor 确认',submit:'确认签署',success:'已记录 Sponsor 确认。',endpoint:'confirmations',icon:Check},
+  {id:'sponsor',flag:'canConfirmSponsor',label:'项目出资负责人确认',submit:'确认签署',success:'已记录项目出资负责人确认。',endpoint:'confirmations',icon:Check},
   {id:'initiator',flag:'canConfirmInitiator',label:'发起人确认',submit:'确认签署',success:'已记录发起人确认。',endpoint:'confirmations',icon:Check},
   {id:'withdraw',flag:'canWithdraw',label:'撤回评审',submit:'确认撤回',success:'已撤回评审。',endpoint:'withdraw',icon:RotateCcw},
 ] as const
@@ -295,11 +295,15 @@ async function submit(previous?:Attempt){
       <template v-if="view">
         <ReviewMeeting ref="meeting" :review-id="reviewId" :revision="view.review.revision" :api="api"
           :disabled="busy||readFailed||!!retry"/>
-        <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" :closable="false" show-icon/>
+        <el-alert v-if="view.policyPending" type="warning" title="该评审的业务策略尚待签核。" description="请将当前项目编号和关口名称交给组织的业务策略签核负责人，核对适用范围与生效状态。收到办理结果后，点击上方“重读工作台”查看可办事项。" :closable="false" show-icon/>
         <el-alert v-if="view.fastTrackSynthetic" type="info" title="本项目使用隔离演练的快速立项规则。正式规则待签核。"
           :closable="false" show-icon/>
         <p v-if="view.requiredReviewerCount!==undefined && view.review.status==='pending'" class="meta">
-          必需评审名单已交卡 {{view.submittedReviewerCount}} / {{view.requiredReviewerCount}}。
+          {{view.round > 1 ? '必需评审名单已有有效评分卡' : '必需评审名单已交卡'}} {{view.submittedReviewerCount}} / {{view.requiredReviewerCount}}。
+          <template v-if="view.round > 1">
+            复审沿用每位评审人最近提交的评分卡。重新交卡后，仅替换本人的原评分，总分按有效卡汇总。
+            <span v-if="view.canScore">你本轮可以点击“填写评分”提交新卡。</span>
+          </template>
           <span v-if="view.submittedReviewerCount!==view.requiredReviewerCount">评分齐备后可确认快速立项或登记裁决。</span>
         </p>
         <el-alert v-if="view.stale" type="warning" title="送审所依据的材料或授权已变化。" :closable="false" show-icon/>

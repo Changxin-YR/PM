@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import {onMounted,ref} from 'vue'
+import CostPostingPicker from './CostPostingPicker.vue'
+import EvidenceTargetPicker from './EvidenceTargetPicker.vue'
+import {PmoHttpError} from './api-error'
 import {Download,FileCheck2,FileImage,FileText,Flag,RefreshCw,Upload} from 'lucide-vue-next'
 type Proof={evidenceId:string;evidenceRef:string;originalName:string;mimeType:string;sizeBytes:number;sha256:string;revision:number;status:string;canVerify:boolean;description:string;linkedResourceType:string;linkedResourceId:string}
 type Milestone={milestoneId:string;name:string;revision:number;actualDate?:string}
@@ -18,6 +21,7 @@ function selectFile(ev:Event){file.value=(ev.target as HTMLInputElement).files?.
 async function save(){busy.value=true;error.value='';try{let url:string,body:FormData|string,sig:string;const r=chosen.value
  if(mode.value==='upload'){
    const upload=file.value,projectSource=kind.value==='project',resourceId=projectSource?props.projectId:target.value
+   if(!resourceId)throw Error('请先选择要关联的业务资料。')
    if(!upload||upload.size===0||upload.size>(projectSource?sourceLimit:20*1024*1024))throw Error(projectSource?'成本来源 JSON 必须大于零且不超过 16 KiB。':'文件必须大于零且不超过 20 MiB。')
    const name=upload.name.toLowerCase()
    if(projectSource&&!name.endsWith('.json'))throw Error('项目成本来源只接受 JSON 文件。')
@@ -31,7 +35,11 @@ async function save(){busy.value=true;error.value='';try{let url:string,body:For
  else if(mode.value==='complete'&&r){url=`milestones/${r.linkedResourceId}/complete`;body=JSON.stringify({actualDate:day.value,evidenceRef:r.evidenceRef,...(note.value.trim()?{reason:note.value.trim()}:{})});sig=body}else return
  sig=url+expected+sig;if(!key||signature!==sig){key=crypto.randomUUID();signature=sig}
  await props.api(url,{method:'POST',headers:{'Idempotency-Key':key,'If-Match':String(expected)},body});notice.value=mode.value==='complete'?'里程碑已完成':mode.value==='verify'?'证据已核验':'附件已上传';mode.value='';await load(1)
- }catch(e){error.value=String(e)}finally{busy.value=false}}
+ }catch(e){
+   error.value=mode.value==='upload'&&e instanceof PmoHttpError&&e.code==='RESOURCE_NOT_FOUND'
+     ? '关联资料不可用。请核对当前项目、资料类型和编号，或从本项目的列表重新选择。'
+     : e instanceof Error?e.message:String(e)
+ }finally{busy.value=false}}
 onMounted(()=>refresh(1))
 </script>
 <template><section class="panel evidence-panel">
@@ -40,8 +48,10 @@ onMounted(()=>refresh(1))
 <form v-if="mode" @submit.prevent="save"><template v-if="mode==='upload'">
   <label>关联类型<select v-model="kind" :disabled="busy" @change="changeKind" required><option v-for="(label,k) in kinds" :key="k" :value="k">{{label}}</option></select></label>
   <label v-if="kind==='milestone'">关联里程碑<select v-model="target" required><option value="" disabled>请选择</option><option v-for="m in milestones" :value="m.milestoneId" :key="m.milestoneId">{{m.name}}</option></select></label>
+  <CostPostingPicker v-else-if="kind==='cost_posting'" :key="projectId" v-model="target" :project-id="projectId" :api="api" :disabled="busy"/>
   <label v-else-if="kind==='project'">关联项目<input :value="projectId" readonly/></label>
-  <label v-else>关联资源编号<input v-model.trim="target" required></label>
+  <EvidenceTargetPicker v-else-if="kind==='risk'||kind==='requirement'||kind==='charter'||kind==='review'||kind==='report'" v-model="target" :kind="kind" :project-id="projectId" :api="api" :disabled="busy"/>
+  <label v-else>关联资源编号<input v-model.trim="target" required><small v-if="kind==='decision'">请从本项目的正式裁决记录核对编号。阶段裁决可在“阶段流转”的处理记录中展开查看。</small></label>
   <label>{{kind==='project'?'成本来源 JSON':'证据文件'}}<input :key="kind" type="file" required :disabled="busy" :accept="kind==='project'?'.json,application/json':originalExtensions.join(',')" @change="selectFile"></label>
   <label>附件说明<textarea v-model="note" maxlength="500"/></label>
 </template>

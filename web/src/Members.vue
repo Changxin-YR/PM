@@ -11,7 +11,7 @@ const emit=defineEmits<{changed:[]}>()
 const members=ref<Member[]>([]),page=ref(1),pageSize=ref(20),total=ref(0),revision=ref(0),loading=ref(false),error=ref('')
 const target=ref<Member>(),targetRevision=ref(0),reason=ref(''),saving=ref(false),actionError=ref(''),notice=ref(''),stale=ref(false)
 const retry=ref<Revocation>(),locked=computed(()=>saving.value||!!retry.value)
-const roles:Record<string,string>={initiator:'草稿发起人',sponsor:'Sponsor',pm:'项目经理',member:'项目成员',reviewer:'评审人',client_representative:'客户代表'}
+const roles:Record<string,string>={initiator:'草稿发起人',sponsor:'项目出资负责人',pm:'项目经理',member:'项目成员',reviewer:'评审人',client_representative:'客户代表'}
 const maximumReasonLength=500
 let seq=0
 

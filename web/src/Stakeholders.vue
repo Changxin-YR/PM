@@ -36,6 +36,7 @@ onMounted(()=>load())
   <form v-if="editing" @submit.prevent="save">
     <label>联系人姓名<input v-model="name" maxlength="160" required></label>
     <label>类别<select v-model="type" aria-label="联系人类别"><option v-for="(text,value) in labels" :key="value" :value="value">{{text}}</option></select></label>
+    <p v-if="type==='customer'">客户联系人用于沟通。签署需求或验收前，请联系组织授权负责人核对本项目的客户代表绑定。</p>
     <label>影响力<input v-model="influence" maxlength="100"></label>
     <label>期望<textarea v-model="expectation" maxlength="2000"/></label>
     <div class="actions"><el-button :disabled="saving" @click="editing=false">取消</el-button><el-button type="primary" native-type="submit" :loading="saving">保存联系人</el-button></div>

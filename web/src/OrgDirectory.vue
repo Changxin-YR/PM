@@ -13,7 +13,7 @@ const users=ref<User[]>([]),members=ref<Member[]>([]),invites=ref<Invitation[]>(
 const issueForm=ref(false),email=ref(''),role=ref('member'),secret=ref(''),target=ref<Target|null>(null),reason=ref('')
 const error=ref(''),notice=ref('')
 const readFailed=ref(false)
-const roles:Record<string,string>={member:'成员',pm:'项目经理',reviewer:'评审人',sponsor:'Sponsor',client_representative:'客户代表'}
+const roles:Record<string,string>={member:'成员',pm:'项目经理',reviewer:'评审人',sponsor:'项目出资负责人',client_representative:'客户代表'}
 const inviteStatus:Record<string,string>={pending:'待接受',accepted:'已接受',expired:'已过期',revoked:'已撤销'}
 const paths:Record<Tab,string>={users:'admin/users',members:'admin/members',invitations:'admin/users/invitations'}
 let generation=0,sequence=0,attempt:{signature:string;key:string}|undefined
