@@ -170,7 +170,13 @@ try {
   await reviewer.getByLabel('核验说明').fill('已核对试点验收记录');await reviewer.getByRole('checkbox').check();await reviewer.getByRole('button',{name:'确认核验附件'}).click();await expect(reviewer.getByRole('cell',{name:'已核验'})).toBeVisible()
   await uploader.getByRole('button',{name:'刷新附件'}).click();await uploader.getByRole('button',{name:'登记里程碑完成'}).click();await uploader.getByLabel('实际完成日期').fill('2020-03-08');await uploader.getByRole('button',{name:'确认里程碑完成'}).click();await expect(uploader.getByRole('status')).toHaveText('里程碑已完成')
   await signers[0].getByRole('tab',{name:'里程碑',exact:true}).click();await signers[0].getByRole('button',{name:'刷新里程碑'}).click();await expect(signers[0].getByRole('cell',{name:'2020-03-08'})).toBeVisible()
-  await signers[0].getByRole('tab',{name:'证据附件',exact:true}).click();await uploader.getByRole('button',{name:'上传附件'}).click();await uploader.getByLabel('关联类型').selectOption('requirement');await uploader.getByLabel('关联资源编号').fill(process.env.PMO_TEST_REQUIREMENT_ID)
+  await signers[0].getByRole('tab',{name:'证据附件',exact:true}).click();await uploader.getByRole('button',{name:'上传附件'}).click();await uploader.getByLabel('关联类型').selectOption('requirement');
+  const requirementPicker=uploader.getByLabel('关联需求')
+  await requirementPicker.selectOption(process.env.PMO_TEST_REQUIREMENT_ID)
+  await uploader.getByRole('button',{name:'使用已知资源编号'}).click()
+  const resourceId=uploader.getByLabel('关联资源编号')
+  await expect(resourceId).toHaveValue('')
+  await resourceId.fill(process.env.PMO_TEST_REQUIREMENT_ID)
   await uploader.getByLabel('证据文件').setInputFiles({name:'需求验收.png',mimeType:'image/png',buffer:Buffer.from(process.env.PMO_TEST_PNG,'base64')});await uploader.getByRole('button',{name:'提交附件'}).click();await expect(uploader.getByRole('cell',{name:'待核验'})).toBeVisible()
   await reviewer.getByRole('button',{name:'刷新附件'}).click();await reviewer.getByRole('button',{name:'核验附件',exact:true}).click();await reviewer.getByLabel('核验说明').fill('已核对需求验收文件');await reviewer.getByRole('checkbox').check();await reviewer.getByRole('button',{name:'确认核验附件'}).click();await expect(reviewer.getByRole('cell',{name:'已核验'})).toHaveCount(2)
   for(const [index,button,status] of [[0,'标记交付','已交付'],[0,'内部验收','已验收'],[1,'客户确认','客户已确认']]){
